@@ -34,6 +34,12 @@ type StoredSolutions = Record<string, SavedSolution[]>;
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
 
+type EquationToken = {
+  id: string;
+  value: string;
+  digitIndex?: number;
+};
+
 const operators = [
   ['+', '+'],
   ['−', '-'],
@@ -51,6 +57,7 @@ const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
 const difficultyModeKey = 'crackledate.web.difficulty.v1';
+const emptyDigitIndices = new Set<number>();
 
 function App() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -67,8 +74,8 @@ function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
   const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
-  const [equation, setEquation] = useState('');
-  const [consumedCount, setConsumedCount] = useState(0);
+  const [tokens, setTokens] = useState<EquationToken[]>([]);
+  const [cursorIndex, setCursorIndex] = useState(0);
   const [evaluation, setEvaluation] = useState<EvaluationResponse>({ left: '?', right: '?' });
   const [message, setMessage] = useState('');
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -77,8 +84,14 @@ function GamePage() {
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
   const [showSettings, setShowSettings] = useState(false);
 
+  const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
+  const usedDigitIndices = useMemo(() => digitIndicesInUse(tokens), [tokens]);
+  const nextDigitIndex = useMemo(
+    () => (puzzle ? firstUnusedDigitIndex(tokens, puzzle.digits) : null),
+    [puzzle, tokens],
+  );
   const todaySolutions = puzzle ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
-  const nextDigit = puzzle && consumedCount < puzzle.digits.length ? puzzle.digits[consumedCount] : null;
+  const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const isEasyMode = difficultyMode === 'easy';
 
   useEffect(() => {
@@ -101,8 +114,8 @@ function GamePage() {
       .then((nextPuzzle) => {
         if (!isCurrent) return;
         setPuzzle(nextPuzzle);
-        setEquation('');
-        setConsumedCount(0);
+        setTokens([]);
+        setCursorIndex(0);
         setEvaluation({ left: '?', right: '?' });
         setMessage('');
         setStartTime(null);
@@ -131,38 +144,38 @@ function GamePage() {
     return () => controller.abort();
   }, [equation, selectedDate]);
 
-  const appendText = useCallback(
+  const insertText = useCallback(
     (value: string) => {
       if (!startTime) {
         setStartTime(Date.now());
       }
-      setEquation((current) => current + value);
+      setTokens((current) => insertTokenAt(current, cursorIndex, createOperatorToken(value)));
+      setCursorIndex((index) => index + 1);
       setMessage('');
     },
-    [startTime],
+    [cursorIndex, startTime],
   );
 
   const appendDigit = useCallback(() => {
-    if (nextDigit === null) return;
-    appendText(String(nextDigit));
-    setConsumedCount((count) => count + 1);
-  }, [appendText, nextDigit]);
+    if (nextDigit === null || nextDigitIndex === null) return;
+    if (!startTime) {
+      setStartTime(Date.now());
+    }
+    setTokens((current) => insertTokenAt(current, cursorIndex, createDigitToken(nextDigit, nextDigitIndex)));
+    setCursorIndex((index) => index + 1);
+    setMessage('');
+  }, [cursorIndex, nextDigit, nextDigitIndex, startTime]);
 
   const backspace = useCallback(() => {
-    setEquation((current) => {
-      if (!current) return current;
-      const last = current.at(-1);
-      if (last && /\d/.test(last)) {
-        setConsumedCount((count) => Math.max(0, count - 1));
-      }
-      return current.slice(0, -1);
-    });
+    if (cursorIndex === 0) return;
+    setTokens((current) => current.filter((_, index) => index !== cursorIndex - 1));
+    setCursorIndex((index) => Math.max(0, index - 1));
     setMessage('');
-  }, []);
+  }, [cursorIndex]);
 
   const clear = useCallback(() => {
-    setEquation('');
-    setConsumedCount(0);
+    setTokens([]);
+    setCursorIndex(0);
     setEvaluation({ left: '?', right: '?' });
     setMessage('');
     setStartTime(null);
@@ -282,14 +295,12 @@ function GamePage() {
               <DigitRail
                 digits={puzzle.digits}
                 delimiterPositions={puzzle.delimiterPositions}
-                consumedCount={consumedCount}
+                usedDigitIndices={usedDigitIndices}
+                activeIndex={nextDigitIndex}
               />
             )}
 
-            <div className="equation-box" aria-label="Equation input">
-              <span>{equation}</span>
-              <span className="cursor" aria-hidden="true" />
-            </div>
+            <EquationEditor tokens={tokens} cursorIndex={cursorIndex} onCursorChange={setCursorIndex} />
 
             {isEasyMode && (
               <div className="helper-row" aria-live="polite">
@@ -299,14 +310,19 @@ function GamePage() {
             )}
 
             {nextDigit !== null && (
-              <button className="next-digit" type="button" onClick={appendDigit}>
+              <button className="next-digit" type="button" onClick={appendDigit} data-testid="next-digit">
                 {nextDigit}
               </button>
             )}
 
             <div className="operator-grid" aria-label="Equation controls">
               {operators.map(([label, value]) => (
-                <button key={value} type="button" onClick={() => appendText(value)}>
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => insertText(value)}
+                  data-operator-value={value}
+                >
                   {label}
                 </button>
               ))}
@@ -316,7 +332,7 @@ function GamePage() {
               <button className="warning" type="button" onClick={backspace} aria-label="Backspace">
                 ⌫
               </button>
-              <button className="wide" type="button" onClick={() => appendText('=')}>
+              <button className="wide" type="button" onClick={() => insertText('=')}>
                 =
               </button>
               <button className="submit" type="button" onClick={submit}>
@@ -439,7 +455,6 @@ function StartPage({
           <DigitRail
             digits={puzzle.digits}
             delimiterPositions={puzzle.delimiterPositions}
-            consumedCount={-1}
             variant="start"
           />
         )}
@@ -501,12 +516,14 @@ function StartPage({
 function DigitRail({
   digits,
   delimiterPositions,
-  consumedCount,
+  usedDigitIndices = emptyDigitIndices,
+  activeIndex = null,
   variant = 'game',
 }: {
   digits: number[];
   delimiterPositions: number[];
-  consumedCount: number;
+  usedDigitIndices?: ReadonlySet<number>;
+  activeIndex?: number | null;
   variant?: 'game' | 'start';
 }) {
   const delimiters = new Set(delimiterPositions);
@@ -514,11 +531,80 @@ function DigitRail({
     <div className={`digit-rail ${variant === 'start' ? 'start-digits' : ''}`} aria-label="Date digits">
       {digits.map((digit, index) => (
         <React.Fragment key={`${digit}-${index}`}>
-          <span className={index < consumedCount ? 'used' : index === consumedCount ? 'active' : ''}>{digit}</span>
+          <span className={digitClassName(index, usedDigitIndices, activeIndex)}>{digit}</span>
           {delimiters.has(index) && <i aria-hidden="true" />}
         </React.Fragment>
       ))}
     </div>
+  );
+}
+
+function EquationEditor({
+  tokens,
+  cursorIndex,
+  onCursorChange,
+}: {
+  tokens: EquationToken[];
+  cursorIndex: number;
+  onCursorChange: (index: number) => void;
+}) {
+  if (tokens.length === 0) {
+    return (
+      <div className="equation-box" aria-label="Equation input" data-testid="equation-editor">
+        <CursorSlot index={0} active onCursorChange={onCursorChange} label="Move cursor to start" empty />
+      </div>
+    );
+  }
+
+  return (
+    <div className="equation-box" aria-label="Equation input" data-testid="equation-editor">
+      <CursorSlot index={0} active={cursorIndex === 0} onCursorChange={onCursorChange} label="Move cursor to start" />
+      {tokens.map((token, index) => (
+        <React.Fragment key={token.id}>
+          <button
+            className="equation-token"
+            type="button"
+            onClick={() => onCursorChange(index + 1)}
+            aria-label={`Move cursor after ${token.value}`}
+            data-testid={`equation-token-${index}`}
+          >
+            {token.value}
+          </button>
+          <CursorSlot
+            index={index + 1}
+            active={cursorIndex === index + 1}
+            onCursorChange={onCursorChange}
+            label={index === tokens.length - 1 ? 'Move cursor to end' : `Move cursor after ${token.value}`}
+          />
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+function CursorSlot({
+  index,
+  active,
+  onCursorChange,
+  label,
+  empty = false,
+}: {
+  index: number;
+  active: boolean;
+  onCursorChange: (index: number) => void;
+  label: string;
+  empty?: boolean;
+}) {
+  return (
+    <button
+      className={`cursor-slot ${active ? 'active' : ''} ${empty ? 'empty' : ''}`}
+      type="button"
+      onClick={() => onCursorChange(index)}
+      aria-label={label}
+      data-testid={`cursor-slot-${index}`}
+    >
+      <span className="cursor" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -597,6 +683,50 @@ function loadThemePreference(): ThemePreference {
 
 function loadDifficultyMode(): DifficultyMode {
   return localStorage.getItem(difficultyModeKey) === 'hard' ? 'hard' : 'easy';
+}
+
+function createTokenId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
+}
+
+function createOperatorToken(value: string): EquationToken {
+  return { id: createTokenId(), value };
+}
+
+function createDigitToken(value: number, digitIndex: number): EquationToken {
+  return { id: createTokenId(), value: String(value), digitIndex };
+}
+
+function insertTokenAt(tokens: EquationToken[], cursorIndex: number, token: EquationToken): EquationToken[] {
+  const next = [...tokens];
+  next.splice(cursorIndex, 0, token);
+  return next;
+}
+
+function tokensToEquation(tokens: EquationToken[]): string {
+  return tokens.map((token) => token.value).join('');
+}
+
+function digitIndicesInUse(tokens: EquationToken[]): ReadonlySet<number> {
+  return new Set(tokens.flatMap((token) => (token.digitIndex === undefined ? [] : [token.digitIndex])));
+}
+
+function firstUnusedDigitIndex(tokens: EquationToken[], digits: number[]): number | null {
+  const usedDigitIndices = digitIndicesInUse(tokens);
+  for (let index = 0; index < digits.length; index += 1) {
+    if (!usedDigitIndices.has(index)) return index;
+  }
+  return null;
+}
+
+function digitClassName(
+  index: number,
+  usedDigitIndices: ReadonlySet<number>,
+  activeIndex: number | null,
+): string {
+  if (usedDigitIndices.has(index)) return 'used';
+  if (activeIndex === index) return 'active';
+  return '';
 }
 
 function localDateIdentifier(date: Date): string {

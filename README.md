@@ -8,7 +8,7 @@ This is the deployable web version of Crackle Date for `crackledate.com`.
 - Go backend for puzzle date metadata, expression evaluation, and equation validation.
 - A single Docker image serves the React build and `/api/*` routes.
 
-This fits the current deployment because the Alaska Home Server already fronts a local container through a Cloudflare Tunnel. Go keeps the runtime small and simple, while React is a good fit for the equation-builder interaction.
+This keeps the runtime small and simple: the single container can sit behind any HTTPS reverse proxy or tunnel, while React handles the equation-builder interaction.
 
 ## Local Development
 
@@ -37,7 +37,7 @@ docker compose up --build -d
 curl -I http://127.0.0.1:8082
 ```
 
-The compose file binds the container to `127.0.0.1:8082`, matching the current Cloudflare Tunnel route on the home server.
+The compose file binds the container to loopback so it is intended to be reached through the host's reverse proxy rather than directly exposed.
 
 ## Routes
 

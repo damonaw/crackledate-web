@@ -10,7 +10,8 @@ import (
 )
 
 const tolerance = 1e-10
-const maximumMagnitude = 9_000_000_000_000_000.0
+const maximumMagnitude = 9_000_000_000_000_000_000.0
+const maximumExactIntegerDisplay = 9_007_199_254_740_992.0
 
 var (
 	errUnexpectedEnd = errors.New("unexpected end of expression")
@@ -302,6 +303,9 @@ func checked(value float64) (float64, error) {
 
 func formatNumber(value float64) string {
 	if math.Abs(value-math.Round(value)) <= tolerance {
+		if math.Abs(value) > maximumExactIntegerDisplay {
+			return strconv.FormatFloat(value, 'g', 12, 64)
+		}
 		return strconv.FormatInt(int64(math.Round(value)), 10)
 	}
 	return strconv.FormatFloat(value, 'g', 12, 64)

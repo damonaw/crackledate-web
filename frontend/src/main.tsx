@@ -33,6 +33,7 @@ type SavedSolution = {
 type StoredSolutions = Record<string, SavedSolution[]>;
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
+type FeedbackTone = 'success' | 'error';
 
 type EquationToken = {
   id: string;
@@ -79,6 +80,7 @@ function GamePage() {
   const [cursorIndex, setCursorIndex] = useState(0);
   const [evaluation, setEvaluation] = useState<EvaluationResponse>({ left: '?', right: '?' });
   const [message, setMessage] = useState('');
+  const [messageTone, setMessageTone] = useState<FeedbackTone>('success');
   const [startTime, setStartTime] = useState<number | null>(null);
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
@@ -121,7 +123,10 @@ function GamePage() {
         setMessage('');
         setStartTime(null);
       })
-      .catch(() => setMessage('Could not load the puzzle date.'));
+      .catch(() => {
+        setMessageTone('error');
+        setMessage('Could not load the puzzle date.');
+      });
     return () => {
       isCurrent = false;
     };
@@ -186,6 +191,7 @@ function GamePage() {
     if (!puzzle) return;
     const normalizedEquation = equation.trim();
     if (todaySolutions.some((solution) => solution.equation === normalizedEquation)) {
+      setMessageTone('error');
       setMessage('Solution already saved for this date.');
       return;
     }
@@ -197,6 +203,7 @@ function GamePage() {
     });
     const result = (await response.json()) as ValidationResponse;
     if (!result.valid) {
+      setMessageTone('error');
       setMessage(result.errorMessage ?? 'That equation is not valid.');
       return;
     }
@@ -216,6 +223,7 @@ function GamePage() {
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
+    setMessageTone('success');
     setMessage(`Solved. Both sides equal ${solution.value}.`);
     clear();
   }, [clear, equation, evaluation.left, puzzle, startTime, todaySolutions]);
@@ -246,6 +254,9 @@ function GamePage() {
   const showGame = useCallback(() => {
     setActiveView('game');
   }, []);
+
+  const feedbackMessage = message || evaluation.errorMessage;
+  const feedbackTone: FeedbackTone = message ? messageTone : 'error';
 
   return (
     <main
@@ -315,6 +326,12 @@ function GamePage() {
 
             <EquationEditor tokens={tokens} cursorIndex={cursorIndex} onCursorChange={setCursorIndex} />
 
+            {feedbackMessage && (
+              <p className={`status-message ${feedbackTone === 'error' ? 'error' : ''}`} aria-live="polite">
+                {feedbackMessage}
+              </p>
+            )}
+
             {isEasyMode && (
               <div className="helper-row" aria-live="polite">
                 <span>L {evaluation.left || '?'}</span>
@@ -352,9 +369,6 @@ function GamePage() {
                 Submit
               </button>
             </div>
-
-            {message && <p className="status-message">{message}</p>}
-            {evaluation.errorMessage && !message && <p className="status-message error">{evaluation.errorMessage}</p>}
           </section>
 
           <aside className="solutions-panel" aria-labelledby="solutions-title">

@@ -703,9 +703,11 @@ h1 {
 }
 
 .status-message {
-  margin: 8px 0 0;
+  margin: -2px 16px 0;
   color: var(--ios-green);
   font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
 }
 
 .status-message.error {

@@ -1,7 +1,6 @@
 package game
 
 import (
-	"math"
 	"strings"
 	"unicode"
 )
@@ -69,7 +68,7 @@ func ValidateEquation(equation string, expectedDigits []int) ValidationResponse 
 
 	leftText := formatNumber(left)
 	rightText := formatNumber(right)
-	if math.Abs(left-right) > tolerance {
+	if !numbersEqual(left, right) {
 		return ValidationResponse{
 			Valid:        false,
 			LeftValue:    &leftText,

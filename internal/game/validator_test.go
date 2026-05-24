@@ -49,13 +49,13 @@ func TestRunningValuesEvaluatesPartialSides(t *testing.T) {
 	}
 }
 
-func TestRunningValuesAllowsLargeFinitePowerWithScientificNotation(t *testing.T) {
+func TestRunningValuesAllowsLargeFinitePowerWithExactInteger(t *testing.T) {
 	response := RunningValues("5^24=")
 
 	if response.ErrorMessage != "" {
 		t.Fatalf("ErrorMessage = %q", response.ErrorMessage)
 	}
-	if response.Left != "5.96046447754e+16" {
+	if response.Left != "59604644775390625" {
 		t.Fatalf("Left = %q", response.Left)
 	}
 	if response.Right != "?" {
@@ -69,8 +69,22 @@ func TestValidateEquationAcceptsLargeFinitePower(t *testing.T) {
 	if !response.Valid {
 		t.Fatalf("expected valid equation, got %q", response.ErrorMessage)
 	}
-	if response.LeftValue == nil || *response.LeftValue != "5.96046447754e+16" {
+	if response.LeftValue == nil || *response.LeftValue != "59604644775390625" {
 		t.Fatalf("LeftValue = %#v", response.LeftValue)
+	}
+}
+
+func TestValidateEquationUsesExactRationalEquality(t *testing.T) {
+	response := ValidateEquation("1/3+1/3=2/3", []int{1, 3, 1, 3, 2, 3})
+
+	if !response.Valid {
+		t.Fatalf("expected valid equation, got %q", response.ErrorMessage)
+	}
+	if response.LeftValue == nil || *response.LeftValue != "0.666666666667" {
+		t.Fatalf("LeftValue = %#v", response.LeftValue)
+	}
+	if response.RightValue == nil || *response.RightValue != "0.666666666667" {
+		t.Fatalf("RightValue = %#v", response.RightValue)
 	}
 }
 

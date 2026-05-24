@@ -112,14 +112,18 @@ type expressionParser struct {
 }
 
 func (parser *expressionParser) parseExpression() (number, error) {
-	result, err := parser.parseTerm()
+	return parser.parseExpressionUntil(nil)
+}
+
+func (parser *expressionParser) parseExpressionUntil(stopOperators map[string]struct{}) (number, error) {
+	result, err := parser.parseTerm(stopOperators)
 	if err != nil {
 		return zeroNumber(), err
 	}
 
-	for parser.matchOperator("+") || parser.matchOperator("-") {
+	for !parser.isAtStop(stopOperators) && (parser.matchOperator("+") || parser.matchOperator("-")) {
 		operation := parser.previous().text
-		right, err := parser.parseTerm()
+		right, err := parser.parseTerm(stopOperators)
 		if err != nil {
 			return zeroNumber(), err
 		}
@@ -135,27 +139,27 @@ func (parser *expressionParser) parseExpression() (number, error) {
 	return result, nil
 }
 
-func (parser *expressionParser) parseTerm() (number, error) {
-	result, err := parser.parsePower()
+func (parser *expressionParser) parseTerm(stopOperators map[string]struct{}) (number, error) {
+	result, err := parser.parsePower(stopOperators)
 	if err != nil {
 		return zeroNumber(), err
 	}
 
-	for {
+	for !parser.isAtStop(stopOperators) {
 		if parser.matchOperator("*") || parser.matchOperator("×") || parser.matchOperator("x") || parser.matchOperator("X") {
-			right, err := parser.parsePower()
+			right, err := parser.parsePower(stopOperators)
 			if err != nil {
 				return zeroNumber(), err
 			}
 			result, err = multiplyNumbers(result, right)
 		} else if parser.matchOperator("/") || parser.matchOperator("÷") {
-			right, err := parser.parsePower()
+			right, err := parser.parsePower(stopOperators)
 			if err != nil {
 				return zeroNumber(), err
 			}
 			result, err = divideNumbers(result, right)
-		} else if parser.startsImplicitMultiplication() {
-			right, err := parser.parsePower()
+		} else if parser.startsImplicitMultiplication(stopOperators) {
+			right, err := parser.parsePower(stopOperators)
 			if err != nil {
 				return zeroNumber(), err
 			}
@@ -170,13 +174,13 @@ func (parser *expressionParser) parseTerm() (number, error) {
 	return result, nil
 }
 
-func (parser *expressionParser) parsePower() (number, error) {
-	left, err := parser.parseUnary()
+func (parser *expressionParser) parsePower(stopOperators map[string]struct{}) (number, error) {
+	left, err := parser.parseUnary(stopOperators)
 	if err != nil {
 		return zeroNumber(), err
 	}
-	if parser.matchOperator("^") {
-		right, err := parser.parsePower()
+	if !parser.isAtStop(stopOperators) && parser.matchOperator("^") {
+		right, err := parser.parsePower(stopOperators)
 		if err != nil {
 			return zeroNumber(), err
 		}
@@ -185,30 +189,30 @@ func (parser *expressionParser) parsePower() (number, error) {
 	return left, nil
 }
 
-func (parser *expressionParser) parseUnary() (number, error) {
+func (parser *expressionParser) parseUnary(stopOperators map[string]struct{}) (number, error) {
 	if parser.matchOperator("-") {
-		value, err := parser.parseUnary()
+		value, err := parser.parseUnary(stopOperators)
 		if err != nil {
 			return zeroNumber(), err
 		}
 		return negateNumber(value)
 	}
 	if parser.matchOperator("√") {
-		value, err := parser.parseUnary()
+		value, err := parser.parseUnary(stopOperators)
 		if err != nil {
 			return zeroNumber(), err
 		}
 		return sqrtNumber(value)
 	}
-	return parser.parsePostfix()
+	return parser.parsePostfix(stopOperators)
 }
 
-func (parser *expressionParser) parsePostfix() (number, error) {
-	result, err := parser.parsePrimary()
+func (parser *expressionParser) parsePostfix(stopOperators map[string]struct{}) (number, error) {
+	result, err := parser.parsePrimary(stopOperators)
 	if err != nil {
 		return zeroNumber(), err
 	}
-	for parser.matchOperator("!") {
+	for !parser.isAtStop(stopOperators) && parser.matchOperator("!") {
 		result, err = factorialNumber(result)
 		if err != nil {
 			return zeroNumber(), err
@@ -217,15 +221,18 @@ func (parser *expressionParser) parsePostfix() (number, error) {
 	return checked(result)
 }
 
-func (parser *expressionParser) parsePrimary() (number, error) {
+func (parser *expressionParser) parsePrimary(stopOperators map[string]struct{}) (number, error) {
 	if parser.isAtEnd() {
+		return zeroNumber(), errUnexpectedEnd
+	}
+	if parser.isAtStop(stopOperators) {
 		return zeroNumber(), errUnexpectedEnd
 	}
 	if parser.matchKind(tokenNumber) {
 		return parser.previous().value.clone(), nil
 	}
 	if parser.matchOperator("(") {
-		value, err := parser.parseExpression()
+		value, err := parser.parseExpressionUntil(stopSet(")"))
 		if err != nil {
 			return zeroNumber(), err
 		}
@@ -235,7 +242,7 @@ func (parser *expressionParser) parsePrimary() (number, error) {
 		return value, nil
 	}
 	if parser.matchOperator("|") {
-		value, err := parser.parseExpression()
+		value, err := parser.parseExpressionUntil(stopSet("|"))
 		if err != nil {
 			return zeroNumber(), err
 		}
@@ -247,8 +254,8 @@ func (parser *expressionParser) parsePrimary() (number, error) {
 	return zeroNumber(), fmt.Errorf("%w: %s", errUnexpected, parser.peek().text)
 }
 
-func (parser *expressionParser) startsImplicitMultiplication() bool {
-	if parser.isAtEnd() {
+func (parser *expressionParser) startsImplicitMultiplication(stopOperators map[string]struct{}) bool {
+	if parser.isAtEnd() || parser.isAtStop(stopOperators) {
 		return false
 	}
 	current := parser.peek()
@@ -259,6 +266,26 @@ func (parser *expressionParser) startsImplicitMultiplication() bool {
 		return false
 	}
 	return current.text == "(" || current.text == "|" || current.text == "√"
+}
+
+func stopSet(operators ...string) map[string]struct{} {
+	result := make(map[string]struct{}, len(operators))
+	for _, operator := range operators {
+		result[operator] = struct{}{}
+	}
+	return result
+}
+
+func (parser *expressionParser) isAtStop(stopOperators map[string]struct{}) bool {
+	if parser.isAtEnd() || len(stopOperators) == 0 {
+		return false
+	}
+	current := parser.peek()
+	if current.kind != tokenOperator {
+		return false
+	}
+	_, shouldStop := stopOperators[current.text]
+	return shouldStop
 }
 
 func (parser *expressionParser) matchKind(kind tokenKind) bool {

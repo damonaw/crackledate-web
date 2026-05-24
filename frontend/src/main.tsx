@@ -170,6 +170,63 @@ function GamePage() {
     [cursorIndex, startTime],
   );
 
+  const insertPairedDelimiter = useCallback(
+    (openValue: string, closeValue: string) => {
+      if (!startTime) {
+        setStartTime(Date.now());
+      }
+      setTokens((current) => {
+        if (current[cursorIndex]?.value === closeValue) {
+          return current;
+        }
+
+        const next = [...current];
+        next.splice(cursorIndex, 0, createOperatorToken(openValue), createOperatorToken(closeValue));
+        return next;
+      });
+      setCursorIndex((index) => index + 1);
+      setMessage('');
+    },
+    [cursorIndex, startTime],
+  );
+
+  const insertClosingDelimiter = useCallback(
+    (closeValue: string) => {
+      if (!startTime) {
+        setStartTime(Date.now());
+      }
+      setTokens((current) => {
+        if (current[cursorIndex]?.value === closeValue) {
+          return current;
+        }
+
+        return insertTokenAt(current, cursorIndex, createOperatorToken(closeValue));
+      });
+      setCursorIndex((index) => index + 1);
+      setMessage('');
+    },
+    [cursorIndex, startTime],
+  );
+
+  const insertOperator = useCallback(
+    (value: string) => {
+      if (value === '|') {
+        insertPairedDelimiter('|', '|');
+        return;
+      }
+      if (value === '(') {
+        insertPairedDelimiter('(', ')');
+        return;
+      }
+      if (value === ')') {
+        insertClosingDelimiter(')');
+        return;
+      }
+      insertText(value);
+    },
+    [insertClosingDelimiter, insertPairedDelimiter, insertText],
+  );
+
   const appendDigit = useCallback(() => {
     if (nextDigit === null || nextDigitIndex === null) return;
     if (!startTime) {
@@ -182,7 +239,17 @@ function GamePage() {
 
   const backspace = useCallback(() => {
     if (cursorIndex === 0) return;
-    setTokens((current) => current.filter((_, index) => index !== cursorIndex - 1));
+    setTokens((current) => {
+      const left = current[cursorIndex - 1]?.value;
+      const right = current[cursorIndex]?.value;
+      if ((left === '(' && right === ')') || (left === '|' && right === '|')) {
+        const next = [...current];
+        next.splice(cursorIndex - 1, 2);
+        return next;
+      }
+
+      return current.filter((_, index) => index !== cursorIndex - 1);
+    });
     setCursorIndex((index) => Math.max(0, index - 1));
     setMessage('');
   }, [cursorIndex]);
@@ -364,7 +431,7 @@ function GamePage() {
                 <button
                   key={value}
                   type="button"
-                  onClick={() => insertText(value)}
+                  onClick={() => insertOperator(value)}
                   data-operator-value={value}
                 >
                   {label}

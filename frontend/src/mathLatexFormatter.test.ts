@@ -3,6 +3,10 @@ import { equationToLatex } from './mathLatexFormatter';
 
 const cursorLatex = '\\htmlClass{equation-cursor-marker}{\\vphantom{0}}';
 
+function cursorCount(value: string): number {
+  return value.split(cursorLatex).length - 1;
+}
+
 describe('equationToLatex', () => {
   test('formats simple division as a fraction', () => {
     expect(equationToLatex('516÷202')).toBe('\\frac{516}{202}');
@@ -30,6 +34,24 @@ describe('equationToLatex', () => {
 
   test('formats absolute values inside fractions', () => {
     expect(equationToLatex('|5|÷1')).toBe('\\frac{\\left|5\\right|}{1}');
+  });
+
+  test('renders one cursor inside an empty absolute value pair', () => {
+    const latex = equationToLatex('||', { cursorIndex: 1 });
+
+    expect(latex).toBe(`\\left|${cursorLatex}\\phantom{0}\\right|`);
+    expect(cursorCount(latex)).toBe(1);
+  });
+
+  test('renders visible empty parentheses while editing', () => {
+    expect(equationToLatex('()', { cursorIndex: 1 })).toBe(
+      `\\left(${cursorLatex}\\phantom{0}\\right)`,
+    );
+  });
+
+  test('keeps cursor when redundant parentheses are visually dropped', () => {
+    expect(equationToLatex('(5)', { cursorIndex: 0 })).toBe(`${cursorLatex}5`);
+    expect(equationToLatex('(5)', { cursorIndex: 3 })).toBe(`5${cursorLatex}`);
   });
 
   test('keeps grouping when implicit multiplication needs it', () => {

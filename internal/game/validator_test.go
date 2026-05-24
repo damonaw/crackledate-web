@@ -121,6 +121,39 @@ func TestRunningValuesKeepsTerminatingDecimalsPlain(t *testing.T) {
 	}
 }
 
+func TestRunningValuesEvaluatesAbsoluteValue(t *testing.T) {
+	response := RunningValues("|5|=")
+
+	if response.ErrorMessage != "" {
+		t.Fatalf("ErrorMessage = %q", response.ErrorMessage)
+	}
+	if response.Left != "5" {
+		t.Fatalf("Left = %q", response.Left)
+	}
+}
+
+func TestRunningValuesAllowsImplicitMultiplicationBeforeAbsoluteValue(t *testing.T) {
+	response := RunningValues("5|1|=")
+
+	if response.ErrorMessage != "" {
+		t.Fatalf("ErrorMessage = %q", response.ErrorMessage)
+	}
+	if response.Left != "5" {
+		t.Fatalf("Left = %q", response.Left)
+	}
+}
+
+func TestRunningValuesEvaluatesAbsoluteValueAfterPostfix(t *testing.T) {
+	response := RunningValues("√20*2!*|6|")
+
+	if response.ErrorMessage != "" {
+		t.Fatalf("ErrorMessage = %q", response.ErrorMessage)
+	}
+	if response.Left == "?" {
+		t.Fatalf("Left = %q", response.Left)
+	}
+}
+
 func TestRunningValuesStillRejectsExtremelyLargeExponent(t *testing.T) {
 	response := RunningValues("51^3^20=")
 

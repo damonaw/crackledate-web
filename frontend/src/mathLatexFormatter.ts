@@ -420,7 +420,6 @@ function renderAbsolute(node: Extract<MathNode, { kind: 'absolute' }>, options: 
     cursorAt(options.cursorIndex, node.start),
     '\\left|',
     renderNode(node.value, 'absolute', options),
-    cursorAt(options.cursorIndex, node.value.end),
     '\\right|',
     cursorAt(options.cursorIndex, node.end),
   ].join('');
@@ -466,8 +465,18 @@ function renderBinary(node: Extract<MathNode, { kind: 'binary' }>, context: Rend
 function renderGroup(node: Extract<MathNode, { kind: 'group' }>, context: RenderContext, options: RenderOptions): string {
   const rendered = renderNode(node.value, 'top', options);
 
+  if (node.value.kind === 'placeholder') {
+    return [
+      cursorAt(options.cursorIndex, node.start),
+      '\\left(',
+      rendered,
+      '\\right)',
+      cursorAt(options.cursorIndex, node.end),
+    ].join('');
+  }
+
   if (context === 'fraction' || context === 'exponent' || context === 'sqrt' || context === 'absolute' || context === 'top') {
-    return rendered;
+    return `${cursorAt(options.cursorIndex, node.start)}${rendered}${cursorAt(options.cursorIndex, node.end)}`;
   }
 
   if (needsVisibleGroup(node.value)) {

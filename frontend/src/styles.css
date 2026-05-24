@@ -520,7 +520,7 @@ h1 {
 
 .equation-box {
   position: relative;
-  min-height: 92px;
+  min-height: 108px;
   border-radius: 12px;
   border: 1px solid transparent;
   background: var(--ios-secondary-background);
@@ -528,7 +528,7 @@ h1 {
   align-items: center;
   justify-content: center;
   align-content: center;
-  padding: 18px 16px;
+  padding: 22px 16px;
   font-size: 1.65rem;
   overflow-x: auto;
   overflow-y: visible;
@@ -542,6 +542,7 @@ h1 {
 
 .equation-preview {
   width: 100%;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -557,14 +558,17 @@ h1 {
 }
 
 .math-equation {
+  display: inline-flex;
+  align-items: center;
+  padding-block: 4px;
   color: inherit;
-  line-height: 1;
+  line-height: normal;
 }
 
 .math-equation .katex {
   color: inherit;
   font-size: 1em;
-  line-height: 1.15;
+  line-height: normal;
 }
 
 .equation-preview .katex {
@@ -579,7 +583,7 @@ h1 {
   justify-content: center;
   overflow-x: auto;
   overflow-y: visible;
-  padding: 18px 16px;
+  padding: 22px 16px;
   scrollbar-width: none;
 }
 

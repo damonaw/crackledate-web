@@ -15,15 +15,14 @@ This keeps the runtime small and simple: the single container can sit behind any
 Frontend:
 
 ```bash
-cd web/frontend
-npm install
+cd frontend
+npm ci
 npm run dev
 ```
 
 Backend:
 
 ```bash
-cd web
 go run ./cmd/server
 ```
 
@@ -32,7 +31,6 @@ The Vite dev server proxies `/api` to `http://localhost:8080`.
 ## Docker
 
 ```bash
-cd web
 docker compose up --build -d
 curl -I http://127.0.0.1:8082
 ```

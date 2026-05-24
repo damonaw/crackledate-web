@@ -432,28 +432,6 @@ h1 {
   cursor: pointer;
 }
 
-.date-picker {
-  display: grid;
-  gap: 7px;
-  color: var(--ios-secondary-label);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.start-date-picker {
-  width: min(320px, calc(100% - 24px));
-  justify-self: center;
-}
-
-.date-picker input {
-  min-height: 38px;
-  border: 1px solid var(--ios-separator);
-  border-radius: 10px;
-  background: var(--ios-tertiary-background);
-  color: var(--ios-label);
-  padding: 8px 11px;
-}
-
 .digit-rail {
   display: flex;
   align-items: center;

@@ -379,10 +379,7 @@ function GamePage() {
       {!isPlaying && (
         <StartPage
           puzzle={puzzle}
-          selectedDate={selectedDate}
-          dateInputLabel={dateInputLabel}
           solutionCount={todaySolutions.length}
-          onDateChange={setSelectedDate}
           onPlay={playPuzzle}
         />
       )}
@@ -682,17 +679,11 @@ function appendValueSegment(segments: ValueSegment[], text: string, isRepeating:
 
 function StartPage({
   puzzle,
-  selectedDate,
-  dateInputLabel,
   solutionCount,
-  onDateChange,
   onPlay,
 }: {
   puzzle: Puzzle | null;
-  selectedDate: string;
-  dateInputLabel: string;
   solutionCount: number;
-  onDateChange: (date: string) => void;
   onPlay: () => void;
 }) {
   const [infoMode, setInfoMode] = useState<'rules' | 'stats' | null>(null);
@@ -753,15 +744,6 @@ function StartPage({
             )}
           </div>
         )}
-
-        <label className="date-picker start-date-picker">
-          <span>{dateInputLabel}</span>
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(event) => onDateChange(event.target.value)}
-          />
-        </label>
       </div>
     </section>
   );

@@ -15,6 +15,7 @@
   --ios-gray: #8e8e93;
   --glass-fill: rgba(242, 242, 247, 0.76);
   --glass-border: rgba(60, 60, 67, 0.18);
+  --toast-fill: rgba(255, 255, 255, 0.86);
   --shadow-soft: 0 16px 38px rgba(0, 0, 0, 0.08);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", sans-serif;
   background: var(--ios-background);
@@ -800,16 +801,65 @@ h1 {
   opacity: 0.82;
 }
 
-.status-message {
-  margin: -2px 16px 0;
-  color: var(--ios-green);
-  font-weight: 700;
-  line-height: 1.35;
-  text-align: left;
+.toast-region {
+  position: fixed;
+  z-index: 40;
+  top: calc(env(safe-area-inset-top, 0px) + 74px);
+  left: 50%;
+  width: min(430px, calc(100vw - 28px));
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  transform: translateX(-50%);
 }
 
-.status-message.error {
-  color: var(--ios-red);
+.status-toast {
+  max-width: 100%;
+  min-height: 44px;
+  border: 1px solid rgba(142, 142, 147, 0.22);
+  border-radius: 14px;
+  background: var(--toast-fill);
+  color: var(--ios-label);
+  display: grid;
+  grid-template-columns: 4px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px 10px 10px;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.25;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.16);
+  backdrop-filter: blur(24px) saturate(1.35);
+  animation: toast-in 180ms ease-out;
+}
+
+.status-toast-accent {
+  width: 4px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--ios-green);
+}
+
+.status-toast.error .status-toast-accent {
+  background: var(--ios-red);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.98);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-toast {
+    animation: none;
+  }
 }
 
 .solutions-panel {
@@ -1024,6 +1074,7 @@ h1 {
     --ios-gray: #8e8e93;
     --glass-fill: rgba(28, 28, 30, 0.72);
     --glass-border: rgba(84, 84, 88, 0.48);
+    --toast-fill: rgba(28, 28, 30, 0.9);
     --shadow-soft: none;
   }
 
@@ -1061,6 +1112,7 @@ h1 {
   --ios-gray: #8e8e93;
   --glass-fill: rgba(28, 28, 30, 0.72);
   --glass-border: rgba(84, 84, 88, 0.48);
+  --toast-fill: rgba(28, 28, 30, 0.9);
   --shadow-soft: none;
 }
 
@@ -1097,6 +1149,7 @@ h1 {
   --ios-gray: #8e8e93;
   --glass-fill: rgba(242, 242, 247, 0.76);
   --glass-border: rgba(60, 60, 67, 0.18);
+  --toast-fill: rgba(255, 255, 255, 0.86);
   --shadow-soft: 0 16px 38px rgba(0, 0, 0, 0.08);
 }
 

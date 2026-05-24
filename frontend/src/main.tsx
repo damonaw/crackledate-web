@@ -298,9 +298,9 @@ function GamePage() {
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
+    clear();
     setMessageTone('success');
     setMessage(`Solved. Both sides equal ${solution.value}.`);
-    clear();
   }, [clear, equation, evaluation.left, puzzle, startTime, todaySolutions]);
 
   const dateInputLabel = useMemo(() => {
@@ -330,7 +330,7 @@ function GamePage() {
     setActiveView('game');
   }, []);
 
-  const feedbackMessage = message || evaluation.errorMessage;
+  const feedbackMessage = message || evaluation.errorMessage || '';
   const feedbackTone: FeedbackTone = message ? messageTone : 'error';
 
   return (
@@ -401,12 +401,6 @@ function GamePage() {
 
             <EquationEditor tokens={tokens} cursorIndex={cursorIndex} onCursorChange={setCursorIndex} />
 
-            {feedbackMessage && (
-              <p className={`status-message ${feedbackTone === 'error' ? 'error' : ''}`} aria-live="polite">
-                {feedbackMessage}
-              </p>
-            )}
-
             {isEasyMode && (
               <div className="helper-row" aria-live="polite">
                 <div className="helper-value">
@@ -459,6 +453,8 @@ function GamePage() {
         </>
       )}
 
+      <StatusToast message={feedbackMessage} tone={feedbackTone} />
+
       {isPlaying && activeView === 'solutions' && (
         <SolutionsPage
           displayDate={puzzle?.displayDate ?? 'Selected date'}
@@ -467,6 +463,25 @@ function GamePage() {
         />
       )}
     </main>
+  );
+}
+
+function StatusToast({ message, tone }: { message: string; tone: FeedbackTone }) {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <div className="toast-region" aria-live={tone === 'error' ? 'assertive' : 'polite'}>
+      <div
+        className={`status-toast ${tone === 'error' ? 'error' : 'success'}`}
+        role={tone === 'error' ? 'alert' : 'status'}
+        data-testid="status-toast"
+      >
+        <span className="status-toast-accent" aria-hidden="true" />
+        <span>{message}</span>
+      </div>
+    </div>
   );
 }
 

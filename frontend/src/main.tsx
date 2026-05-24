@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
+import { InlineMath } from 'react-katex';
+import 'katex/dist/katex.min.css';
+import { equationToLatex } from './mathLatexFormatter';
 import './styles.css';
 
 type Puzzle = {
@@ -503,13 +506,26 @@ function SolutionsList({ solutions }: { solutions: SavedSolution[] }) {
     <ol>
       {solutions.map((solution) => (
         <li key={`${solution.equation}-${solution.timestamp}`}>
-          <strong>{solution.equation}</strong>
+          <strong>
+            <MathEquation equation={solution.equation} className="solution-equation" />
+          </strong>
           <span>
             {formatTime(solution.seconds)} · value <RepeatingDecimalValue value={solution.value} />
           </span>
         </li>
       ))}
     </ol>
+  );
+}
+
+function MathEquation({ equation, className = '' }: { equation: string; className?: string }) {
+  const latex = useMemo(() => equationToLatex(equation), [equation]);
+  const classNames = ['math-equation', className].filter(Boolean).join(' ');
+
+  return (
+    <span className={classNames} aria-label={equation}>
+      <InlineMath math={latex} renderError={() => <span>{equation}</span>} />
+    </span>
   );
 }
 
@@ -692,28 +708,35 @@ function EquationEditor({
     );
   }
 
+  const equation = tokensToEquation(tokens);
+
   return (
     <div className="equation-box" aria-label="Equation input" data-testid="equation-editor">
-      <CursorSlot index={0} active={cursorIndex === 0} onCursorChange={onCursorChange} label="Move cursor to start" />
-      {tokens.map((token, index) => (
-        <React.Fragment key={token.id}>
-          <button
-            className="equation-token"
-            type="button"
-            onClick={() => onCursorChange(index + 1)}
-            aria-label={`Move cursor after ${token.value}`}
-            data-testid={`equation-token-${index}`}
-          >
-            {token.value}
-          </button>
-          <CursorSlot
-            index={index + 1}
-            active={cursorIndex === index + 1}
-            onCursorChange={onCursorChange}
-            label={index === tokens.length - 1 ? 'Move cursor to end' : `Move cursor after ${token.value}`}
-          />
-        </React.Fragment>
-      ))}
+      <div className="equation-preview" aria-hidden="true">
+        <MathEquation equation={equation} />
+      </div>
+      <div className="equation-hit-layer">
+        <CursorSlot index={0} active={cursorIndex === 0} onCursorChange={onCursorChange} label="Move cursor to start" />
+        {tokens.map((token, index) => (
+          <React.Fragment key={token.id}>
+            <button
+              className="equation-token"
+              type="button"
+              onClick={() => onCursorChange(index + 1)}
+              aria-label={`Move cursor after ${token.value}`}
+              data-testid={`equation-token-${index}`}
+            >
+              {token.value}
+            </button>
+            <CursorSlot
+              index={index + 1}
+              active={cursorIndex === index + 1}
+              onCursorChange={onCursorChange}
+              label={index === tokens.length - 1 ? 'Move cursor to end' : `Move cursor after ${token.value}`}
+            />
+          </React.Fragment>
+        ))}
+      </div>
     </div>
   );
 }

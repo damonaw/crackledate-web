@@ -259,9 +259,11 @@ function GamePage() {
               <span>R {evaluation.right || '?'}</span>
             </div>
 
-            <button className="next-digit" type="button" onClick={appendDigit} disabled={nextDigit === null}>
-              {nextDigit ?? 'Done'}
-            </button>
+            {nextDigit !== null && (
+              <button className="next-digit" type="button" onClick={appendDigit}>
+                {nextDigit}
+              </button>
+            )}
 
             <div className="operator-grid" aria-label="Equation controls">
               {operators.map(([label, value]) => (

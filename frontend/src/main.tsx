@@ -31,6 +31,8 @@ type SavedSolution = {
 };
 
 type StoredSolutions = Record<string, SavedSolution[]>;
+type ThemePreference = 'system' | 'light' | 'dark';
+type DifficultyMode = 'easy' | 'hard';
 
 const operators = [
   ['+', '+'],
@@ -47,6 +49,8 @@ const operators = [
 
 const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
+const themePreferenceKey = 'crackledate.web.theme.v1';
+const difficultyModeKey = 'crackledate.web.difficulty.v1';
 
 function App() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -69,9 +73,26 @@ function GamePage() {
   const [message, setMessage] = useState('');
   const [startTime, setStartTime] = useState<number | null>(null);
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
+  const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
+  const [showSettings, setShowSettings] = useState(false);
 
   const todaySolutions = puzzle ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
   const nextDigit = puzzle && consumedCount < puzzle.digits.length ? puzzle.digits[consumedCount] : null;
+  const isEasyMode = difficultyMode === 'easy';
+
+  useEffect(() => {
+    if (themePreference === 'system') {
+      document.documentElement.removeAttribute('data-theme');
+    } else {
+      document.documentElement.dataset.theme = themePreference;
+    }
+    localStorage.setItem(themePreferenceKey, themePreference);
+  }, [themePreference]);
+
+  useEffect(() => {
+    localStorage.setItem(difficultyModeKey, difficultyMode);
+  }, [difficultyMode]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -207,10 +228,26 @@ function GamePage() {
           <span>Crackle Date</span>
         </button>
         <nav className="site-nav" aria-label="Site">
+          <button
+            type="button"
+            aria-expanded={showSettings}
+            onClick={() => setShowSettings((isVisible) => !isVisible)}
+          >
+            Settings
+          </button>
           <a href="/privacy/">Privacy</a>
           <a href="/support/">Support</a>
         </nav>
       </header>
+
+      {showSettings && (
+        <SettingsPanel
+          themePreference={themePreference}
+          difficultyMode={difficultyMode}
+          onThemePreferenceChange={setThemePreference}
+          onDifficultyModeChange={setDifficultyMode}
+        />
+      )}
 
       {!isPlaying && (
         <StartPage
@@ -254,10 +291,12 @@ function GamePage() {
               <span className="cursor" aria-hidden="true" />
             </div>
 
-            <div className="helper-row" aria-live="polite">
-              <span>L {evaluation.left || '?'}</span>
-              <span>R {evaluation.right || '?'}</span>
-            </div>
+            {isEasyMode && (
+              <div className="helper-row" aria-live="polite">
+                <span>L {evaluation.left || '?'}</span>
+                <span>R {evaluation.right || '?'}</span>
+              </div>
+            )}
 
             {nextDigit !== null && (
               <button className="next-digit" type="button" onClick={appendDigit}>
@@ -309,6 +348,58 @@ function GamePage() {
         </>
       )}
     </main>
+  );
+}
+
+function SettingsPanel({
+  themePreference,
+  difficultyMode,
+  onThemePreferenceChange,
+  onDifficultyModeChange,
+}: {
+  themePreference: ThemePreference;
+  difficultyMode: DifficultyMode;
+  onThemePreferenceChange: (preference: ThemePreference) => void;
+  onDifficultyModeChange: (mode: DifficultyMode) => void;
+}) {
+  return (
+    <section className="settings-panel" aria-label="Settings">
+      <fieldset>
+        <legend>Appearance</legend>
+        <div className="segmented-control">
+          {(['system', 'light', 'dark'] as const).map((preference) => (
+            <label key={preference}>
+              <input
+                type="radio"
+                name="appearance"
+                value={preference}
+                checked={themePreference === preference}
+                onChange={() => onThemePreferenceChange(preference)}
+              />
+              <span>{preference[0].toUpperCase() + preference.slice(1)}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Mode</legend>
+        <div className="segmented-control">
+          {(['easy', 'hard'] as const).map((mode) => (
+            <label key={mode}>
+              <input
+                type="radio"
+                name="difficulty"
+                value={mode}
+                checked={difficultyMode === mode}
+                onChange={() => onDifficultyModeChange(mode)}
+              />
+              <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    </section>
   );
 }
 
@@ -490,6 +581,15 @@ function loadSolutions(): StoredSolutions {
   } catch {
     return {};
   }
+}
+
+function loadThemePreference(): ThemePreference {
+  const value = localStorage.getItem(themePreferenceKey);
+  return value === 'light' || value === 'dark' ? value : 'system';
+}
+
+function loadDifficultyMode(): DifficultyMode {
+  return localStorage.getItem(difficultyModeKey) === 'hard' ? 'hard' : 'easy';
 }
 
 function localDateIdentifier(date: Date): string {

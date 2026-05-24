@@ -203,7 +203,8 @@ function GamePage() {
     <main className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'}`}>
       <header className="top-bar">
         <button className="brand" type="button" onClick={showStart} aria-label="Crackle Date home">
-          Crackle Date
+          <img src="/app-icon.png" alt="" />
+          <span>Crackle Date</span>
         </button>
         <nav className="site-nav" aria-label="Site">
           <a href="/privacy/">Privacy</a>
@@ -324,14 +325,15 @@ function StartPage({
   onDateChange: (date: string) => void;
   onPlay: () => void;
 }) {
+  const [infoMode, setInfoMode] = useState<'rules' | 'stats' | null>(null);
+
   return (
     <section className="start-panel" aria-labelledby="start-title">
-      <div className="start-copy">
-        <p className="start-date">{puzzle?.displayDate ?? 'Today'}</p>
-        <h1 id="start-title">Crackle Date</h1>
-        <p className="start-subtitle">
-          Use today&apos;s digits in order to build a balanced equation.
-        </p>
+      <div className="start-card">
+        <div className="start-copy">
+          <h1 id="start-title">Crackle Date</h1>
+          <p className="start-date">{puzzle?.displayDate ?? 'Today'}</p>
+        </div>
 
         {puzzle && (
           <DigitRail
@@ -342,32 +344,55 @@ function StartPage({
           />
         )}
 
-        <div className="start-actions">
-          <button className="play-button" type="button" onClick={onPlay}>
-            Play Puzzle
-          </button>
-          <label className="date-picker start-date-picker">
-            <span>{dateInputLabel}</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(event) => onDateChange(event.target.value)}
-            />
-          </label>
-        </div>
-      </div>
+        <p className="start-subtitle">
+          Use today&apos;s digits in order to build matching equations.
+        </p>
 
-      <div className="start-preview" aria-label="Puzzle preview">
-        <div className="preview-header">
-          <span>{solutionCount === 1 ? '1 saved solution' : `${solutionCount} saved solutions`}</span>
-          <span>Local play</span>
+        <button className="play-button" type="button" onClick={onPlay}>
+          Play
+        </button>
+
+        <div className="start-secondary-actions">
+          <button
+            type="button"
+            aria-pressed={infoMode === 'rules'}
+            onClick={() => setInfoMode((mode) => (mode === 'rules' ? null : 'rules'))}
+          >
+            How to Play
+          </button>
+          <button
+            type="button"
+            aria-pressed={infoMode === 'stats'}
+            onClick={() => setInfoMode((mode) => (mode === 'stats' ? null : 'stats'))}
+          >
+            Stats
+          </button>
         </div>
-        <div className="preview-equation">{previewEquation(puzzle)}</div>
-        <div className="preview-rules" aria-label="Rules summary">
-          <span>Use every digit</span>
-          <span>Keep order</span>
-          <span>Balance both sides</span>
-        </div>
+
+        {infoMode && (
+          <div className="start-info-card">
+            {infoMode === 'rules' ? (
+              <>
+                <strong>Use the date digits in order.</strong>
+                <span>Add operators between digits and make both sides of the equals sign match.</span>
+              </>
+            ) : (
+              <>
+                <strong>{solutionCount === 1 ? '1 saved solution' : `${solutionCount} saved solutions`}</strong>
+                <span>Stats and solutions are stored locally in this browser.</span>
+              </>
+            )}
+          </div>
+        )}
+
+        <label className="date-picker start-date-picker">
+          <span>{dateInputLabel}</span>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(event) => onDateChange(event.target.value)}
+          />
+        </label>
       </div>
     </section>
   );
@@ -395,14 +420,6 @@ function DigitRail({
       ))}
     </div>
   );
-}
-
-function previewEquation(puzzle: Puzzle | null): string {
-  if (!puzzle || puzzle.digits.length < 4) {
-    return '? + √? = ?';
-  }
-  const [first, second, third, fourth] = puzzle.digits;
-  return `${first} + √${second}${third} = ${fourth} + ?`;
 }
 
 function PrivacyPage() {

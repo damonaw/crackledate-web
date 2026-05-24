@@ -706,18 +706,6 @@ function StartPage({
           <p className="start-date">{puzzle?.displayDate ?? 'Today'}</p>
         </div>
 
-        {puzzle && (
-          <DigitRail
-            digits={puzzle.digits}
-            delimiterPositions={puzzle.delimiterPositions}
-            variant="start"
-          />
-        )}
-
-        <p className="start-subtitle">
-          Use today&apos;s digits in order to build matching equations.
-        </p>
-
         <button className="play-button" type="button" onClick={onPlay}>
           Play
         </button>
@@ -764,17 +752,15 @@ function DigitRail({
   delimiterPositions,
   usedDigitIndices = emptyDigitIndices,
   activeIndex = null,
-  variant = 'game',
 }: {
   digits: number[];
   delimiterPositions: number[];
   usedDigitIndices?: ReadonlySet<number>;
   activeIndex?: number | null;
-  variant?: 'game' | 'start';
 }) {
   const delimiters = new Set(delimiterPositions);
   return (
-    <div className={`digit-rail ${variant === 'start' ? 'start-digits' : ''}`} aria-label="Date digits">
+    <div className="digit-rail" aria-label="Date digits">
       {digits.map((digit, index) => (
         <React.Fragment key={`${digit}-${index}`}>
           <span className={digitClassName(index, usedDigitIndices, activeIndex)}>{digit}</span>

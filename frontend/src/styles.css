@@ -358,15 +358,6 @@ h1 {
   font-weight: 650;
 }
 
-.start-subtitle {
-  width: min(320px, 100%);
-  margin: -8px auto 0;
-  color: var(--ios-secondary-label);
-  font-size: 1rem;
-  line-height: 1.42;
-  text-align: center;
-}
-
 .start-secondary-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -478,13 +469,6 @@ h1 {
 
 .digit-rail i::before {
   content: "/";
-}
-
-.start-digits span {
-  color: var(--ios-secondary-label);
-  background: var(--ios-secondary-background);
-  border-color: rgba(142, 142, 147, 0.3);
-  box-shadow: none;
 }
 
 .play-shell {

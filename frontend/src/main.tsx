@@ -235,11 +235,22 @@ function GamePage() {
 
   return (
     <main className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'}`}>
-      <header className="top-bar">
+      <header className={`top-bar ${isPlaying ? 'game-top-bar' : ''}`}>
         <button className="brand" type="button" onClick={showStart} aria-label="Crackle Date home">
           <img src="/app-icon.png" alt="" />
           <span>Crackle Date</span>
         </button>
+        {isPlaying && (
+          <label className="top-date-picker">
+            <span>{puzzle?.displayDate ?? 'Crackle Date'}</span>
+            <input
+              type="date"
+              aria-label={dateInputLabel}
+              value={selectedDate}
+              onChange={(event) => setSelectedDate(event.target.value)}
+            />
+          </label>
+        )}
         <nav className="site-nav" aria-label="Site">
           <button
             type="button"
@@ -248,8 +259,6 @@ function GamePage() {
           >
             Settings
           </button>
-          <a href="/privacy/">Privacy</a>
-          <a href="/support/">Support</a>
         </nav>
       </header>
 
@@ -275,22 +284,7 @@ function GamePage() {
 
       {isPlaying && (
         <>
-          <section className="game-panel" aria-labelledby="game-title">
-            <div className="game-heading">
-              <div>
-                <h1 id="game-title">{puzzle?.displayDate ?? 'Crackle Date'}</h1>
-                <p>Use the date digits in order to build matching equations.</p>
-              </div>
-              <label className="date-picker">
-                <span>{dateInputLabel}</span>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(event) => setSelectedDate(event.target.value)}
-                />
-              </label>
-            </div>
-
+          <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
             {puzzle && (
               <DigitRail
                 digits={puzzle.digits}
@@ -422,6 +416,11 @@ function SettingsPanel({
           </div>
         </fieldset>
       </div>
+
+      <nav className="settings-links" aria-label="Help and policies">
+        <a href="/privacy/">Privacy</a>
+        <a href="/support/">Support</a>
+      </nav>
     </section>
   );
 }

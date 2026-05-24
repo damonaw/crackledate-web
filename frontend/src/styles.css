@@ -49,6 +49,7 @@ a {
 }
 
 .app-shell {
+  position: relative;
   width: min(430px, 100%);
   min-height: 100vh;
   margin: 0 auto;
@@ -121,41 +122,86 @@ a {
 }
 
 .settings-panel {
-  width: 100%;
-  margin: -6px 0 18px;
+  position: absolute;
+  top: 70px;
+  right: 12px;
+  z-index: 20;
+  width: min(380px, calc(100% - 24px));
+  margin: 0;
   border: 1px solid var(--glass-border);
-  border-radius: 18px;
-  background: var(--glass-fill);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.28)),
+    var(--glass-fill);
   display: grid;
-  gap: 14px;
-  padding: 14px;
+  gap: 12px;
+  padding: 12px;
   box-shadow: var(--shadow-soft);
   backdrop-filter: blur(22px) saturate(1.3);
 }
 
-.settings-panel fieldset {
-  min-width: 0;
-  border: 0;
-  display: grid;
-  gap: 8px;
-  margin: 0;
-  padding: 0;
+.settings-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 4px 0;
 }
 
-.settings-panel legend {
+.settings-header h2 {
+  margin: 0;
+  color: var(--ios-label);
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.settings-header span {
   color: var(--ios-secondary-label);
   font-size: 0.78rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.settings-group {
+  border: 1px solid var(--ios-separator);
+  border-radius: 16px;
+  background: var(--ios-tertiary-background);
+  overflow: hidden;
+}
+
+.settings-row {
+  min-width: 0;
+  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 11px 12px;
+}
+
+.settings-row + .settings-row {
+  border-top: 1px solid var(--ios-separator);
+}
+
+.settings-row legend {
+  width: 96px;
+  color: var(--ios-secondary-label);
+  float: left;
+  font-size: 0.86rem;
   font-weight: 700;
 }
 
 .segmented-control {
   border: 1px solid var(--ios-separator);
-  border-radius: 12px;
+  border-radius: 999px;
   background: var(--ios-secondary-background);
   display: grid;
   grid-auto-columns: 1fr;
   grid-auto-flow: column;
-  padding: 3px;
+  flex: 1;
+  min-width: 0;
+  padding: 2px;
 }
 
 .segmented-control label {
@@ -169,21 +215,25 @@ a {
 }
 
 .segmented-control span {
-  min-height: 34px;
-  border-radius: 9px;
+  min-height: 30px;
+  border-radius: 999px;
   color: var(--ios-secondary-label);
   display: grid;
   place-items: center;
-  padding: 8px 10px;
-  font-size: 0.9rem;
+  padding: 7px 10px;
+  font-size: 0.84rem;
   font-weight: 650;
   cursor: pointer;
 }
 
 .segmented-control input:checked + span {
-  background: var(--ios-tertiary-background);
+  background: var(--ios-blue);
   color: var(--ios-label);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 12px rgba(0, 122, 255, 0.2);
+}
+
+:root:not([data-theme="dark"]) .segmented-control input:checked + span {
+  color: #ffffff;
 }
 
 .start-shell {
@@ -623,11 +673,6 @@ h1 {
   .play-shell .top-bar {
     grid-column: 1 / -1;
   }
-
-  .play-shell .settings-panel {
-    grid-column: 1 / -1;
-  }
-
   .solutions-panel {
     margin-top: 0;
     position: sticky;
@@ -697,6 +742,12 @@ h1 {
   .document-page section {
     background: var(--ios-secondary-background);
   }
+
+  .settings-panel {
+    background:
+      linear-gradient(180deg, rgba(44, 44, 46, 0.9), rgba(28, 28, 30, 0.72)),
+      var(--glass-fill);
+  }
 }
 
 :root[data-theme="dark"] {
@@ -728,6 +779,12 @@ h1 {
   background: var(--ios-secondary-background);
 }
 
+:root[data-theme="dark"] .settings-panel {
+  background:
+    linear-gradient(180deg, rgba(44, 44, 46, 0.9), rgba(28, 28, 30, 0.72)),
+    var(--glass-fill);
+}
+
 :root[data-theme="light"] {
   color-scheme: light;
   --ios-background: #ffffff;
@@ -755,4 +812,10 @@ h1 {
 :root[data-theme="light"] .solutions-panel,
 :root[data-theme="light"] .document-page section {
   background: var(--ios-tertiary-background);
+}
+
+:root[data-theme="light"] .settings-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0.28)),
+    var(--glass-fill);
 }

@@ -364,41 +364,48 @@ function SettingsPanel({
 }) {
   return (
     <section className="settings-panel" aria-label="Settings">
-      <fieldset>
-        <legend>Appearance</legend>
-        <div className="segmented-control">
-          {(['system', 'light', 'dark'] as const).map((preference) => (
-            <label key={preference}>
-              <input
-                type="radio"
-                name="appearance"
-                value={preference}
-                checked={themePreference === preference}
-                onChange={() => onThemePreferenceChange(preference)}
-              />
-              <span>{preference[0].toUpperCase() + preference.slice(1)}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <div className="settings-header">
+        <h2>Settings</h2>
+        <span>Saved on this browser</span>
+      </div>
 
-      <fieldset>
-        <legend>Mode</legend>
-        <div className="segmented-control">
-          {(['easy', 'hard'] as const).map((mode) => (
-            <label key={mode}>
-              <input
-                type="radio"
-                name="difficulty"
-                value={mode}
-                checked={difficultyMode === mode}
-                onChange={() => onDifficultyModeChange(mode)}
-              />
-              <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
-            </label>
-          ))}
-        </div>
-      </fieldset>
+      <div className="settings-group">
+        <fieldset className="settings-row">
+          <legend>Appearance</legend>
+          <div className="segmented-control">
+            {(['system', 'light', 'dark'] as const).map((preference) => (
+              <label key={preference}>
+                <input
+                  type="radio"
+                  name="appearance"
+                  value={preference}
+                  checked={themePreference === preference}
+                  onChange={() => onThemePreferenceChange(preference)}
+                />
+                <span>{preference === 'system' ? 'Auto' : preference[0].toUpperCase() + preference.slice(1)}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset className="settings-row">
+          <legend>Difficulty</legend>
+          <div className="segmented-control">
+            {(['easy', 'hard'] as const).map((mode) => (
+              <label key={mode}>
+                <input
+                  type="radio"
+                  name="difficulty"
+                  value={mode}
+                  checked={difficultyMode === mode}
+                  onChange={() => onDifficultyModeChange(mode)}
+                />
+                <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
     </section>
   );
 }

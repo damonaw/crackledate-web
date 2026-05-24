@@ -1,41 +1,81 @@
 type Token =
-  | { kind: 'number'; text: string }
-  | { kind: 'operator'; text: Operator }
-  | { kind: 'equals'; text: '=' }
-  | { kind: 'leftParen'; text: '(' }
-  | { kind: 'rightParen'; text: ')' }
-  | { kind: 'pipe'; text: '|' };
+  | { kind: 'number'; text: string; start: number; end: number }
+  | { kind: 'operator'; text: Operator; start: number; end: number }
+  | { kind: 'equals'; text: '='; start: number; end: number }
+  | { kind: 'leftParen'; text: '('; start: number; end: number }
+  | { kind: 'rightParen'; text: ')'; start: number; end: number }
+  | { kind: 'pipe'; text: '|'; start: number; end: number };
 
 type Operator = '+' | '-' | '*' | '/' | '^' | '√' | '!';
 type StopKind = 'rightParen' | 'pipe';
 
+type NodeBase = {
+  start: number;
+  end: number;
+};
+
 type MathNode =
-  | { kind: 'number'; value: string }
-  | { kind: 'placeholder' }
-  | { kind: 'binary'; operator: '+' | '-' | '*' | '/' | '^'; left: MathNode; right: MathNode }
-  | { kind: 'unary'; operator: '-' | '√'; value: MathNode }
-  | { kind: 'postfix'; operator: '!'; value: MathNode }
-  | { kind: 'group'; value: MathNode }
-  | { kind: 'absolute'; value: MathNode };
+  | (NodeBase & { kind: 'number'; value: string })
+  | (NodeBase & { kind: 'placeholder' })
+  | (NodeBase & {
+      kind: 'binary';
+      operator: '+' | '-' | '*' | '/' | '^';
+      left: MathNode;
+      right: MathNode;
+      operatorStart: number;
+      operatorEnd: number;
+    })
+  | (NodeBase & { kind: 'unary'; operator: '-' | '√'; value: MathNode; operatorStart: number; operatorEnd: number })
+  | (NodeBase & { kind: 'postfix'; operator: '!'; value: MathNode; operatorStart: number; operatorEnd: number })
+  | (NodeBase & { kind: 'group'; value: MathNode })
+  | (NodeBase & { kind: 'absolute'; value: MathNode });
+
+type EquationPart = {
+  tokens: Token[];
+  start: number;
+  end: number;
+  followingEquals?: Token & { kind: 'equals' };
+};
+
+type FormatterOptions = {
+  cursorIndex?: number;
+};
+
+type RenderOptions = {
+  cursorIndex?: number;
+  suppressStartCursor?: boolean;
+  suppressEndCursor?: boolean;
+};
 
 type RenderContext = 'top' | 'fraction' | 'exponent' | 'sqrt' | 'absolute' | 'multiplication' | 'base' | 'postfix';
 
 const placeholderLatex = '\\phantom{0}';
+const cursorLatex = '\\htmlClass{equation-cursor-marker}{\\vphantom{0}}';
 
-export function equationToLatex(expression: string): string {
+export function equationToLatex(expression: string, options: FormatterOptions = {}): string {
   const tokens = tokenize(expression);
+  const cursorIndex = clampCursorIndex(options.cursorIndex, Array.from(expression).length);
   if (tokens.length === 0) {
-    return placeholderLatex;
+    return cursorIndex === undefined ? placeholderLatex : cursorLatex;
   }
 
-  return splitEquation(tokens)
-    .map((part) => {
-      if (part.length === 0) {
-        return '';
+  const parts = splitEquation(tokens);
+  return parts
+    .map((part, index) => {
+      const isFinalPart = index === parts.length - 1;
+      const renderedPart = renderEquationPart(part, {
+        cursorIndex,
+        suppressStartCursor: index > 0,
+        suppressEndCursor: !isFinalPart,
+      });
+      const equals = part.followingEquals;
+      if (!equals) {
+        return renderedPart;
       }
-      return renderNode(new Parser(part).parseExpression(), 'top');
+
+      return `${renderedPart}${cursorAt(cursorIndex, equals.start)} = ${cursorAt(cursorIndex, equals.end)}`;
     })
-    .join(' = ');
+    .join('');
 }
 
 function tokenize(input: string): Token[] {
@@ -51,57 +91,20 @@ function tokenize(input: string): Token[] {
     }
 
     if (/\d/.test(character)) {
+      const start = index;
       let text = character;
       index += 1;
       while (index < characters.length && /\d/.test(characters[index])) {
         text += characters[index];
         index += 1;
       }
-      tokens.push({ kind: 'number', text });
+      tokens.push({ kind: 'number', text, start, end: index });
       continue;
     }
 
-    switch (character) {
-      case '+':
-        tokens.push({ kind: 'operator', text: '+' });
-        break;
-      case '-':
-      case '−':
-        tokens.push({ kind: 'operator', text: '-' });
-        break;
-      case '*':
-      case '×':
-      case 'x':
-      case 'X':
-        tokens.push({ kind: 'operator', text: '*' });
-        break;
-      case '/':
-      case '÷':
-        tokens.push({ kind: 'operator', text: '/' });
-        break;
-      case '^':
-        tokens.push({ kind: 'operator', text: '^' });
-        break;
-      case '√':
-        tokens.push({ kind: 'operator', text: '√' });
-        break;
-      case '!':
-        tokens.push({ kind: 'operator', text: '!' });
-        break;
-      case '(':
-        tokens.push({ kind: 'leftParen', text: '(' });
-        break;
-      case ')':
-        tokens.push({ kind: 'rightParen', text: ')' });
-        break;
-      case '|':
-        tokens.push({ kind: 'pipe', text: '|' });
-        break;
-      case '=':
-        tokens.push({ kind: 'equals', text: '=' });
-        break;
-      default:
-        break;
+    const token = tokenForCharacter(character, index);
+    if (token) {
+      tokens.push(token);
     }
 
     index += 1;
@@ -110,16 +113,66 @@ function tokenize(input: string): Token[] {
   return tokens;
 }
 
-function splitEquation(tokens: Token[]): Token[][] {
-  const parts: Token[][] = [[]];
+function tokenForCharacter(character: string, start: number): Token | null {
+  switch (character) {
+    case '+':
+      return { kind: 'operator', text: '+', start, end: start + 1 };
+    case '-':
+    case '−':
+      return { kind: 'operator', text: '-', start, end: start + 1 };
+    case '*':
+    case '×':
+    case 'x':
+    case 'X':
+      return { kind: 'operator', text: '*', start, end: start + 1 };
+    case '/':
+    case '÷':
+      return { kind: 'operator', text: '/', start, end: start + 1 };
+    case '^':
+      return { kind: 'operator', text: '^', start, end: start + 1 };
+    case '√':
+      return { kind: 'operator', text: '√', start, end: start + 1 };
+    case '!':
+      return { kind: 'operator', text: '!', start, end: start + 1 };
+    case '(':
+      return { kind: 'leftParen', text: '(', start, end: start + 1 };
+    case ')':
+      return { kind: 'rightParen', text: ')', start, end: start + 1 };
+    case '|':
+      return { kind: 'pipe', text: '|', start, end: start + 1 };
+    case '=':
+      return { kind: 'equals', text: '=', start, end: start + 1 };
+    default:
+      return null;
+  }
+}
+
+function splitEquation(tokens: Token[]): EquationPart[] {
+  const parts: EquationPart[] = [];
+  let currentTokens: Token[] = [];
+  let partStart = tokens[0]?.start ?? 0;
 
   for (const token of tokens) {
     if (token.kind === 'equals') {
-      parts.push([]);
+      parts.push({
+        tokens: currentTokens,
+        start: partStart,
+        end: token.start,
+        followingEquals: token,
+      });
+      currentTokens = [];
+      partStart = token.end;
       continue;
     }
-    parts[parts.length - 1].push(token);
+    currentTokens.push(token);
   }
+
+  const lastToken = currentTokens.at(-1);
+  parts.push({
+    tokens: currentTokens,
+    start: partStart,
+    end: lastToken?.end ?? partStart,
+  });
 
   return parts;
 }
@@ -137,9 +190,10 @@ class Parser {
     let node = this.parseTerm(stopKinds);
 
     while (!this.isAtStop(stopKinds) && (this.matchOperator('+') || this.matchOperator('-'))) {
-      const operator = this.previous().text as '+' | '-';
-      const right = this.isAtStop(stopKinds) ? placeholderNode() : this.parseTerm(stopKinds);
-      node = { kind: 'binary', operator, left: node, right };
+      const operatorToken = this.previous();
+      const operator = operatorToken.text as '+' | '-';
+      const right = this.isAtStop(stopKinds) ? placeholderNode(operatorToken.end) : this.parseTerm(stopKinds);
+      node = binaryNode(operator, node, right, operatorToken.start, operatorToken.end);
     }
 
     return node;
@@ -150,14 +204,16 @@ class Parser {
 
     while (!this.isAtStop(stopKinds)) {
       if (this.matchOperator('*') || this.matchOperator('/')) {
-        const operator = this.previous().text as '*' | '/';
-        const right = this.isAtStop(stopKinds) ? placeholderNode() : this.parsePower(stopKinds);
-        node = { kind: 'binary', operator, left: node, right };
+        const operatorToken = this.previous();
+        const operator = operatorToken.text as '*' | '/';
+        const right = this.isAtStop(stopKinds) ? placeholderNode(operatorToken.end) : this.parsePower(stopKinds);
+        node = binaryNode(operator, node, right, operatorToken.start, operatorToken.end);
         continue;
       }
 
       if (this.startsImplicitMultiplication(stopKinds)) {
-        node = { kind: 'binary', operator: '*', left: node, right: this.parsePower(stopKinds) };
+        const operatorPosition = node.end;
+        node = binaryNode('*', node, this.parsePower(stopKinds), operatorPosition, operatorPosition);
         continue;
       }
 
@@ -171,8 +227,9 @@ class Parser {
     const left = this.parseUnary(stopKinds);
 
     if (this.matchOperator('^')) {
-      const right = this.isAtStop(stopKinds) ? placeholderNode() : this.parsePower(stopKinds);
-      return { kind: 'binary', operator: '^', left, right };
+      const operatorToken = this.previous();
+      const right = this.isAtStop(stopKinds) ? placeholderNode(operatorToken.end) : this.parsePower(stopKinds);
+      return binaryNode('^', left, right, operatorToken.start, operatorToken.end);
     }
 
     return left;
@@ -180,13 +237,15 @@ class Parser {
 
   private parseUnary(stopKinds: StopKind[]): MathNode {
     if (this.matchOperator('-')) {
-      const value = this.isAtStop(stopKinds) ? placeholderNode() : this.parseUnary(stopKinds);
-      return { kind: 'unary', operator: '-', value };
+      const operatorToken = this.previous();
+      const value = this.isAtStop(stopKinds) ? placeholderNode(operatorToken.end) : this.parseUnary(stopKinds);
+      return { kind: 'unary', operator: '-', value, operatorStart: operatorToken.start, operatorEnd: operatorToken.end, start: operatorToken.start, end: value.end };
     }
 
     if (this.matchOperator('√')) {
-      const value = this.isAtStop(stopKinds) ? placeholderNode() : this.parseUnary(stopKinds);
-      return { kind: 'unary', operator: '√', value };
+      const operatorToken = this.previous();
+      const value = this.isAtStop(stopKinds) ? placeholderNode(operatorToken.end) : this.parseUnary(stopKinds);
+      return { kind: 'unary', operator: '√', value, operatorStart: operatorToken.start, operatorEnd: operatorToken.end, start: operatorToken.start, end: value.end };
     }
 
     return this.parsePostfix(stopKinds);
@@ -196,7 +255,8 @@ class Parser {
     let node = this.parsePrimary(stopKinds);
 
     while (!this.isAtStop(stopKinds) && this.matchOperator('!')) {
-      node = { kind: 'postfix', operator: '!', value: node };
+      const operatorToken = this.previous();
+      node = { kind: 'postfix', operator: '!', value: node, operatorStart: operatorToken.start, operatorEnd: operatorToken.end, start: node.start, end: operatorToken.end };
     }
 
     return node;
@@ -204,35 +264,35 @@ class Parser {
 
   private parsePrimary(stopKinds: StopKind[]): MathNode {
     if (this.isAtStop(stopKinds)) {
-      return placeholderNode();
+      return placeholderNode(this.currentBoundary());
     }
 
     const token = this.peek();
     if (!token) {
-      return placeholderNode();
+      return placeholderNode(this.currentBoundary());
     }
 
     if (token.kind === 'number') {
       this.advance();
-      return { kind: 'number', value: token.text };
+      return { kind: 'number', value: token.text, start: token.start, end: token.end };
     }
 
     if (token.kind === 'leftParen') {
       this.advance();
-      const value = this.isAtStop(['rightParen']) ? placeholderNode() : this.parseExpression(['rightParen']);
-      this.matchKind('rightParen');
-      return { kind: 'group', value };
+      const value = this.isAtStop(['rightParen']) ? placeholderNode(token.end) : this.parseExpression(['rightParen']);
+      const close = this.matchKind('rightParen') ? this.previous() : undefined;
+      return { kind: 'group', value, start: token.start, end: close?.end ?? value.end };
     }
 
     if (token.kind === 'pipe') {
       this.advance();
-      const value = this.isAtStop(['pipe']) ? placeholderNode() : this.parseExpression(['pipe']);
-      this.matchKind('pipe');
-      return { kind: 'absolute', value };
+      const value = this.isAtStop(['pipe']) ? placeholderNode(token.end) : this.parseExpression(['pipe']);
+      const close = this.matchKind('pipe') ? this.previous() : undefined;
+      return { kind: 'absolute', value, start: token.start, end: close?.end ?? value.end };
     }
 
     this.advance();
-    return placeholderNode();
+    return placeholderNode(token.end);
   }
 
   private startsImplicitMultiplication(stopKinds: StopKind[]): boolean {
@@ -290,103 +350,172 @@ class Parser {
   private advance(): void {
     this.index += 1;
   }
-}
 
-function placeholderNode(): MathNode {
-  return { kind: 'placeholder' };
-}
-
-function renderNode(node: MathNode, context: RenderContext): string {
-  switch (node.kind) {
-    case 'number':
-      return node.value;
-    case 'placeholder':
-      return placeholderLatex;
-    case 'absolute':
-      return `\\left|${renderNode(node.value, 'absolute')}\\right|`;
-    case 'group':
-      return renderGroup(node.value, context);
-    case 'unary':
-      if (node.operator === '√') {
-        return `\\sqrt{${renderNode(node.value, 'sqrt')}}`;
-      }
-      return `-${renderUnaryOperand(node.value)}`;
-    case 'postfix':
-      return `${renderPostfixOperand(node.value)}!`;
-    case 'binary':
-      return renderBinary(node, context);
+  private currentBoundary(): number {
+    return this.peek()?.start ?? this.tokens.at(-1)?.end ?? 0;
   }
 }
 
-function renderBinary(node: Extract<MathNode, { kind: 'binary' }>, context: RenderContext): string {
+function binaryNode(
+  operator: '+' | '-' | '*' | '/' | '^',
+  left: MathNode,
+  right: MathNode,
+  operatorStart: number,
+  operatorEnd: number,
+): MathNode {
+  return {
+    kind: 'binary',
+    operator,
+    left,
+    right,
+    operatorStart,
+    operatorEnd,
+    start: left.start,
+    end: right.end,
+  };
+}
+
+function placeholderNode(position: number): MathNode {
+  return { kind: 'placeholder', start: position, end: position };
+}
+
+function renderEquationPart(part: EquationPart, options: RenderOptions): string {
+  if (part.tokens.length === 0) {
+    return cursorInsidePart(options.cursorIndex, part) && !cursorSuppressedAtPartBoundary(options, part) ? cursorLatex : '';
+  }
+
+  return renderNode(new Parser(part.tokens).parseExpression(), 'top', suppressCursorAtPartBoundary(options, part));
+}
+
+function renderNode(node: MathNode, context: RenderContext, options: RenderOptions): string {
+  switch (node.kind) {
+    case 'number':
+      return renderNumber(node, options);
+    case 'placeholder':
+      return `${cursorAt(options.cursorIndex, node.start)}${placeholderLatex}`;
+    case 'absolute':
+      return renderAbsolute(node, options);
+    case 'group':
+      return renderGroup(node, context, options);
+    case 'unary':
+      return renderUnary(node, options);
+    case 'postfix':
+      return `${renderPostfixOperand(node.value, options)}!${cursorAt(options.cursorIndex, node.operatorEnd)}`;
+    case 'binary':
+      return renderBinary(node, context, options);
+  }
+}
+
+function renderNumber(node: Extract<MathNode, { kind: 'number' }>, options: RenderOptions): string {
+  const offset = options.cursorIndex === undefined ? -1 : options.cursorIndex - node.start;
+  if (offset < 0 || offset > node.value.length) {
+    return node.value;
+  }
+
+  return `${node.value.slice(0, offset)}${cursorLatex}${node.value.slice(offset)}`;
+}
+
+function renderAbsolute(node: Extract<MathNode, { kind: 'absolute' }>, options: RenderOptions): string {
+  return [
+    cursorAt(options.cursorIndex, node.start),
+    '\\left|',
+    renderNode(node.value, 'absolute', options),
+    cursorAt(options.cursorIndex, node.value.end),
+    '\\right|',
+    cursorAt(options.cursorIndex, node.end),
+  ].join('');
+}
+
+function renderUnary(node: Extract<MathNode, { kind: 'unary' }>, options: RenderOptions): string {
+  if (node.operator === '√') {
+    return [
+      cursorAt(options.cursorIndex, node.operatorStart),
+      '\\sqrt{',
+      renderNode(node.value, 'sqrt', options),
+      '}',
+    ].join('');
+  }
+
+  return `${cursorAt(options.cursorIndex, node.operatorStart)}-${renderUnaryOperand(node.value, options)}`;
+}
+
+function renderBinary(node: Extract<MathNode, { kind: 'binary' }>, context: RenderContext, options: RenderOptions): string {
   switch (node.operator) {
     case '+':
     case '-': {
-      const expression = `${renderNode(node.left, 'top')} ${node.operator} ${renderNode(node.right, 'top')}`;
+      const expression = [
+        renderNode(node.left, 'top', options),
+        ` ${node.operator} `,
+        renderNode(node.right, 'top', options),
+      ].join('');
       return needsWrappedAddition(context) ? `\\left(${expression}\\right)` : expression;
     }
     case '*':
-      return `${renderMultiplicationOperand(node.left)} \\cdot ${renderMultiplicationOperand(node.right)}`;
+      return [
+        renderMultiplicationOperand(node.left, options),
+        ' \\cdot ',
+        renderMultiplicationOperand(node.right, options),
+      ].join('');
     case '/':
-      return `\\frac{${renderNode(node.left, 'fraction')}}{${renderNode(node.right, 'fraction')}}`;
+      return `\\frac{${renderNode(node.left, 'fraction', options)}}{${renderNode(node.right, 'fraction', options)}}`;
     case '^':
-      return `${renderPowerBase(node.left)}^{${renderNode(node.right, 'exponent')}}`;
+      return `${renderPowerBase(node.left, options)}^{${renderNode(node.right, 'exponent', options)}}`;
   }
 }
 
-function renderGroup(value: MathNode, context: RenderContext): string {
-  const rendered = renderNode(value, 'top');
+function renderGroup(node: Extract<MathNode, { kind: 'group' }>, context: RenderContext, options: RenderOptions): string {
+  const rendered = renderNode(node.value, 'top', options);
 
   if (context === 'fraction' || context === 'exponent' || context === 'sqrt' || context === 'absolute' || context === 'top') {
     return rendered;
   }
 
-  if (needsVisibleGroup(value)) {
+  if (needsVisibleGroup(node.value)) {
     return `\\left(${rendered}\\right)`;
   }
 
   return rendered;
 }
 
-function renderMultiplicationOperand(node: MathNode): string {
+function renderMultiplicationOperand(node: MathNode, options: RenderOptions): string {
   if (node.kind === 'binary' && (node.operator === '+' || node.operator === '-')) {
-    return `\\left(${renderNode(node, 'top')}\\right)`;
+    return `\\left(${renderNode(node, 'top', options)}\\right)`;
   }
 
-  return renderNode(node, 'multiplication');
+  return renderNode(node, 'multiplication', options);
 }
 
-function renderUnaryOperand(node: MathNode): string {
+function renderUnaryOperand(node: MathNode, options: RenderOptions): string {
   if (node.kind === 'binary') {
-    return `\\left(${renderNode(node, 'top')}\\right)`;
+    return `\\left(${renderNode(node, 'top', options)}\\right)`;
   }
 
-  return renderNode(node, 'top');
+  return renderNode(node, 'top', options);
 }
 
-function renderPostfixOperand(node: MathNode): string {
+function renderPostfixOperand(node: MathNode, options: RenderOptions): string {
   if (node.kind === 'binary') {
-    return `\\left(${renderNode(node, 'top')}\\right)`;
+    return `\\left(${renderNode(node, 'top', options)}\\right)`;
   }
 
-  return renderNode(node, 'postfix');
+  return renderNode(node, 'postfix', options);
 }
 
-function renderPowerBase(node: MathNode): string {
+function renderPowerBase(node: MathNode, options: RenderOptions): string {
   if (node.kind === 'number' || node.kind === 'placeholder' || node.kind === 'absolute' || node.kind === 'postfix') {
-    return renderNode(node, 'base');
+    return renderNode(node, 'base', options);
   }
 
   if (node.kind === 'group') {
-    const rendered = renderNode(node.value, 'top');
+    const rendered = renderNode(node.value, 'top', options);
     return needsVisibleGroup(node.value) ? `\\left(${rendered}\\right)` : rendered;
   }
 
   if (node.kind === 'unary' && node.operator === '√') {
-    return renderNode(node, 'base');
+    return renderNode(node, 'base', options);
   }
 
-  return `\\left(${renderNode(node, 'top')}\\right)`;
+  return `\\left(${renderNode(node, 'top', options)}\\right)`;
 }
 
 function needsWrappedAddition(context: RenderContext): boolean {
@@ -395,4 +524,30 @@ function needsWrappedAddition(context: RenderContext): boolean {
 
 function needsVisibleGroup(node: MathNode): boolean {
   return node.kind === 'binary' && (node.operator === '+' || node.operator === '-' || node.operator === '*');
+}
+
+function cursorAt(cursorIndex: number | undefined, position: number): string {
+  return cursorIndex === position ? cursorLatex : '';
+}
+
+function clampCursorIndex(cursorIndex: number | undefined, maximum: number): number | undefined {
+  if (cursorIndex === undefined) {
+    return undefined;
+  }
+  return Math.min(Math.max(cursorIndex, 0), maximum);
+}
+
+function cursorInsidePart(cursorIndex: number | undefined, part: EquationPart): boolean {
+  return cursorIndex !== undefined && cursorIndex >= part.start && cursorIndex <= part.end;
+}
+
+function suppressCursorAtPartBoundary(options: RenderOptions, part: EquationPart): RenderOptions {
+  return cursorSuppressedAtPartBoundary(options, part) ? {} : options;
+}
+
+function cursorSuppressedAtPartBoundary(options: RenderOptions, part: EquationPart): boolean {
+  return Boolean(
+    (options.suppressStartCursor && options.cursorIndex === part.start) ||
+    (options.suppressEndCursor && options.cursorIndex === part.end)
+  );
 }

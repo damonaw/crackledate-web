@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { InlineMath } from 'react-katex';
+import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { equationToLatex } from './mathLatexFormatter';
 import './styles.css';
@@ -518,14 +518,34 @@ function SolutionsList({ solutions }: { solutions: SavedSolution[] }) {
   );
 }
 
-function MathEquation({ equation, className = '' }: { equation: string; className?: string }) {
-  const latex = useMemo(() => equationToLatex(equation), [equation]);
+function MathEquation({
+  equation,
+  className = '',
+  cursorIndex,
+}: {
+  equation: string;
+  className?: string;
+  cursorIndex?: number;
+}) {
+  const latex = useMemo(() => equationToLatex(equation, { cursorIndex }), [cursorIndex, equation]);
+  const html = useMemo(
+    () =>
+      katex.renderToString(latex, {
+        errorColor: '#ff3b30',
+        strict: 'ignore',
+        throwOnError: false,
+        trust: true,
+      }),
+    [latex],
+  );
   const classNames = ['math-equation', className].filter(Boolean).join(' ');
 
   return (
-    <span className={classNames} aria-label={equation}>
-      <InlineMath math={latex} renderError={() => <span>{equation}</span>} />
-    </span>
+    <span
+      className={classNames}
+      aria-label={equation}
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
 
@@ -713,7 +733,7 @@ function EquationEditor({
   return (
     <div className="equation-box" aria-label="Equation input" data-testid="equation-editor">
       <div className="equation-preview" aria-hidden="true">
-        <MathEquation equation={equation} />
+        <MathEquation equation={equation} cursorIndex={cursorIndex} />
       </div>
       <div className="equation-hit-layer">
         <CursorSlot index={0} active={cursorIndex === 0} onCursorChange={onCursorChange} label="Move cursor to start" />

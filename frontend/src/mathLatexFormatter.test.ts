@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { equationToLatex } from './mathLatexFormatter';
 
+const cursorLatex = '\\htmlClass{equation-cursor-marker}{\\vphantom{0}}';
+
 describe('equationToLatex', () => {
   test('formats simple division as a fraction', () => {
     expect(equationToLatex('516÷202')).toBe('\\frac{516}{202}');
@@ -36,5 +38,22 @@ describe('equationToLatex', () => {
 
   test('drops exponent parentheses around fractions', () => {
     expect(equationToLatex('5^(1/6)')).toBe('5^{\\frac{1}{6}}');
+  });
+
+  test('renders the cursor inside the exponent when the cursor state is inside the exponent', () => {
+    expect(equationToLatex('5^24÷2=0×2×6', { cursorIndex: 4 })).toBe(
+      `\\frac{5^{24${cursorLatex}}}{2} = 0 \\cdot 2 \\cdot 6`,
+    );
+  });
+
+  test('renders the cursor before equals when the cursor state is before equals', () => {
+    expect(equationToLatex('5^24÷2=0×2×6', { cursorIndex: 6 })).toBe(
+      `\\frac{5^{24}}{2}${cursorLatex} = 0 \\cdot 2 \\cdot 6`,
+    );
+  });
+
+  test('renders only one cursor at expression boundaries', () => {
+    expect(equationToLatex('524', { cursorIndex: 0 })).toBe(`${cursorLatex}524`);
+    expect(equationToLatex('524', { cursorIndex: 3 })).toBe(`524${cursorLatex}`);
   });
 });

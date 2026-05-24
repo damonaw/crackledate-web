@@ -609,10 +609,25 @@ h1 {
   color: transparent;
 }
 
+.equation-hit-layer .cursor {
+  opacity: 0;
+  animation: none;
+}
+
 .equation-hit-layer .equation-token:focus-visible,
 .equation-hit-layer .cursor-slot:focus-visible {
   outline: 2px solid var(--ios-blue);
   outline-offset: -4px;
+}
+
+.equation-cursor-marker {
+  display: inline-block;
+  width: 0;
+  min-height: 1.15em;
+  border-left: 2px solid var(--ios-blue);
+  border-radius: 999px;
+  vertical-align: -0.16em;
+  animation: blink 1.05s steps(2, start) infinite;
 }
 
 .cursor-slot {

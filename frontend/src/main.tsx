@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { equationToLatex } from './mathLatexFormatter';
 import './styles.css';
 
@@ -17,6 +18,10 @@ type EvaluationResponse = {
   left: string;
   right: string;
   errorMessage?: string;
+};
+
+type EvaluationState = EvaluationResponse & {
+  equation: string;
 };
 
 type ValidationResponse = {
@@ -86,7 +91,7 @@ function GamePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [tokens, setTokens] = useState<EquationToken[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
-  const [evaluation, setEvaluation] = useState<EvaluationResponse>({ left: '?', right: '?' });
+  const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', right: '?', equation: '' });
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState<FeedbackTone>('success');
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -127,7 +132,7 @@ function GamePage() {
         setPuzzle(nextPuzzle);
         setTokens([]);
         setCursorIndex(0);
-        setEvaluation({ left: '?', right: '?' });
+        setEvaluation({ left: '?', right: '?', equation: '' });
         setMessage('');
         setStartTime(null);
       })
@@ -149,10 +154,10 @@ function GamePage() {
       signal: controller.signal,
     })
       .then((response) => response.json() as Promise<EvaluationResponse>)
-      .then(setEvaluation)
+      .then((response) => setEvaluation({ ...response, equation }))
       .catch((error: Error) => {
         if (error.name !== 'AbortError') {
-          setEvaluation({ left: '?', right: '?' });
+          setEvaluation({ left: '?', right: '?', equation });
         }
       });
     return () => controller.abort();
@@ -257,7 +262,7 @@ function GamePage() {
   const clear = useCallback(() => {
     setTokens([]);
     setCursorIndex(0);
-    setEvaluation({ left: '?', right: '?' });
+    setEvaluation({ left: '?', right: '?', equation: '' });
     setMessage('');
     setStartTime(null);
   }, []);
@@ -330,7 +335,12 @@ function GamePage() {
     setActiveView('game');
   }, []);
 
-  const feedbackMessage = message || evaluation.errorMessage || '';
+  const showEvaluationError = shouldSurfaceEvaluationError(
+    tokens,
+    nextDigitIndex,
+    evaluation.equation === equation ? evaluation.errorMessage ?? '' : '',
+  );
+  const feedbackMessage = message || (showEvaluationError ? evaluation.errorMessage ?? '' : '');
   const feedbackTone: FeedbackTone = message ? messageTone : 'error';
 
   return (

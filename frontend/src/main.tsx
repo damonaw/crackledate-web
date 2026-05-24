@@ -46,6 +46,7 @@ const operators = [
 ];
 
 const storageKey = 'crackledate.web.solutions.v1';
+const playStartedKey = 'crackledate.web.play-started.v1';
 
 function App() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -60,6 +61,7 @@ function App() {
 
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
+  const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [equation, setEquation] = useState('');
   const [consumedCount, setConsumedCount] = useState(0);
@@ -188,98 +190,186 @@ function GamePage() {
     return `Puzzle date, currently ${puzzle.displayDate}`;
   }, [puzzle]);
 
+  const playPuzzle = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setIsPlaying(true);
+  }, []);
+
+  const showStart = useCallback(() => {
+    setIsPlaying(false);
+  }, []);
+
   return (
-    <main className="app-shell">
+    <main className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'}`}>
       <header className="top-bar">
-        <a className="brand" href="/" aria-label="Crackle Date home">
+        <button className="brand" type="button" onClick={showStart} aria-label="Crackle Date home">
           Crackle Date
-        </a>
+        </button>
         <nav className="site-nav" aria-label="Site">
           <a href="/privacy/">Privacy</a>
           <a href="/support/">Support</a>
         </nav>
       </header>
 
-      <section className="game-panel" aria-labelledby="game-title">
-        <div className="game-heading">
-          <div>
-            <h1 id="game-title">{puzzle?.displayDate ?? 'Crackle Date'}</h1>
-            <p>Use the date digits in order to build matching equations.</p>
-          </div>
-          <label className="date-picker">
-            <span>{dateInputLabel}</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-            />
-          </label>
-        </div>
+      {!isPlaying && (
+        <StartPage
+          puzzle={puzzle}
+          selectedDate={selectedDate}
+          dateInputLabel={dateInputLabel}
+          solutionCount={todaySolutions.length}
+          onDateChange={setSelectedDate}
+          onPlay={playPuzzle}
+        />
+      )}
+
+      {isPlaying && (
+        <>
+          <section className="game-panel" aria-labelledby="game-title">
+            <div className="game-heading">
+              <div>
+                <h1 id="game-title">{puzzle?.displayDate ?? 'Crackle Date'}</h1>
+                <p>Use the date digits in order to build matching equations.</p>
+              </div>
+              <label className="date-picker">
+                <span>{dateInputLabel}</span>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(event) => setSelectedDate(event.target.value)}
+                />
+              </label>
+            </div>
+
+            {puzzle && (
+              <DigitRail
+                digits={puzzle.digits}
+                delimiterPositions={puzzle.delimiterPositions}
+                consumedCount={consumedCount}
+              />
+            )}
+
+            <div className="equation-box" aria-label="Equation input">
+              <span>{equation}</span>
+              <span className="cursor" aria-hidden="true" />
+            </div>
+
+            <div className="helper-row" aria-live="polite">
+              <span>L {evaluation.left || '?'}</span>
+              <span>R {evaluation.right || '?'}</span>
+            </div>
+
+            <button className="next-digit" type="button" onClick={appendDigit} disabled={nextDigit === null}>
+              {nextDigit ?? 'Done'}
+            </button>
+
+            <div className="operator-grid" aria-label="Equation controls">
+              {operators.map(([label, value]) => (
+                <button key={value} type="button" onClick={() => appendText(value)}>
+                  {label}
+                </button>
+              ))}
+              <button className="danger" type="button" onClick={clear}>
+                C
+              </button>
+              <button className="warning" type="button" onClick={backspace} aria-label="Backspace">
+                ⌫
+              </button>
+              <button className="wide" type="button" onClick={() => appendText('=')}>
+                =
+              </button>
+              <button className="submit" type="button" onClick={submit}>
+                Submit
+              </button>
+            </div>
+
+            {message && <p className="status-message">{message}</p>}
+            {evaluation.errorMessage && !message && <p className="status-message error">{evaluation.errorMessage}</p>}
+          </section>
+
+          <aside className="solutions-panel" aria-labelledby="solutions-title">
+            <h2 id="solutions-title">Saved solutions</h2>
+            {todaySolutions.length === 0 ? (
+              <p>No solutions saved for this date yet.</p>
+            ) : (
+              <ol>
+                {todaySolutions.map((solution) => (
+                  <li key={`${solution.equation}-${solution.timestamp}`}>
+                    <strong>{solution.equation}</strong>
+                    <span>
+                      {formatTime(solution.seconds)} · value {solution.value}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </aside>
+        </>
+      )}
+    </main>
+  );
+}
+
+function StartPage({
+  puzzle,
+  selectedDate,
+  dateInputLabel,
+  solutionCount,
+  onDateChange,
+  onPlay,
+}: {
+  puzzle: Puzzle | null;
+  selectedDate: string;
+  dateInputLabel: string;
+  solutionCount: number;
+  onDateChange: (date: string) => void;
+  onPlay: () => void;
+}) {
+  return (
+    <section className="start-panel" aria-labelledby="start-title">
+      <div className="start-copy">
+        <p className="start-date">{puzzle?.displayDate ?? 'Today'}</p>
+        <h1 id="start-title">Crackle Date</h1>
+        <p className="start-subtitle">
+          Use today&apos;s digits in order to build a balanced equation.
+        </p>
 
         {puzzle && (
           <DigitRail
             digits={puzzle.digits}
             delimiterPositions={puzzle.delimiterPositions}
-            consumedCount={consumedCount}
+            consumedCount={-1}
+            variant="start"
           />
         )}
 
-        <div className="equation-box" aria-label="Equation input">
-          <span>{equation}</span>
-          <span className="cursor" aria-hidden="true" />
+        <div className="start-actions">
+          <button className="play-button" type="button" onClick={onPlay}>
+            Play Puzzle
+          </button>
+          <label className="date-picker start-date-picker">
+            <span>{dateInputLabel}</span>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(event) => onDateChange(event.target.value)}
+            />
+          </label>
         </div>
+      </div>
 
-        <div className="helper-row" aria-live="polite">
-          <span>L {evaluation.left || '?'}</span>
-          <span>R {evaluation.right || '?'}</span>
+      <div className="start-preview" aria-label="Puzzle preview">
+        <div className="preview-header">
+          <span>{solutionCount === 1 ? '1 saved solution' : `${solutionCount} saved solutions`}</span>
+          <span>Local play</span>
         </div>
-
-        <button className="next-digit" type="button" onClick={appendDigit} disabled={nextDigit === null}>
-          {nextDigit ?? 'Done'}
-        </button>
-
-        <div className="operator-grid" aria-label="Equation controls">
-          {operators.map(([label, value]) => (
-            <button key={value} type="button" onClick={() => appendText(value)}>
-              {label}
-            </button>
-          ))}
-          <button className="danger" type="button" onClick={clear}>
-            C
-          </button>
-          <button className="warning" type="button" onClick={backspace} aria-label="Backspace">
-            ⌫
-          </button>
-          <button className="wide" type="button" onClick={() => appendText('=')}>
-            =
-          </button>
-          <button className="submit" type="button" onClick={submit}>
-            Submit
-          </button>
+        <div className="preview-equation">{previewEquation(puzzle)}</div>
+        <div className="preview-rules" aria-label="Rules summary">
+          <span>Use every digit</span>
+          <span>Keep order</span>
+          <span>Balance both sides</span>
         </div>
-
-        {message && <p className="status-message">{message}</p>}
-        {evaluation.errorMessage && !message && <p className="status-message error">{evaluation.errorMessage}</p>}
-      </section>
-
-      <aside className="solutions-panel" aria-labelledby="solutions-title">
-        <h2 id="solutions-title">Saved solutions</h2>
-        {todaySolutions.length === 0 ? (
-          <p>No solutions saved for this date yet.</p>
-        ) : (
-          <ol>
-            {todaySolutions.map((solution) => (
-              <li key={`${solution.equation}-${solution.timestamp}`}>
-                <strong>{solution.equation}</strong>
-                <span>
-                  {formatTime(solution.seconds)} · value {solution.value}
-                </span>
-              </li>
-            ))}
-          </ol>
-        )}
-      </aside>
-    </main>
+      </div>
+    </section>
   );
 }
 
@@ -287,14 +377,16 @@ function DigitRail({
   digits,
   delimiterPositions,
   consumedCount,
+  variant = 'game',
 }: {
   digits: number[];
   delimiterPositions: number[];
   consumedCount: number;
+  variant?: 'game' | 'start';
 }) {
   const delimiters = new Set(delimiterPositions);
   return (
-    <div className="digit-rail" aria-label="Date digits">
+    <div className={`digit-rail ${variant === 'start' ? 'start-digits' : ''}`} aria-label="Date digits">
       {digits.map((digit, index) => (
         <React.Fragment key={`${digit}-${index}`}>
           <span className={index < consumedCount ? 'used' : index === consumedCount ? 'active' : ''}>{digit}</span>
@@ -303,6 +395,14 @@ function DigitRail({
       ))}
     </div>
   );
+}
+
+function previewEquation(puzzle: Puzzle | null): string {
+  if (!puzzle || puzzle.digits.length < 4) {
+    return '? + √? = ?';
+  }
+  const [first, second, third, fourth] = puzzle.digits;
+  return `${first} + √${second}${third} = ${fourth} + ?`;
 }
 
 function PrivacyPage() {

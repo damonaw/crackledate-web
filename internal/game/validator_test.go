@@ -80,11 +80,44 @@ func TestValidateEquationUsesExactRationalEquality(t *testing.T) {
 	if !response.Valid {
 		t.Fatalf("expected valid equation, got %q", response.ErrorMessage)
 	}
-	if response.LeftValue == nil || *response.LeftValue != "0.666666666667" {
+	if response.LeftValue == nil || *response.LeftValue != "0.6\u0305" {
 		t.Fatalf("LeftValue = %#v", response.LeftValue)
 	}
-	if response.RightValue == nil || *response.RightValue != "0.666666666667" {
+	if response.RightValue == nil || *response.RightValue != "0.6\u0305" {
 		t.Fatalf("RightValue = %#v", response.RightValue)
+	}
+}
+
+func TestRunningValuesFormatsRepeatingDecimalWithOverline(t *testing.T) {
+	response := RunningValues("516/202=")
+
+	if response.ErrorMessage != "" {
+		t.Fatalf("ErrorMessage = %q", response.ErrorMessage)
+	}
+	if response.Left != "2.5\u03055\u03054\u03054\u0305" {
+		t.Fatalf("Left = %q", response.Left)
+	}
+}
+
+func TestRunningValuesKeepsNonRepeatingDecimalPrefix(t *testing.T) {
+	response := RunningValues("1/6=")
+
+	if response.ErrorMessage != "" {
+		t.Fatalf("ErrorMessage = %q", response.ErrorMessage)
+	}
+	if response.Left != "0.16\u0305" {
+		t.Fatalf("Left = %q", response.Left)
+	}
+}
+
+func TestRunningValuesKeepsTerminatingDecimalsPlain(t *testing.T) {
+	response := RunningValues("1/8=")
+
+	if response.ErrorMessage != "" {
+		t.Fatalf("ErrorMessage = %q", response.ErrorMessage)
+	}
+	if response.Left != "0.125" {
+		t.Fatalf("Left = %q", response.Left)
 	}
 }
 

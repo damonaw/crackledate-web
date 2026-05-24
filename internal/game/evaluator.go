@@ -15,6 +15,9 @@ const decimalDisplayPlaces = 12
 const plainIntegerDisplayDigits = 24
 const maximumMagnitudeDigits = 120
 const maximumComponentDigits = 512
+const maximumRepeatingDecimalDigits = 128
+
+const combiningOverline = "\u0305"
 
 var (
 	errUnexpectedEnd = errors.New("unexpected end of expression")
@@ -585,9 +588,68 @@ func formatNumber(value number) string {
 		return scientificStringFromInt(integerValue)
 	}
 	if value.rat != nil {
-		return trimDecimal(value.rat.FloatString(decimalDisplayPlaces))
+		return formatRationalDecimal(value.rat)
 	}
 	return trimDecimal(value.asFloat().Text('g', decimalDisplayPlaces))
+}
+
+func formatRationalDecimal(value *big.Rat) string {
+	if value.Denom().Cmp(big.NewInt(1)) == 0 {
+		return value.Num().String()
+	}
+
+	sign := ""
+	numerator := new(big.Int).Set(value.Num())
+	if numerator.Sign() < 0 {
+		sign = "-"
+		numerator.Abs(numerator)
+	}
+
+	denominator := value.Denom()
+	integerPart := new(big.Int).Quo(numerator, denominator)
+	remainder := new(big.Int).Mod(numerator, denominator)
+	if remainder.Sign() == 0 {
+		return sign + integerPart.String()
+	}
+
+	digits := make([]string, 0, decimalDisplayPlaces)
+	remainders := make(map[string]int)
+	ten := big.NewInt(10)
+
+	for remainder.Sign() != 0 {
+		key := remainder.String()
+		if _, hasRepeat := remainders[key]; hasRepeat {
+			break
+		}
+		if len(digits) >= maximumRepeatingDecimalDigits {
+			return trimDecimal(value.FloatString(decimalDisplayPlaces))
+		}
+
+		remainders[key] = len(digits)
+		remainder.Mul(remainder, ten)
+		digit := new(big.Int).Quo(remainder, denominator)
+		digits = append(digits, digit.String())
+		remainder.Mod(remainder, denominator)
+	}
+
+	decimalPrefix := sign + integerPart.String() + "."
+	if remainder.Sign() == 0 {
+		return decimalPrefix + strings.Join(digits, "")
+	}
+
+	repeatStart := remainders[remainder.String()]
+	nonRepeating := strings.Join(digits[:repeatStart], "")
+	repeating := strings.Join(digits[repeatStart:], "")
+	return decimalPrefix + nonRepeating + overlineDigits(repeating)
+}
+
+func overlineDigits(value string) string {
+	var builder strings.Builder
+	for _, char := range value {
+		builder.WriteRune(char)
+		builder.WriteString(combiningOverline)
+	}
+	return builder.String()
 }
 
 func perfectSquareRoot(value *big.Int) (*big.Int, bool) {

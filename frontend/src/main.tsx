@@ -41,6 +41,11 @@ type EquationToken = {
   digitIndex?: number;
 };
 
+type ValueSegment = {
+  text: string;
+  isRepeating: boolean;
+};
+
 const operators = [
   ['+', '+'],
   ['−', '-'],
@@ -334,8 +339,14 @@ function GamePage() {
 
             {isEasyMode && (
               <div className="helper-row" aria-live="polite">
-                <span>L {evaluation.left || '?'}</span>
-                <span>R {evaluation.right || '?'}</span>
+                <div className="helper-value">
+                  <span className="helper-label">L</span>
+                  <RepeatingDecimalValue value={evaluation.left || '?'} />
+                </div>
+                <div className="helper-value">
+                  <span className="helper-label">R</span>
+                  <RepeatingDecimalValue value={evaluation.right || '?'} />
+                </div>
               </div>
             )}
 
@@ -494,12 +505,61 @@ function SolutionsList({ solutions }: { solutions: SavedSolution[] }) {
         <li key={`${solution.equation}-${solution.timestamp}`}>
           <strong>{solution.equation}</strong>
           <span>
-            {formatTime(solution.seconds)} · value {solution.value}
+            {formatTime(solution.seconds)} · value <RepeatingDecimalValue value={solution.value} />
           </span>
         </li>
       ))}
     </ol>
   );
+}
+
+function RepeatingDecimalValue({ value }: { value: string }) {
+  const segments = useMemo(() => repeatingDecimalSegments(value), [value]);
+  const accessibilityText = value.replaceAll('\u0305', '');
+
+  return (
+    <span className="value-display" aria-label={accessibilityText}>
+      {segments.map((segment, index) => (
+        <span
+          className={`value-segment ${segment.isRepeating ? 'repeating' : ''}`}
+          key={`${segment.text}-${segment.isRepeating}-${index}`}
+          aria-hidden="true"
+        >
+          {segment.text}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function repeatingDecimalSegments(value: string): ValueSegment[] {
+  const segments: ValueSegment[] = [];
+  const characters = Array.from(value);
+
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index];
+    if (character === '\u0305') {
+      continue;
+    }
+
+    const isRepeating = characters[index + 1] === '\u0305';
+    appendValueSegment(segments, character, isRepeating);
+    if (isRepeating) {
+      index += 1;
+    }
+  }
+
+  return segments;
+}
+
+function appendValueSegment(segments: ValueSegment[], text: string, isRepeating: boolean) {
+  const previous = segments.at(-1);
+  if (previous && previous.isRepeating === isRepeating) {
+    previous.text += text;
+    return;
+  }
+
+  segments.push({ text, isRepeating });
 }
 
 function StartPage({

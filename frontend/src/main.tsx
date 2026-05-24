@@ -73,6 +73,7 @@ function App() {
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
   const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
+  const [activeView, setActiveView] = useState<'game' | 'solutions'>('game');
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [tokens, setTokens] = useState<EquationToken[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
@@ -227,14 +228,31 @@ function GamePage() {
   const playPuzzle = useCallback(() => {
     localStorage.setItem(playStartedKey, 'true');
     setIsPlaying(true);
+    setActiveView('game');
   }, []);
 
   const showStart = useCallback(() => {
     setIsPlaying(false);
+    setActiveView('game');
+  }, []);
+
+  const showSolutions = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setIsPlaying(true);
+    setActiveView('solutions');
+    setShowSettings(false);
+  }, []);
+
+  const showGame = useCallback(() => {
+    setActiveView('game');
   }, []);
 
   return (
-    <main className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'}`}>
+    <main
+      className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'} ${
+        activeView === 'solutions' ? 'solutions-shell' : ''
+      }`}
+    >
       <header className={`top-bar ${isPlaying ? 'game-top-bar' : ''}`}>
         <button className="brand" type="button" onClick={showStart} aria-label="Crackle Date home">
           <img src="/app-icon.png" alt="" />
@@ -268,6 +286,7 @@ function GamePage() {
           difficultyMode={difficultyMode}
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
+          onShowSolutions={showSolutions}
         />
       )}
 
@@ -282,7 +301,7 @@ function GamePage() {
         />
       )}
 
-      {isPlaying && (
+      {isPlaying && activeView === 'game' && (
         <>
           <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
             {puzzle && (
@@ -340,22 +359,17 @@ function GamePage() {
 
           <aside className="solutions-panel" aria-labelledby="solutions-title">
             <h2 id="solutions-title">Saved solutions</h2>
-            {todaySolutions.length === 0 ? (
-              <p>No solutions saved for this date yet.</p>
-            ) : (
-              <ol>
-                {todaySolutions.map((solution) => (
-                  <li key={`${solution.equation}-${solution.timestamp}`}>
-                    <strong>{solution.equation}</strong>
-                    <span>
-                      {formatTime(solution.seconds)} · value {solution.value}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            )}
+            <SolutionsList solutions={todaySolutions} />
           </aside>
         </>
+      )}
+
+      {isPlaying && activeView === 'solutions' && (
+        <SolutionsPage
+          displayDate={puzzle?.displayDate ?? 'Selected date'}
+          solutions={todaySolutions}
+          onBack={showGame}
+        />
       )}
     </main>
   );
@@ -366,11 +380,13 @@ function SettingsPanel({
   difficultyMode,
   onThemePreferenceChange,
   onDifficultyModeChange,
+  onShowSolutions,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
+  onShowSolutions: () => void;
 }) {
   return (
     <section className="settings-panel" aria-label="Settings">
@@ -418,10 +434,57 @@ function SettingsPanel({
       </div>
 
       <nav className="settings-links" aria-label="Help and policies">
+        <button className="mobile-only-link" type="button" onClick={onShowSolutions}>
+          Saved Solutions
+        </button>
         <a href="/privacy/">Privacy</a>
         <a href="/support/">Support</a>
       </nav>
     </section>
+  );
+}
+
+function SolutionsPage({
+  displayDate,
+  solutions,
+  onBack,
+}: {
+  displayDate: string;
+  solutions: SavedSolution[];
+  onBack: () => void;
+}) {
+  return (
+    <section className="solutions-page" aria-labelledby="solutions-page-title">
+      <div className="solutions-page-header">
+        <div>
+          <h1 id="solutions-page-title">Saved Solutions</h1>
+          <p>{displayDate}</p>
+        </div>
+        <button type="button" onClick={onBack}>
+          Puzzle
+        </button>
+      </div>
+      <SolutionsList solutions={solutions} />
+    </section>
+  );
+}
+
+function SolutionsList({ solutions }: { solutions: SavedSolution[] }) {
+  if (solutions.length === 0) {
+    return <p>No solutions saved for this date yet.</p>;
+  }
+
+  return (
+    <ol>
+      {solutions.map((solution) => (
+        <li key={`${solution.equation}-${solution.timestamp}`}>
+          <strong>{solution.equation}</strong>
+          <span>
+            {formatTime(solution.seconds)} · value {solution.value}
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 

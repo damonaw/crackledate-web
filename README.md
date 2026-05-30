@@ -46,3 +46,9 @@ The compose file binds the container to loopback so it is intended to be reached
 - `/api/puzzle?date=YYYY-MM-DD`
 - `/api/evaluate`
 - `/api/validate`
+- `/api/submissions`
+
+Successful web solves are posted to `/api/submissions` after local save. The backend validates the
+equation before appending an anonymous JSON line to `SUBMISSIONS_PATH`, which defaults to
+`/data/submissions.ndjson` in Docker and `data/submissions.ndjson` for local `go run`. The Docker
+Compose service uses a named `submissions` volume so submitted solutions survive rebuilds.

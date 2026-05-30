@@ -37,11 +37,13 @@ type validateRequest struct {
 func main() {
 	mux := http.NewServeMux()
 	publicFiles := mustPublicFS()
+	submissions := newSubmissionStore(submissionsPathFromEnvironment())
 
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/puzzle", handlePuzzle)
 	mux.HandleFunc("/api/evaluate", handleEvaluate)
 	mux.HandleFunc("/api/validate", handleValidate)
+	mux.HandleFunc("/api/submissions", handleSubmitSolution(submissions, time.Now))
 	mux.HandleFunc("/", handleStatic(publicFiles))
 
 	port := os.Getenv("PORT")

@@ -4,6 +4,7 @@ import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { equationToLatex } from './mathLatexFormatter';
+import { submitSolutionRecord, webAppVersion } from './submissions';
 import './styles.css';
 
 type Puzzle = {
@@ -303,10 +304,18 @@ function GamePage() {
       localStorage.setItem(storageKey, JSON.stringify(next));
       return next;
     });
+    void submitSolutionRecord({
+      date: puzzle.dateIdentifier,
+      equation: normalizedEquation,
+      seconds,
+      difficulty: difficultyMode,
+      platform: 'web',
+      appVersion: webAppVersion,
+    });
     clear();
     setMessageTone('success');
     setMessage(`Solved. Both sides equal ${solution.value}.`);
-  }, [clear, equation, evaluation.left, puzzle, startTime, todaySolutions]);
+  }, [clear, difficultyMode, equation, evaluation.left, puzzle, startTime, todaySolutions]);
 
   const dateInputLabel = useMemo(() => {
     if (!puzzle) return 'Puzzle date';
@@ -865,8 +874,18 @@ function PrivacyPage() {
         </p>
         <h2>Data collection</h2>
         <p>
-          Crackle Date does not collect personal data from the app, does not use analytics SDKs, and
-          does not send puzzle progress or settings to a user account.
+          Crackle Date does not use advertising SDKs, user accounts, or tracking. When a web
+          solution is completed, the web version automatically sends an anonymous solution record so
+          the puzzle can be reviewed and improved.
+        </p>
+        <p>
+          Submitted web solution records include the puzzle date, equation, resulting value, solve
+          time, difficulty mode, platform, app version, and submission time. They do not include a
+          name, email address, account ID, or device advertising identifier.
+        </p>
+        <p>
+          The server also keeps basic request logs for reliability, using rotating client hashes
+          instead of raw IP addresses.
         </p>
         <h2>Tracking and advertising</h2>
         <p>Crackle Date does not show ads, sell personal information, or track you across apps.</p>

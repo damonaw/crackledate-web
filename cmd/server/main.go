@@ -1,12 +1,17 @@
 package main
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"mime"
+	"net"
 	"net/http"
 	"os"
 	"path"
@@ -46,7 +51,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + port,
-		Handler:           securityHeaders(mux),
+		Handler:           securityHeaders(requestLogger(mux, defaultAnalyticsConfig())),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -148,5 +153,118 @@ func securityHeaders(next http.Handler) http.Handler {
 		writer.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		writer.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
 		next.ServeHTTP(writer, request)
+	})
+}
+
+type analyticsConfig struct {
+	hashSecret string
+	now        func() time.Time
+	output     io.Writer
+}
+
+type clientHashSet struct {
+	Day  string
+	Week string
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func defaultAnalyticsConfig() analyticsConfig {
+	return analyticsConfig{
+		hashSecret: strings.TrimSpace(os.Getenv("CLIENT_HASH_SECRET")),
+		now:        time.Now,
+		output:     os.Stdout,
+	}
+}
+
+func (config analyticsConfig) timeNow() time.Time {
+	if config.now != nil {
+		return config.now()
+	}
+	return time.Now()
+}
+
+func (config analyticsConfig) logOutput() io.Writer {
+	if config.output != nil {
+		return config.output
+	}
+	return os.Stdout
+}
+
+func clientAddress(request *http.Request) (string, string) {
+	if value := strings.TrimSpace(request.Header.Get("CF-Connecting-IP")); value != "" {
+		return value, "cf-connecting-ip"
+	}
+	if value := strings.TrimSpace(request.Header.Get("X-Forwarded-For")); value != "" {
+		first, _, _ := strings.Cut(value, ",")
+		if first = strings.TrimSpace(first); first != "" {
+			return first, "x-forwarded-for"
+		}
+	}
+	if host, _, err := net.SplitHostPort(strings.TrimSpace(request.RemoteAddr)); err == nil && host != "" {
+		return host, "remote-addr"
+	}
+	return strings.TrimSpace(request.RemoteAddr), "remote-addr"
+}
+
+func clientHashes(clientIP, secret string, now time.Time) clientHashSet {
+	now = now.UTC()
+	year, week := now.ISOWeek()
+	return clientHashSet{
+		Day:  clientHash(secret, now.Format("2006-01-02"), clientIP),
+		Week: clientHash(secret, fmt.Sprintf("%04d-W%02d", year, week), clientIP),
+	}
+}
+
+func clientHash(secret, period, clientIP string) string {
+	sum := sha256.Sum256([]byte(secret + "\x00" + period + "\x00" + clientIP))
+	return hex.EncodeToString(sum[:])[:24]
+}
+
+func (recorder *statusRecorder) WriteHeader(status int) {
+	recorder.status = status
+	recorder.ResponseWriter.WriteHeader(status)
+}
+
+func (recorder *statusRecorder) Write(body []byte) (int, error) {
+	if recorder.status == 0 {
+		recorder.status = http.StatusOK
+	}
+	return recorder.ResponseWriter.Write(body)
+}
+
+func requestLogger(next http.Handler, config analyticsConfig) http.Handler {
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		start := time.Now()
+		recorder := &statusRecorder{ResponseWriter: writer}
+		next.ServeHTTP(recorder, request)
+		if recorder.status == 0 {
+			recorder.status = http.StatusOK
+		}
+
+		clientIP, clientSource := clientAddress(request)
+		hashes := clientHashes(clientIP, config.hashSecret, config.timeNow())
+		entry := map[string]any{
+			"time":         time.Now().UTC().Format(time.RFC3339Nano),
+			"level":        "INFO",
+			"msg":          "request",
+			"method":       request.Method,
+			"path":         request.URL.Path,
+			"status":       recorder.status,
+			"durationMs":   time.Since(start).Milliseconds(),
+			"clientDay":    hashes.Day,
+			"clientWeek":   hashes.Week,
+			"clientSource": clientSource,
+			"country":      strings.TrimSpace(request.Header.Get("CF-IPCountry")),
+			"cfRay":        strings.TrimSpace(request.Header.Get("CF-Ray")),
+			"userAgent":    strings.TrimSpace(request.UserAgent()),
+			"referer":      strings.TrimSpace(request.Referer()),
+		}
+		if err := json.NewEncoder(config.logOutput()).Encode(entry); err != nil {
+			log.Printf("request log: %v", err)
+		}
 	})
 }

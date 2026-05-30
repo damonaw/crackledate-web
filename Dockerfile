@@ -15,10 +15,13 @@ RUN go test ./...
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/crackledate-web ./cmd/server
 
 FROM alpine:3.21
-RUN adduser -D -H -u 10001 crackledate
+RUN adduser -D -H -u 10001 crackledate \
+    && mkdir -p /data \
+    && chown crackledate:crackledate /data
 USER crackledate
 WORKDIR /app
 COPY --from=backend /out/crackledate-web /app/crackledate-web
 EXPOSE 8080
 ENV PORT=8080
+ENV SUBMISSIONS_PATH=/data/submissions.ndjson
 ENTRYPOINT ["/app/crackledate-web"]

@@ -515,32 +515,37 @@ h1 {
 
 .digit-rail span,
 .digit-rail button {
-  width: 44px;
-  height: 44px;
   display: grid;
   place-items: center;
-  border-radius: 8px;
-  border: 1px solid rgba(142, 142, 147, 0.3);
-  background: var(--ios-secondary-background);
   color: var(--ios-secondary-label);
   font-size: 1.5rem;
   font-weight: 700;
   line-height: 1;
 }
 
+.digit-rail span {
+  min-width: 18px;
+  height: 44px;
+  border: 0;
+  background: transparent;
+}
+
 .digit-rail button {
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: transparent;
   cursor: pointer;
 }
 
-.digit-rail span.used,
-.digit-rail button.used {
-  opacity: 0.5;
+.digit-rail span.used {
+  color: rgba(142, 142, 147, 0.46);
 }
 
-.digit-rail span.active,
 .digit-rail button.active {
   color: white;
-  border-color: rgba(0, 122, 255, 0.72);
+  border: 1px solid rgba(0, 122, 255, 0.72);
+  border-radius: 8px;
   background: var(--ios-blue);
   box-shadow:
     0 12px 24px rgba(0, 122, 255, 0.24),
@@ -1090,10 +1095,14 @@ h1 {
     gap: 6px;
   }
 
-  .digit-rail span,
   .digit-rail button {
     width: 38px;
     height: 38px;
+  }
+
+  .digit-rail span {
+    height: 38px;
+    min-width: 16px;
   }
 
   .operator-grid {

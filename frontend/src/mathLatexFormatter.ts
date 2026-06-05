@@ -33,8 +33,8 @@ type MathNode =
     })
   | (NodeBase & { kind: 'unary'; operator: '-' | '√'; value: MathNode; operatorStart: number; operatorEnd: number })
   | (NodeBase & { kind: 'postfix'; operator: '!'; value: MathNode; operatorStart: number; operatorEnd: number })
-  | (NodeBase & { kind: 'group'; value: MathNode })
-  | (NodeBase & { kind: 'absolute'; value: MathNode });
+  | (NodeBase & { kind: 'group'; value: MathNode; closed: boolean })
+  | (NodeBase & { kind: 'absolute'; value: MathNode; closed: boolean });
 
 type EquationPart = {
   tokens: Token[];
@@ -346,14 +346,14 @@ class Parser {
       this.advance();
       const value = this.isAtStop(['rightParen']) ? placeholderNode(token.end) : this.parseExpression(['rightParen']);
       const close = this.matchKind('rightParen') ? this.previous() : undefined;
-      return { kind: 'group', value, start: token.start, end: close?.end ?? value.end };
+      return { kind: 'group', value, closed: Boolean(close), start: token.start, end: close?.end ?? value.end };
     }
 
     if (token.kind === 'absoluteOpen') {
       this.advance();
       const value = this.isAtStop(['absoluteClose']) ? placeholderNode(token.end) : this.parseExpression(['absoluteClose']);
       const close = this.matchKind('absoluteClose') ? this.previous() : undefined;
-      return { kind: 'absolute', value, start: token.start, end: close?.end ?? value.end };
+      return { kind: 'absolute', value, closed: Boolean(close), start: token.start, end: close?.end ?? value.end };
     }
 
     this.advance();
@@ -485,8 +485,8 @@ function renderAbsolute(node: Extract<MathNode, { kind: 'absolute' }>, options: 
     cursorAt(options.cursorIndex, node.start),
     '\\left|',
     renderNode(node.value, 'absolute', options),
-    '\\right|',
-    cursorAt(options.cursorIndex, node.end),
+    node.closed ? '\\right|' : '\\right.',
+    node.closed ? cursorAt(options.cursorIndex, node.end) : '',
   ].join('');
 }
 
@@ -535,8 +535,8 @@ function renderGroup(node: Extract<MathNode, { kind: 'group' }>, context: Render
       cursorAt(options.cursorIndex, node.start),
       '\\left(',
       rendered,
-      '\\right)',
-      cursorAt(options.cursorIndex, node.end),
+      node.closed ? '\\right)' : '\\right.',
+      node.closed ? cursorAt(options.cursorIndex, node.end) : '',
     ].join('');
   }
 

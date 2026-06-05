@@ -63,6 +63,29 @@ describe('equationToLatex', () => {
     );
   });
 
+  test('renders one cursor after deleting a typed closing parenthesis', () => {
+    const latex = equationTokensToLatex([
+      { value: '6' },
+      { value: '×' },
+      { value: '(' },
+      { value: '4' },
+      { value: '2' },
+    ], { cursorIndex: 5, preserveDelimiters: true });
+
+    expect(latex).toBe(`6 \\cdot \\left(42${cursorLatex}\\right.`);
+    expect(cursorCount(latex)).toBe(1);
+  });
+
+  test('renders one cursor after deleting a typed closing absolute value', () => {
+    const latex = equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+      { value: '5' },
+    ], { cursorIndex: 2, preserveDelimiters: true });
+
+    expect(latex).toBe(`\\left|5${cursorLatex}\\right.`);
+    expect(cursorCount(latex)).toBe(1);
+  });
+
   test('keeps grouping when implicit multiplication needs it', () => {
     expect(equationToLatex('5(1+2)')).toBe('5 \\cdot \\left(1 + 2\\right)');
   });

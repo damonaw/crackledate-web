@@ -12,6 +12,8 @@ This keeps the runtime small and simple: the single container can sit behind any
 
 ## Local Development
 
+Open the local app at `http://localhost:5173/`.
+
 Frontend:
 
 ```bash
@@ -27,6 +29,12 @@ go run ./cmd/server
 ```
 
 The Vite dev server proxies `/api` to `http://localhost:8080`.
+
+## Environment
+
+- `PORT`: backend HTTP port; defaults to `8080`.
+- `SUBMISSIONS_PATH`: newline-delimited JSON store for submitted solutions; defaults to `data/submissions.ndjson` locally and `/data/submissions.ndjson` in Docker.
+- `CLIENT_HASH_SECRET`: optional salt for rotating request-log client hashes. Set this in production so daily and weekly client hashes cannot be compared across deployments.
 
 ## Docker
 

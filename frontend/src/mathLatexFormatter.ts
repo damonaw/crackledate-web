@@ -4,10 +4,16 @@ type Token =
   | { kind: 'equals'; text: '='; start: number; end: number }
   | { kind: 'leftParen'; text: '('; start: number; end: number }
   | { kind: 'rightParen'; text: ')'; start: number; end: number }
-  | { kind: 'pipe'; text: '|'; start: number; end: number };
+  | { kind: 'absoluteOpen'; text: '|'; start: number; end: number }
+  | { kind: 'absoluteClose'; text: '|'; start: number; end: number };
 
 type Operator = '+' | '-' | '*' | '/' | '^' | '√' | '!';
-type StopKind = 'rightParen' | 'pipe';
+type StopKind = 'rightParen' | 'absoluteClose';
+
+export type EquationLatexToken = {
+  value: string;
+  role?: 'absoluteOpen' | 'absoluteClose';
+};
 
 type NodeBase = {
   start: number;
@@ -39,10 +45,12 @@ type EquationPart = {
 
 type FormatterOptions = {
   cursorIndex?: number;
+  preserveDelimiters?: boolean;
 };
 
 type RenderOptions = {
   cursorIndex?: number;
+  preserveDelimiters: boolean;
   suppressStartCursor?: boolean;
   suppressEndCursor?: boolean;
 };
@@ -55,6 +63,16 @@ const cursorLatex = '\\htmlClass{equation-cursor-marker}{\\vphantom{0}}';
 export function equationToLatex(expression: string, options: FormatterOptions = {}): string {
   const tokens = tokenize(expression);
   const cursorIndex = clampCursorIndex(options.cursorIndex, Array.from(expression).length);
+  return tokensToLatex(tokens, cursorIndex, options);
+}
+
+export function equationTokensToLatex(inputTokens: EquationLatexToken[], options: FormatterOptions = {}): string {
+  const tokens = tokensFromInputTokens(inputTokens);
+  const cursorIndex = clampCursorIndex(options.cursorIndex, inputTokens.length);
+  return tokensToLatex(tokens, cursorIndex, options);
+}
+
+function tokensToLatex(tokens: Token[], cursorIndex: number | undefined, options: FormatterOptions): string {
   if (tokens.length === 0) {
     return cursorIndex === undefined ? placeholderLatex : cursorLatex;
   }
@@ -65,6 +83,7 @@ export function equationToLatex(expression: string, options: FormatterOptions = 
       const isFinalPart = index === parts.length - 1;
       const renderedPart = renderEquationPart(part, {
         cursorIndex,
+        preserveDelimiters: options.preserveDelimiters ?? false,
         suppressStartCursor: index > 0,
         suppressEndCursor: !isFinalPart,
       });
@@ -81,6 +100,7 @@ export function equationToLatex(expression: string, options: FormatterOptions = 
 function tokenize(input: string): Token[] {
   const tokens: Token[] = [];
   const characters = Array.from(input);
+  let nextAbsoluteKind: 'absoluteOpen' | 'absoluteClose' = 'absoluteOpen';
 
   for (let index = 0; index < characters.length;) {
     const character = characters[index];
@@ -102,6 +122,13 @@ function tokenize(input: string): Token[] {
       continue;
     }
 
+    if (character === '|') {
+      tokens.push({ kind: nextAbsoluteKind, text: '|', start: index, end: index + 1 });
+      nextAbsoluteKind = nextAbsoluteKind === 'absoluteOpen' ? 'absoluteClose' : 'absoluteOpen';
+      index += 1;
+      continue;
+    }
+
     const token = tokenForCharacter(character, index);
     if (token) {
       tokens.push(token);
@@ -111,6 +138,46 @@ function tokenize(input: string): Token[] {
   }
 
   return tokens;
+}
+
+function tokensFromInputTokens(inputTokens: EquationLatexToken[]): Token[] {
+  const tokens: Token[] = [];
+
+  for (let index = 0; index < inputTokens.length;) {
+    const token = inputTokens[index];
+    if (/^\d$/.test(token.value)) {
+      const start = index;
+      let text = token.value;
+      index += 1;
+      while (index < inputTokens.length && /^\d$/.test(inputTokens[index].value)) {
+        text += inputTokens[index].value;
+        index += 1;
+      }
+      tokens.push({ kind: 'number', text, start, end: index });
+      continue;
+    }
+
+    const parsedToken = tokenForInputToken(token, index);
+    if (parsedToken) {
+      tokens.push(parsedToken);
+    }
+    index += 1;
+  }
+
+  return tokens;
+}
+
+function tokenForInputToken(token: EquationLatexToken, start: number): Token | null {
+  if (token.value === '|') {
+    return {
+      kind: token.role === 'absoluteClose' ? 'absoluteClose' : 'absoluteOpen',
+      text: '|',
+      start,
+      end: start + 1,
+    };
+  }
+
+  return tokenForCharacter(token.value, start);
 }
 
 function tokenForCharacter(character: string, start: number): Token | null {
@@ -138,8 +205,6 @@ function tokenForCharacter(character: string, start: number): Token | null {
       return { kind: 'leftParen', text: '(', start, end: start + 1 };
     case ')':
       return { kind: 'rightParen', text: ')', start, end: start + 1 };
-    case '|':
-      return { kind: 'pipe', text: '|', start, end: start + 1 };
     case '=':
       return { kind: 'equals', text: '=', start, end: start + 1 };
     default:
@@ -284,10 +349,10 @@ class Parser {
       return { kind: 'group', value, start: token.start, end: close?.end ?? value.end };
     }
 
-    if (token.kind === 'pipe') {
+    if (token.kind === 'absoluteOpen') {
       this.advance();
-      const value = this.isAtStop(['pipe']) ? placeholderNode(token.end) : this.parseExpression(['pipe']);
-      const close = this.matchKind('pipe') ? this.previous() : undefined;
+      const value = this.isAtStop(['absoluteClose']) ? placeholderNode(token.end) : this.parseExpression(['absoluteClose']);
+      const close = this.matchKind('absoluteClose') ? this.previous() : undefined;
       return { kind: 'absolute', value, start: token.start, end: close?.end ?? value.end };
     }
 
@@ -305,7 +370,7 @@ class Parser {
       return false;
     }
 
-    if (token.kind === 'number' || token.kind === 'leftParen' || token.kind === 'pipe') {
+    if (token.kind === 'number' || token.kind === 'leftParen' || token.kind === 'absoluteOpen') {
       return true;
     }
 
@@ -465,7 +530,7 @@ function renderBinary(node: Extract<MathNode, { kind: 'binary' }>, context: Rend
 function renderGroup(node: Extract<MathNode, { kind: 'group' }>, context: RenderContext, options: RenderOptions): string {
   const rendered = renderNode(node.value, 'top', options);
 
-  if (node.value.kind === 'placeholder') {
+  if (options.preserveDelimiters || node.value.kind === 'placeholder') {
     return [
       cursorAt(options.cursorIndex, node.start),
       '\\left(',
@@ -517,7 +582,7 @@ function renderPowerBase(node: MathNode, options: RenderOptions): string {
 
   if (node.kind === 'group') {
     const rendered = renderNode(node.value, 'top', options);
-    return needsVisibleGroup(node.value) ? `\\left(${rendered}\\right)` : rendered;
+    return options.preserveDelimiters || needsVisibleGroup(node.value) ? `\\left(${rendered}\\right)` : rendered;
   }
 
   if (node.kind === 'unary' && node.operator === '√') {
@@ -551,7 +616,9 @@ function cursorInsidePart(cursorIndex: number | undefined, part: EquationPart): 
 }
 
 function suppressCursorAtPartBoundary(options: RenderOptions, part: EquationPart): RenderOptions {
-  return cursorSuppressedAtPartBoundary(options, part) ? {} : options;
+  return cursorSuppressedAtPartBoundary(options, part)
+    ? { ...options, cursorIndex: undefined }
+    : options;
 }
 
 function cursorSuppressedAtPartBoundary(options: RenderOptions, part: EquationPart): boolean {

@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
-import { equationToLatex } from './mathLatexFormatter';
+import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import './styles.css';
 
@@ -44,9 +44,8 @@ type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
 type FeedbackTone = 'success' | 'error';
 
-type EquationToken = {
+type EquationToken = EquationLatexToken & {
   id: string;
-  value: string;
   digitIndex?: number;
 };
 
@@ -190,17 +189,27 @@ function GamePage() {
   );
 
   const insertPairedDelimiter = useCallback(
-    (openValue: string, closeValue: string) => {
+    (
+      openValue: string,
+      closeValue: string,
+      openRole?: EquationToken['role'],
+      closeRole?: EquationToken['role'],
+    ) => {
       if (!startTime) {
         setStartTime(Date.now());
       }
       setTokens((current) => {
-        if (current[cursorIndex]?.value === closeValue) {
+        if (isClosingDelimiterToken(current[cursorIndex], closeValue, closeRole)) {
           return current;
         }
 
         const next = [...current];
-        next.splice(cursorIndex, 0, createOperatorToken(openValue), createOperatorToken(closeValue));
+        next.splice(
+          cursorIndex,
+          0,
+          createOperatorToken(openValue, openRole),
+          createOperatorToken(closeValue, closeRole),
+        );
         return next;
       });
       setCursorIndex((index) => index + 1);
@@ -230,7 +239,7 @@ function GamePage() {
   const insertOperator = useCallback(
     (value: string) => {
       if (value === '|') {
-        insertPairedDelimiter('|', '|');
+        insertPairedDelimiter('|', '|', 'absoluteOpen', 'absoluteClose');
         return;
       }
       if (value === '(') {
@@ -259,9 +268,12 @@ function GamePage() {
   const backspace = useCallback(() => {
     if (cursorIndex === 0) return;
     setTokens((current) => {
-      const left = current[cursorIndex - 1]?.value;
-      const right = current[cursorIndex]?.value;
-      if ((left === '(' && right === ')') || (left === '|' && right === '|')) {
+      const left = current[cursorIndex - 1];
+      const right = current[cursorIndex];
+      if (
+        (left?.value === '(' && right?.value === ')') ||
+        isAbsoluteValuePair(left, right)
+      ) {
         const next = [...current];
         next.splice(cursorIndex - 1, 2);
         return next;
@@ -665,12 +677,22 @@ function MathEquation({
   equation,
   className = '',
   cursorIndex,
+  tokens,
+  preserveDelimiters = false,
 }: {
   equation: string;
   className?: string;
   cursorIndex?: number;
+  tokens?: EquationLatexToken[];
+  preserveDelimiters?: boolean;
 }) {
-  const latex = useMemo(() => equationToLatex(equation, { cursorIndex }), [cursorIndex, equation]);
+  const latex = useMemo(
+    () =>
+      tokens
+        ? equationTokensToLatex(tokens, { cursorIndex, preserveDelimiters })
+        : equationToLatex(equation, { cursorIndex, preserveDelimiters }),
+    [cursorIndex, equation, preserveDelimiters, tokens],
+  );
   const html = useMemo(
     () =>
       katex.renderToString(latex, {
@@ -887,7 +909,7 @@ function EquationEditor({
   return (
     <div className="equation-box" aria-label="Equation input" data-testid="equation-editor">
       <div className="equation-preview" aria-hidden="true">
-        <MathEquation equation={equation} cursorIndex={cursorIndex} />
+        <MathEquation equation={equation} tokens={tokens} cursorIndex={cursorIndex} preserveDelimiters />
       </div>
       <div className="equation-hit-layer">
         <CursorSlot index={0} active={cursorIndex === 0} onCursorChange={onCursorChange} label="Move cursor to start" />
@@ -1032,8 +1054,8 @@ function createTokenId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }
 
-function createOperatorToken(value: string): EquationToken {
-  return { id: createTokenId(), value };
+function createOperatorToken(value: string, role?: EquationToken['role']): EquationToken {
+  return { id: createTokenId(), value, role };
 }
 
 function createDigitToken(value: number, digitIndex: number): EquationToken {
@@ -1044,6 +1066,22 @@ function insertTokenAt(tokens: EquationToken[], cursorIndex: number, token: Equa
   const next = [...tokens];
   next.splice(cursorIndex, 0, token);
   return next;
+}
+
+function isClosingDelimiterToken(
+  token: EquationToken | undefined,
+  closeValue: string,
+  closeRole?: EquationToken['role'],
+): boolean {
+  if (!token || token.value !== closeValue) {
+    return false;
+  }
+
+  return closeRole === undefined || token.role === closeRole;
+}
+
+function isAbsoluteValuePair(left: EquationToken | undefined, right: EquationToken | undefined): boolean {
+  return left?.value === '|' && left.role === 'absoluteOpen' && right?.value === '|' && right.role === 'absoluteClose';
 }
 
 function tokensToEquation(tokens: EquationToken[]): string {

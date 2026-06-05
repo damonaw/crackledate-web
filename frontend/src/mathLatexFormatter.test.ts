@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { equationToLatex } from './mathLatexFormatter';
+import { equationToLatex, equationTokensToLatex } from './mathLatexFormatter';
 
 const cursorLatex = '\\htmlClass{equation-cursor-marker}{\\vphantom{0}}';
 
@@ -54,12 +54,37 @@ describe('equationToLatex', () => {
     expect(equationToLatex('(5)', { cursorIndex: 3 })).toBe(`5${cursorLatex}`);
   });
 
+  test('preserves typed parentheses for the live editor', () => {
+    expect(equationToLatex('(5)', { cursorIndex: 0, preserveDelimiters: true })).toBe(
+      `${cursorLatex}\\left(5\\right)`,
+    );
+    expect(equationToLatex('(5)', { cursorIndex: 3, preserveDelimiters: true })).toBe(
+      `\\left(5\\right)${cursorLatex}`,
+    );
+  });
+
   test('keeps grouping when implicit multiplication needs it', () => {
     expect(equationToLatex('5(1+2)')).toBe('5 \\cdot \\left(1 + 2\\right)');
   });
 
   test('drops exponent parentheses around fractions', () => {
     expect(equationToLatex('5^(1/6)')).toBe('5^{\\frac{1}{6}}');
+  });
+
+  test('preserves exponent parentheses around fractions for the live editor', () => {
+    expect(equationToLatex('5^(1/6)', { preserveDelimiters: true })).toBe(
+      '5^{\\left(\\frac{1}{6}\\right)}',
+    );
+  });
+
+  test('uses explicit absolute open and close tokens for the live editor', () => {
+    expect(equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+      { value: '5' },
+      { value: '|', role: 'absoluteClose' },
+      { value: '÷' },
+      { value: '1' },
+    ])).toBe('\\frac{\\left|5\\right|}{1}');
   });
 
   test('renders the cursor inside the exponent when the cursor state is inside the exponent', () => {

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -54,6 +54,17 @@ type ValueSegment = {
   isRepeating: boolean;
 };
 
+type CalendarDay = {
+  date: Date;
+  dateIdentifier: string;
+  day: number;
+  isCurrentMonth: boolean;
+};
+
+const weekdayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const monthFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
+const fullDateFormatter = new Intl.DateTimeFormat(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+
 const operators = [
   ['+', '+'],
   ['−', '-'],
@@ -87,7 +98,7 @@ function App() {
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
   const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
-  const [activeView, setActiveView] = useState<'game' | 'solutions'>('game');
+  const [activeView, setActiveView] = useState<'game' | 'solutions' | 'settings'>('game');
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [tokens, setTokens] = useState<EquationToken[]>([]);
   const [cursorIndex, setCursorIndex] = useState(0);
@@ -98,7 +109,6 @@ function GamePage() {
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
-  const [showSettings, setShowSettings] = useState(false);
 
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
   const usedDigitIndices = useMemo(() => digitIndicesInUse(tokens), [tokens]);
@@ -122,19 +132,6 @@ function GamePage() {
   useEffect(() => {
     localStorage.setItem(difficultyModeKey, difficultyMode);
   }, [difficultyMode]);
-
-  useEffect(() => {
-    if (!showSettings) return undefined;
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setShowSettings(false);
-      }
-    };
-
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [showSettings]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -356,14 +353,18 @@ function GamePage() {
   const showStart = useCallback(() => {
     setIsPlaying(false);
     setActiveView('game');
-    setShowSettings(false);
   }, []);
 
   const showSolutions = useCallback(() => {
     localStorage.setItem(playStartedKey, 'true');
     setIsPlaying(true);
     setActiveView('solutions');
-    setShowSettings(false);
+  }, []);
+
+  const showSettingsPage = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setIsPlaying(true);
+    setActiveView('settings');
   }, []);
 
   const showGame = useCallback(() => {
@@ -381,15 +382,13 @@ function GamePage() {
   return (
     <main
       className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'} ${
-        activeView === 'solutions' ? 'solutions-shell' : ''
+        isPlaying && activeView === 'game' ? 'game-shell' : ''
+      } ${activeView === 'solutions' ? 'solutions-shell detail-shell' : ''} ${
+        activeView === 'settings' ? 'settings-shell detail-shell' : ''
       }`}
     >
-      <header className={`top-bar ${isPlaying ? 'game-top-bar' : ''}`}>
-        <button className="brand" type="button" onClick={showStart} aria-label="Crackle Date home">
-          <img src="/app-icon.png" alt="" />
-          <span>Crackle Date</span>
-        </button>
-        {isPlaying && (
+      {isPlaying && (
+        <header className="top-bar game-top-bar">
           <DatePickerControl
             className="top-date-picker"
             label={dateInputLabel}
@@ -397,43 +396,39 @@ function GamePage() {
             selectedDate={selectedDate}
             onSelectedDateChange={setSelectedDate}
           />
-        )}
-        <nav className="site-nav" aria-label="Site">
-          <button
-            className="settings-trigger"
-            type="button"
-            aria-label="Settings"
-            aria-expanded={showSettings}
-            aria-controls="settings-drawer"
-            onClick={() => setShowSettings((isVisible) => !isVisible)}
-          >
-            <SettingsIcon />
-          </button>
-        </nav>
-      </header>
-
-      {showSettings && (
-        <SettingsPanel
-          themePreference={themePreference}
-          difficultyMode={difficultyMode}
-          onThemePreferenceChange={setThemePreference}
-          onDifficultyModeChange={setDifficultyMode}
-          onShowSolutions={showSolutions}
-          onClose={() => setShowSettings(false)}
-        />
+          <nav className="site-nav" aria-label="Site">
+            <button
+              className="stats-trigger"
+              type="button"
+              aria-label="Stats"
+              aria-pressed={activeView === 'solutions'}
+              onClick={activeView === 'solutions' ? showGame : showSolutions}
+            >
+              <StatsIcon />
+            </button>
+            <button
+              className="settings-trigger"
+              type="button"
+              aria-label="Settings"
+              aria-pressed={activeView === 'settings'}
+              onClick={activeView === 'settings' ? showGame : showSettingsPage}
+            >
+              <SettingsIcon />
+            </button>
+          </nav>
+        </header>
       )}
 
       {!isPlaying && (
         <StartPage
-          puzzle={puzzle}
           solutionCount={todaySolutions.length}
           onPlay={playPuzzle}
         />
       )}
 
       {isPlaying && activeView === 'game' && (
-        <>
-          <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
+        <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
+          <div className="expression-area">
             <EquationEditor tokens={tokens} cursorIndex={cursorIndex} onCursorChange={setCursorIndex} />
 
             {isEasyMode && (
@@ -448,7 +443,9 @@ function GamePage() {
                 </div>
               </div>
             )}
+          </div>
 
+          <div className="control-area">
             {puzzle && (
               <DigitRail
                 digits={puzzle.digits}
@@ -483,13 +480,8 @@ function GamePage() {
                 Submit
               </button>
             </div>
-          </section>
-
-          <aside className="solutions-panel" aria-labelledby="solutions-title">
-            <h2 id="solutions-title">Saved solutions</h2>
-            <SolutionsList solutions={todaySolutions} />
-          </aside>
-        </>
+          </div>
+        </section>
       )}
 
       <StatusToast message={feedbackMessage} tone={feedbackTone} />
@@ -498,7 +490,16 @@ function GamePage() {
         <SolutionsPage
           displayDate={puzzle?.displayDate ?? 'Selected date'}
           solutions={todaySolutions}
-          onBack={showGame}
+        />
+      )}
+
+      {isPlaying && activeView === 'settings' && (
+        <SettingsPanel
+          themePreference={themePreference}
+          difficultyMode={difficultyMode}
+          onThemePreferenceChange={setThemePreference}
+          onDifficultyModeChange={setDifficultyMode}
+          onShowSolutions={showSolutions}
         />
       )}
     </main>
@@ -530,82 +531,68 @@ function SettingsPanel({
   onThemePreferenceChange,
   onDifficultyModeChange,
   onShowSolutions,
-  onClose,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
   onShowSolutions: () => void;
-  onClose: () => void;
 }) {
   return (
-    <>
-      <button className="settings-backdrop" type="button" aria-label="Close settings" onClick={onClose} />
-      <section
-        className="settings-drawer"
-        id="settings-drawer"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settings-title"
-      >
-        <div className="settings-header">
-          <div>
-            <h2 id="settings-title">Settings</h2>
-            <span>Saved on this browser</span>
+    <section className="settings-page" aria-labelledby="settings-title">
+      <div className="settings-page-header">
+        <div>
+          <h1 id="settings-title">Settings</h1>
+          <p>Saved on this browser</p>
+        </div>
+      </div>
+
+      <div className="settings-group">
+        <fieldset className="settings-row">
+          <legend>Appearance</legend>
+          <div className="segmented-control">
+            {(['system', 'light', 'dark'] as const).map((preference) => (
+              <label key={preference}>
+                <input
+                  type="radio"
+                  name="appearance"
+                  value={preference}
+                  checked={themePreference === preference}
+                  onChange={() => onThemePreferenceChange(preference)}
+                />
+                <span>{preference === 'system' ? 'Auto' : preference[0].toUpperCase() + preference.slice(1)}</span>
+              </label>
+            ))}
           </div>
-          <button className="settings-close" type="button" aria-label="Close settings" onClick={onClose}>
-            <CloseIcon />
-          </button>
-        </div>
+        </fieldset>
 
-        <div className="settings-group">
-          <fieldset className="settings-row">
-            <legend>Appearance</legend>
-            <div className="segmented-control">
-              {(['system', 'light', 'dark'] as const).map((preference) => (
-                <label key={preference}>
-                  <input
-                    type="radio"
-                    name="appearance"
-                    value={preference}
-                    checked={themePreference === preference}
-                    onChange={() => onThemePreferenceChange(preference)}
-                  />
-                  <span>{preference === 'system' ? 'Auto' : preference[0].toUpperCase() + preference.slice(1)}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+        <fieldset className="settings-row">
+          <legend>Difficulty</legend>
+          <div className="segmented-control">
+            {(['easy', 'hard'] as const).map((mode) => (
+              <label key={mode}>
+                <input
+                  type="radio"
+                  name="difficulty"
+                  value={mode}
+                  checked={difficultyMode === mode}
+                  onChange={() => onDifficultyModeChange(mode)}
+                />
+                <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+      </div>
 
-          <fieldset className="settings-row">
-            <legend>Difficulty</legend>
-            <div className="segmented-control">
-              {(['easy', 'hard'] as const).map((mode) => (
-                <label key={mode}>
-                  <input
-                    type="radio"
-                    name="difficulty"
-                    value={mode}
-                    checked={difficultyMode === mode}
-                    onChange={() => onDifficultyModeChange(mode)}
-                  />
-                  <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-        </div>
-
-        <nav className="settings-links" aria-label="Help and policies">
-          <button className="mobile-only-link" type="button" onClick={onShowSolutions}>
-            Saved Solutions
-          </button>
-          <a href="/privacy/">Privacy</a>
-          <a href="/support/">Support</a>
-        </nav>
-      </section>
-    </>
+      <nav className="settings-links" aria-label="Help and policies">
+        <button className="mobile-only-link" type="button" onClick={onShowSolutions}>
+          Saved Solutions
+        </button>
+        <a href="/privacy/">Privacy</a>
+        <a href="/support/">Support</a>
+      </nav>
+    </section>
   );
 }
 
@@ -618,11 +605,14 @@ function SettingsIcon() {
   );
 }
 
-function CloseIcon() {
+function StatsIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M18 6 6 18" />
-      <path d="m6 6 12 12" />
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="M8 16v-5" />
+      <path d="M12 16V8" />
+      <path d="M16 16v-3" />
     </svg>
   );
 }
@@ -630,11 +620,9 @@ function CloseIcon() {
 function SolutionsPage({
   displayDate,
   solutions,
-  onBack,
 }: {
   displayDate: string;
   solutions: SavedSolution[];
-  onBack: () => void;
 }) {
   return (
     <section className="solutions-page" aria-labelledby="solutions-page-title">
@@ -643,9 +631,6 @@ function SolutionsPage({
           <h1 id="solutions-page-title">Saved Solutions</h1>
           <p>{displayDate}</p>
         </div>
-        <button type="button" onClick={onBack}>
-          Puzzle
-        </button>
       </div>
       <SolutionsList solutions={solutions} />
     </section>
@@ -764,11 +749,9 @@ function appendValueSegment(segments: ValueSegment[], text: string, isRepeating:
 }
 
 function StartPage({
-  puzzle,
   solutionCount,
   onPlay,
 }: {
-  puzzle: Puzzle | null;
   solutionCount: number;
   onPlay: () => void;
 }) {
@@ -778,16 +761,18 @@ function StartPage({
     <section className="start-panel" aria-labelledby="start-title">
       <div className="start-card">
         <div className="start-copy">
+          <img className="start-icon" src="/app-icon.png" alt="" />
           <h1 id="start-title">Crackle Date</h1>
-          <p className="start-date">{puzzle?.displayDate ?? 'Today'}</p>
+          <p className="start-tagline">
+            Crack the date into equal values{' '}
+            <br />
+            with Math!
+          </p>
         </div>
 
-        <button className="play-button" type="button" onClick={onPlay}>
-          Play
-        </button>
-
-        <div className="start-secondary-actions">
+        <div className="start-actions" aria-label="Start actions">
           <button
+            className="start-action-button"
             type="button"
             aria-pressed={infoMode === 'rules'}
             onClick={() => setInfoMode((mode) => (mode === 'rules' ? null : 'rules'))}
@@ -795,11 +780,15 @@ function StartPage({
             How to Play
           </button>
           <button
+            className="start-action-button"
             type="button"
             aria-pressed={infoMode === 'stats'}
             onClick={() => setInfoMode((mode) => (mode === 'stats' ? null : 'stats'))}
           >
             Stats
+          </button>
+          <button className="start-action-button play-button" type="button" onClick={onPlay}>
+            Play
           </button>
         </div>
 
@@ -836,16 +825,100 @@ function DatePickerControl({
   selectedDate: string;
   onSelectedDateChange: (date: string) => void;
 }) {
+  const pickerId = useId();
+  const pickerRef = useRef<HTMLDivElement>(null);
+  const selectedDateObject = useMemo(() => dateFromIdentifier(selectedDate), [selectedDate]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(selectedDateObject));
+  const todayIdentifier = useMemo(() => localDateIdentifier(new Date()), []);
+  const calendarDays = useMemo(() => calendarDaysForMonth(visibleMonth), [visibleMonth]);
+  const monthLabel = useMemo(() => monthFormatter.format(visibleMonth), [visibleMonth]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setVisibleMonth(startOfMonth(selectedDateObject));
+    }
+  }, [isOpen, selectedDateObject]);
+
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (pickerRef.current?.contains(event.target as Node)) return;
+      setIsOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
+  const chooseDate = useCallback(
+    (dateIdentifier: string) => {
+      onSelectedDateChange(dateIdentifier);
+      setIsOpen(false);
+    },
+    [onSelectedDateChange],
+  );
+
   return (
-    <label className={className}>
-      <span>{displayDate}</span>
-      <input
-        type="date"
+    <div className={className} ref={pickerRef}>
+      <button
+        className="date-picker-trigger"
+        type="button"
         aria-label={label}
-        value={selectedDate}
-        onChange={(event) => onSelectedDateChange(event.target.value)}
-      />
-    </label>
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? pickerId : undefined}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <span>{displayDate}</span>
+      </button>
+
+      {isOpen && (
+        <div className="date-picker-popover" id={pickerId} role="dialog" aria-label="Choose puzzle date">
+          <div className="date-picker-header">
+            <button type="button" aria-label="Previous month" onClick={() => setVisibleMonth((month) => addMonths(month, -1))}>
+              &lt;
+            </button>
+            <strong>{monthLabel}</strong>
+            <button type="button" aria-label="Next month" onClick={() => setVisibleMonth((month) => addMonths(month, 1))}>
+              &gt;
+            </button>
+          </div>
+
+          <div className="date-picker-weekdays" aria-hidden="true">
+            {weekdayLabels.map((weekday, index) => (
+              <span key={`${weekday}-${index}`}>{weekday}</span>
+            ))}
+          </div>
+
+          <div className="date-picker-grid">
+            {calendarDays.map((day) => (
+              <button
+                className={`date-picker-day ${day.isCurrentMonth ? '' : 'outside'} ${
+                  day.dateIdentifier === selectedDate ? 'selected' : ''
+                } ${day.dateIdentifier === todayIdentifier ? 'today' : ''}`}
+                type="button"
+                key={day.dateIdentifier}
+                aria-label={fullDateFormatter.format(day.date)}
+                aria-pressed={day.dateIdentifier === selectedDate}
+                onClick={() => chooseDate(day.dateIdentifier)}
+              >
+                {day.day}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1226,6 +1299,37 @@ function localDateIdentifier(date: Date): string {
   const month = `${date.getMonth() + 1}`.padStart(2, '0');
   const day = `${date.getDate()}`.padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+function dateFromIdentifier(identifier: string): Date {
+  const [year, month, day] = identifier.split('-').map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) {
+    return new Date();
+  }
+  return new Date(year, month - 1, day);
+}
+
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1);
+}
+
+function addMonths(date: Date, amount: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + amount, 1);
+}
+
+function calendarDaysForMonth(month: Date): CalendarDay[] {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstWeekday = new Date(year, monthIndex, 1).getDay();
+  return Array.from({ length: 42 }, (_, offset) => {
+    const date = new Date(year, monthIndex, offset - firstWeekday + 1);
+    return {
+      date,
+      dateIdentifier: localDateIdentifier(date),
+      day: date.getDate(),
+      isCurrentMonth: date.getMonth() === monthIndex,
+    };
+  });
 }
 
 function formatTime(seconds: number): string {

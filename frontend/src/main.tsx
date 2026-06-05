@@ -965,69 +965,180 @@ function CursorSlot({
 
 function PrivacyPage() {
   return (
-    <main className="document-page">
-      <PageNav />
-      <h1>Privacy Policy</h1>
-      <p className="meta">Last updated May 24, 2026</p>
-      <section>
-        <p>
-          Crackle Date is designed as an offline daily math puzzle without advertising, tracking,
-          user accounts, or external content.
-        </p>
-        <h2>Information stored on your device</h2>
-        <p>
-          The app stores tutorial state, preferences, statistics, and saved solutions locally using
-          Apple system storage. The web version stores saved web solutions in your browser.
-        </p>
-        <h2>Data collection</h2>
-        <p>
-          Crackle Date does not use advertising SDKs, user accounts, or tracking. When a web
-          solution is completed, the web version automatically sends an anonymous solution record so
-          the puzzle can be reviewed and improved.
-        </p>
-        <p>
-          Submitted web solution records include the puzzle date, equation, resulting value, solve
-          time, difficulty mode, platform, app version, and submission time. They do not include a
-          name, email address, account ID, or device advertising identifier.
-        </p>
-        <p>
-          The server also keeps basic request logs for reliability, using rotating client hashes
-          instead of raw IP addresses.
-        </p>
-        <h2>Tracking and advertising</h2>
-        <p>Crackle Date does not show ads, sell personal information, or track you across apps.</p>
-      </section>
-    </main>
+    <DocumentShell
+      currentPage="privacy"
+      title="Privacy"
+      subtitle="Crackle Date is built to be played without accounts, ads, or cross-app tracking."
+      meta="Last updated May 24, 2026"
+    >
+      <DocumentSection
+        title="Local Storage"
+        rows={[
+          {
+            label: 'iOS app',
+            body: 'Preferences, tutorial state, statistics, and saved solutions stay on your device using Apple system storage.',
+          },
+          {
+            label: 'Web app',
+            body: 'Saved web solutions and settings are stored in this browser so your puzzle history works between visits.',
+          },
+        ]}
+      />
+
+      <DocumentSection
+        title="Anonymous Web Submissions"
+        rows={[
+          {
+            label: 'What is sent',
+            body: 'When a web solution is completed, the web app sends the puzzle date, equation, resulting value, solve time, difficulty mode, platform, app version, and submission time.',
+          },
+          {
+            label: 'What is not sent',
+            body: 'Submitted records do not include your name, email address, account ID, device advertising identifier, or the contents of your browser storage.',
+          },
+          {
+            label: 'Reliability logs',
+            body: 'The server keeps basic request logs for reliability and uses rotating client hashes instead of storing raw IP addresses in solution records.',
+          },
+        ]}
+      />
+
+      <DocumentSection
+        title="Tracking"
+        rows={[
+          {
+            label: 'No ads',
+            body: 'Crackle Date does not show ads, sell personal information, or track you across other apps or websites.',
+          },
+          {
+            label: 'No account',
+            body: 'There is no account system, login, profile, leaderboard, or user-generated content feed.',
+          },
+        ]}
+      />
+    </DocumentShell>
   );
 }
 
 function SupportPage() {
   return (
+    <DocumentShell
+      currentPage="support"
+      title="Support"
+      subtitle="Quick checks and details to include when something does not behave the way you expect."
+    >
+      <DocumentSection
+        title="Common Checks"
+        rows={[
+          {
+            label: 'Equation rejected',
+            body: 'Confirm the date digits are used in order and that both sides of the equals sign evaluate to the same value.',
+          },
+          {
+            label: 'Unexpected result',
+            body: 'Check for unfinished parentheses, absolute value bars, roots, exponents, or division groups before submitting.',
+          },
+          {
+            label: 'Missing history',
+            body: 'Saved web solutions are stored in this browser. Clearing browser storage or switching devices can remove local history.',
+          },
+        ]}
+      />
+
+      <DocumentSection
+        title="Useful Details"
+        rows={[
+          {
+            label: 'Puzzle date',
+            body: 'Include the puzzle date and whether you were playing easy or hard mode.',
+          },
+          {
+            label: 'Equation',
+            body: 'Include the equation you typed, especially if formatting, cursor movement, or evaluation looked wrong.',
+          },
+          {
+            label: 'Device',
+            body: 'Include whether you were using the iOS app or web app, plus your device, browser, and operating system when possible.',
+          },
+        ]}
+      />
+
+      <DocumentSection
+        title="Privacy Reminder"
+        rows={[
+          {
+            label: 'No account needed',
+            body: 'Crackle Date does not need passwords, payment details, or personal account information for support.',
+          },
+        ]}
+      />
+    </DocumentShell>
+  );
+}
+
+function DocumentShell({
+  currentPage,
+  title,
+  subtitle,
+  meta,
+  children,
+}: {
+  currentPage: 'privacy' | 'support';
+  title: string;
+  subtitle: string;
+  meta?: string;
+  children: React.ReactNode;
+}) {
+  return (
     <main className="document-page">
-      <PageNav />
-      <h1>Support</h1>
-      <section>
-        <p>
-          For help with Crackle Date, include your app version, device model, iOS version, the date
-          puzzle you are solving, and what happened.
-        </p>
-        <h2>Common checks</h2>
-        <ul>
-          <li>Use the rules screen if an equation is rejected unexpectedly.</li>
-          <li>Check Settings to clear saved solutions and stats history.</li>
-          <li>Crackle Date does not require an account or network connection for app gameplay.</li>
-        </ul>
+      <header className="document-top-bar">
+        <a className="document-brand" href="/" aria-label="Crackle Date home">
+          <img src="/app-icon.png" alt="" />
+          <span>Crackle Date</span>
+        </a>
+        <PageNav currentPage={currentPage} />
+      </header>
+
+      <section className="document-hero" aria-labelledby="document-title">
+        <p className="document-kicker">Crackle Date</p>
+        <h1 id="document-title">{title}</h1>
+        <p>{subtitle}</p>
+        {meta && <span className="document-meta">{meta}</span>}
       </section>
+
+      <div className="document-stack">{children}</div>
     </main>
   );
 }
 
-function PageNav() {
+function DocumentSection({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: Array<{ label: string; body: string }>;
+}) {
+  return (
+    <section className="document-card" aria-labelledby={`${title.toLowerCase().replaceAll(' ', '-')}-title`}>
+      <h2 id={`${title.toLowerCase().replaceAll(' ', '-')}-title`}>{title}</h2>
+      <div className="document-list">
+        {rows.map((row) => (
+          <div className="document-row" key={row.label}>
+            <strong>{row.label}</strong>
+            <p>{row.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PageNav({ currentPage }: { currentPage: 'privacy' | 'support' }) {
   return (
     <nav className="page-nav" aria-label="Site">
       <a href="/">Play</a>
-      <a href="/privacy/">Privacy</a>
-      <a href="/support/">Support</a>
+      <a href="/privacy/" aria-current={currentPage === 'privacy' ? 'page' : undefined}>Privacy</a>
+      <a href="/support/" aria-current={currentPage === 'support' ? 'page' : undefined}>Support</a>
     </nav>
   );
 }

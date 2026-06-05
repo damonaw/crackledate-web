@@ -364,15 +364,13 @@ function GamePage() {
           <span>Crackle Date</span>
         </button>
         {isPlaying && (
-          <label className="top-date-picker">
-            <span>{puzzle?.displayDate ?? 'Crackle Date'}</span>
-            <input
-              type="date"
-              aria-label={dateInputLabel}
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-            />
-          </label>
+          <DatePickerControl
+            className="top-date-picker"
+            label={dateInputLabel}
+            displayDate={puzzle?.displayDate ?? 'Crackle Date'}
+            selectedDate={selectedDate}
+            onSelectedDateChange={setSelectedDate}
+          />
         )}
         <nav className="site-nav" aria-label="Site">
           <button
@@ -406,15 +404,6 @@ function GamePage() {
       {isPlaying && activeView === 'game' && (
         <>
           <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
-            {puzzle && (
-              <DigitRail
-                digits={puzzle.digits}
-                delimiterPositions={puzzle.delimiterPositions}
-                usedDigitIndices={usedDigitIndices}
-                activeIndex={nextDigitIndex}
-              />
-            )}
-
             <EquationEditor tokens={tokens} cursorIndex={cursorIndex} onCursorChange={setCursorIndex} />
 
             {isEasyMode && (
@@ -430,10 +419,14 @@ function GamePage() {
               </div>
             )}
 
-            {nextDigit !== null && (
-              <button className="next-digit" type="button" onClick={appendDigit} data-testid="next-digit">
-                {nextDigit}
-              </button>
+            {puzzle && (
+              <DigitRail
+                digits={puzzle.digits}
+                delimiterPositions={puzzle.delimiterPositions}
+                usedDigitIndices={usedDigitIndices}
+                activeIndex={nextDigitIndex}
+                onActiveDigitClick={nextDigit !== null ? appendDigit : undefined}
+              />
             )}
 
             <div className="operator-grid" aria-label="Equation controls">
@@ -756,23 +749,63 @@ function StartPage({
   );
 }
 
+function DatePickerControl({
+  className,
+  label,
+  displayDate,
+  selectedDate,
+  onSelectedDateChange,
+}: {
+  className: string;
+  label: string;
+  displayDate: string;
+  selectedDate: string;
+  onSelectedDateChange: (date: string) => void;
+}) {
+  return (
+    <label className={className}>
+      <span>{displayDate}</span>
+      <input
+        type="date"
+        aria-label={label}
+        value={selectedDate}
+        onChange={(event) => onSelectedDateChange(event.target.value)}
+      />
+    </label>
+  );
+}
+
 function DigitRail({
   digits,
   delimiterPositions,
   usedDigitIndices = emptyDigitIndices,
   activeIndex = null,
+  onActiveDigitClick,
 }: {
   digits: number[];
   delimiterPositions: number[];
   usedDigitIndices?: ReadonlySet<number>;
   activeIndex?: number | null;
+  onActiveDigitClick?: () => void;
 }) {
   const delimiters = new Set(delimiterPositions);
   return (
     <div className="digit-rail" aria-label="Date digits">
       {digits.map((digit, index) => (
         <React.Fragment key={`${digit}-${index}`}>
-          <span className={digitClassName(index, usedDigitIndices, activeIndex)}>{digit}</span>
+          {index === activeIndex && onActiveDigitClick ? (
+            <button
+              className={digitClassName(index, usedDigitIndices, activeIndex)}
+              type="button"
+              onClick={onActiveDigitClick}
+              aria-label={`Use current digit ${digit}`}
+              data-testid="active-digit"
+            >
+              {digit}
+            </button>
+          ) : (
+            <span className={digitClassName(index, usedDigitIndices, activeIndex)}>{digit}</span>
+          )}
           {delimiters.has(index) && <i aria-hidden="true" />}
         </React.Fragment>
       ))}

@@ -102,8 +102,10 @@ a {
   position: relative;
   flex: 1;
   min-width: 0;
+  max-width: 280px;
   display: flex;
   justify-content: center;
+  margin: 0;
 }
 
 .top-date-picker span {
@@ -116,15 +118,25 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 13px;
-  font-size: 0.98rem;
+  gap: 8px;
+  padding: 8px 34px;
+  font-size: 0.96rem;
   font-weight: 750;
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.06);
   backdrop-filter: blur(22px) saturate(1.3);
+}
+
+.top-date-picker span::after {
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--ios-secondary-label);
+  border-bottom: 2px solid var(--ios-secondary-label);
+  content: "";
+  transform: rotate(45deg) translateY(-2px);
 }
 
 .top-date-picker input {
@@ -428,13 +440,15 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin: 0;
+  min-height: 70px;
+  margin: 0 0 4px;
   padding-inline: 0;
 }
 
-.digit-rail span {
-  width: 40px;
-  height: 40px;
+.digit-rail span,
+.digit-rail button {
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border-radius: 8px;
@@ -446,15 +460,29 @@ h1 {
   line-height: 1;
 }
 
-.digit-rail span.used {
+.digit-rail button {
+  cursor: pointer;
+}
+
+.digit-rail span.used,
+.digit-rail button.used {
   opacity: 0.5;
 }
 
-.digit-rail span.active {
-  color: var(--ios-label);
-  border-color: var(--ios-blue);
-  background: var(--ios-blue-soft);
-  box-shadow: inset 0 0 0 2px var(--ios-blue);
+.digit-rail span.active,
+.digit-rail button.active {
+  color: white;
+  border-color: rgba(0, 122, 255, 0.72);
+  background: var(--ios-blue);
+  box-shadow:
+    0 12px 24px rgba(0, 122, 255, 0.24),
+    inset 0 0 0 2px rgba(255, 255, 255, 0.32);
+  transform: scale(1.08);
+}
+
+.digit-rail button.active:focus-visible {
+  outline: 3px solid rgba(0, 122, 255, 0.35);
+  outline-offset: 4px;
 }
 
 .digit-rail i {
@@ -477,7 +505,7 @@ h1 {
 
 .game-panel {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 0;
 }
 
@@ -679,28 +707,6 @@ h1 {
   margin-top: -2px;
 }
 
-.next-digit {
-  width: 90px;
-  height: 70px;
-  display: block;
-  margin: 4px auto 8px;
-  border: 1px solid rgba(0, 122, 255, 0.35);
-  border-radius: 14px;
-  background: var(--ios-blue);
-  color: white;
-  font-size: 2.25rem;
-  font-weight: 700;
-  box-shadow: 0 14px 28px rgba(0, 122, 255, 0.24);
-  cursor: pointer;
-}
-
-.next-digit:disabled {
-  background: var(--ios-gray);
-  border-color: rgba(142, 142, 147, 0.35);
-  box-shadow: none;
-  cursor: not-allowed;
-}
-
 .operator-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -746,7 +752,6 @@ h1 {
 }
 
 .operator-grid button:hover,
-.next-digit:hover,
 .play-button:hover,
 .start-secondary-actions button:hover,
 .site-nav button:hover,
@@ -754,13 +759,21 @@ h1 {
   transform: translateY(-1px);
 }
 
+.digit-rail button.active:hover {
+  transform: translateY(-1px) scale(1.08);
+}
+
 .operator-grid button:active,
-.next-digit:active,
 .play-button:active,
 .start-secondary-actions button:active,
 .site-nav button:active {
   transform: scale(0.96);
   opacity: 0.82;
+}
+
+.digit-rail button.active:active {
+  transform: scale(1.02);
+  opacity: 0.86;
 }
 
 .toast-region {
@@ -1005,7 +1018,8 @@ h1 {
     gap: 6px;
   }
 
-  .digit-rail span {
+  .digit-rail span,
+  .digit-rail button {
     width: 38px;
     height: 38px;
   }

@@ -125,6 +125,19 @@ function GamePage() {
   }, [difficultyMode]);
 
   useEffect(() => {
+    if (!showSettings) return undefined;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setShowSettings(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showSettings]);
+
+  useEffect(() => {
     let isCurrent = true;
     fetch(`/api/puzzle?date=${selectedDate}`)
       .then((response) => response.json() as Promise<Puzzle>)
@@ -331,6 +344,7 @@ function GamePage() {
   const showStart = useCallback(() => {
     setIsPlaying(false);
     setActiveView('game');
+    setShowSettings(false);
   }, []);
 
   const showSolutions = useCallback(() => {
@@ -374,11 +388,14 @@ function GamePage() {
         )}
         <nav className="site-nav" aria-label="Site">
           <button
+            className="settings-trigger"
             type="button"
+            aria-label="Settings"
             aria-expanded={showSettings}
+            aria-controls="settings-drawer"
             onClick={() => setShowSettings((isVisible) => !isVisible)}
           >
-            Settings
+            <SettingsIcon />
           </button>
         </nav>
       </header>
@@ -390,6 +407,7 @@ function GamePage() {
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
           onShowSolutions={showSolutions}
+          onClose={() => setShowSettings(false)}
         />
       )}
 
@@ -500,66 +518,100 @@ function SettingsPanel({
   onThemePreferenceChange,
   onDifficultyModeChange,
   onShowSolutions,
+  onClose,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
   onShowSolutions: () => void;
+  onClose: () => void;
 }) {
   return (
-    <section className="settings-panel" aria-label="Settings">
-      <div className="settings-header">
-        <h2>Settings</h2>
-        <span>Saved on this browser</span>
-      </div>
-
-      <div className="settings-group">
-        <fieldset className="settings-row">
-          <legend>Appearance</legend>
-          <div className="segmented-control">
-            {(['system', 'light', 'dark'] as const).map((preference) => (
-              <label key={preference}>
-                <input
-                  type="radio"
-                  name="appearance"
-                  value={preference}
-                  checked={themePreference === preference}
-                  onChange={() => onThemePreferenceChange(preference)}
-                />
-                <span>{preference === 'system' ? 'Auto' : preference[0].toUpperCase() + preference.slice(1)}</span>
-              </label>
-            ))}
+    <>
+      <button className="settings-backdrop" type="button" aria-label="Close settings" onClick={onClose} />
+      <section
+        className="settings-drawer"
+        id="settings-drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
+        <div className="settings-header">
+          <div>
+            <h2 id="settings-title">Settings</h2>
+            <span>Saved on this browser</span>
           </div>
-        </fieldset>
+          <button className="settings-close" type="button" aria-label="Close settings" onClick={onClose}>
+            <CloseIcon />
+          </button>
+        </div>
 
-        <fieldset className="settings-row">
-          <legend>Difficulty</legend>
-          <div className="segmented-control">
-            {(['easy', 'hard'] as const).map((mode) => (
-              <label key={mode}>
-                <input
-                  type="radio"
-                  name="difficulty"
-                  value={mode}
-                  checked={difficultyMode === mode}
-                  onChange={() => onDifficultyModeChange(mode)}
-                />
-                <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      </div>
+        <div className="settings-group">
+          <fieldset className="settings-row">
+            <legend>Appearance</legend>
+            <div className="segmented-control">
+              {(['system', 'light', 'dark'] as const).map((preference) => (
+                <label key={preference}>
+                  <input
+                    type="radio"
+                    name="appearance"
+                    value={preference}
+                    checked={themePreference === preference}
+                    onChange={() => onThemePreferenceChange(preference)}
+                  />
+                  <span>{preference === 'system' ? 'Auto' : preference[0].toUpperCase() + preference.slice(1)}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
 
-      <nav className="settings-links" aria-label="Help and policies">
-        <button className="mobile-only-link" type="button" onClick={onShowSolutions}>
-          Saved Solutions
-        </button>
-        <a href="/privacy/">Privacy</a>
-        <a href="/support/">Support</a>
-      </nav>
-    </section>
+          <fieldset className="settings-row">
+            <legend>Difficulty</legend>
+            <div className="segmented-control">
+              {(['easy', 'hard'] as const).map((mode) => (
+                <label key={mode}>
+                  <input
+                    type="radio"
+                    name="difficulty"
+                    value={mode}
+                    checked={difficultyMode === mode}
+                    onChange={() => onDifficultyModeChange(mode)}
+                  />
+                  <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        </div>
+
+        <nav className="settings-links" aria-label="Help and policies">
+          <button className="mobile-only-link" type="button" onClick={onShowSolutions}>
+            Saved Solutions
+          </button>
+          <a href="/privacy/">Privacy</a>
+          <a href="/support/">Support</a>
+        </nav>
+      </section>
+    </>
+  );
+}
+
+function SettingsIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.52a2 2 0 0 1-1 1.72l-.15.1a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.52a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M18 6 6 18" />
+      <path d="m6 6 12 12" />
+    </svg>
   );
 }
 

@@ -985,6 +985,11 @@ h1 {
   margin: 0 16px;
 }
 
+.helper-row.selector-only {
+  grid-template-columns: 1fr;
+  justify-items: center;
+}
+
 .helper-value {
   max-width: 100%;
   min-height: 34px;

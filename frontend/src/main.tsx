@@ -10,7 +10,8 @@ import {
   type EditorSelection,
   type SlotPlacement,
 } from './equationEditing';
-import { EquationSelectorControls, type SelectorDirection } from './EquationSelectorControls';
+import { EquationHelperRow } from './EquationHelperRow';
+import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
@@ -515,19 +516,12 @@ function GamePage() {
               selectorMoveRef={selectorMoveRef}
             />
 
-            {isEasyMode && (
-              <div className="helper-row" aria-label="Equation helpers">
-                <div className="helper-value" aria-live="polite">
-                  <span className="helper-label">L</span>
-                  <RepeatingDecimalValue value={evaluation.left || '?'} />
-                </div>
-                <EquationSelectorControls onMove={moveSelectorFromControls} />
-                <div className="helper-value" aria-live="polite">
-                  <span className="helper-label">R</span>
-                  <RepeatingDecimalValue value={evaluation.right || '?'} />
-                </div>
-              </div>
-            )}
+            <EquationHelperRow
+              showHelperValues={isEasyMode}
+              leftValue={<RepeatingDecimalValue value={evaluation.left || '?'} />}
+              rightValue={<RepeatingDecimalValue value={evaluation.right || '?'} />}
+              onMove={moveSelectorFromControls}
+            />
           </div>
 
           <div className="control-area">

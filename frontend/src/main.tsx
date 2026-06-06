@@ -1231,6 +1231,9 @@ function EquationEditor({
         }}
         onKeyDown={handleEditorKey}
       >
+        <p className="equation-empty-prompt">
+          Start building your Crackle Date with the numbers and math operators
+        </p>
         <div className="equation-selection-layer" aria-hidden="true">
           <span className="equation-selection-cue empty" />
         </div>
@@ -1277,7 +1280,7 @@ type EquationHitTarget = {
 
 const equationSelectionSize = 42;
 const fractionOperatorHitHeight = 22;
-const fractionSelectedHitSize = 64;
+const fractionSelectedHitSize = 78;
 
 function nextSelectionFromRenderedTargets(
   targets: EquationHitTarget[],

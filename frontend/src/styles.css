@@ -859,15 +859,15 @@ h1 {
 .equation-source-selected.equation-source-fraction-token,
 .equation-source-fraction-selected.equation-source-fraction-token {
   position: relative;
-  min-width: 64px;
-  height: 64px;
+  min-width: 78px;
+  height: 78px;
   border: 1px solid rgba(0, 122, 255, 0.46);
   border-radius: 10px;
   background: var(--ios-blue-soft);
   box-sizing: border-box;
   display: inline-grid !important;
   place-items: center;
-  padding: 0 4px;
+  padding: 7px 8px;
   vertical-align: middle;
   box-shadow: inset 0 0 0 1px rgba(0, 122, 255, 0.14);
   opacity: 1;
@@ -875,6 +875,24 @@ h1 {
 
 .equation-source-fraction-selected.equation-source-fraction-token {
   font-size: 1.5em;
+}
+
+.equation-source-fraction-selected.equation-source-fraction-token
+  .mfrac
+  > .vlist-t
+  > .vlist-r:first-child
+  > .vlist
+  > span:first-child {
+  transform: translateY(0.12em);
+}
+
+.equation-source-fraction-selected.equation-source-fraction-token
+  .mfrac
+  > .vlist-t
+  > .vlist-r:first-child
+  > .vlist
+  > span:nth-child(3) {
+  transform: translateY(-0.12em);
 }
 
 .equation-source-fraction-divider-selected.equation-source-fraction-token {
@@ -912,6 +930,20 @@ h1 {
   z-index: 0;
 }
 
+.equation-empty-prompt {
+  position: relative;
+  z-index: 1;
+  width: min(300px, 100%);
+  margin: 56px auto 0;
+  color: var(--ios-secondary-label);
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  white-space: normal;
+  pointer-events: none;
+}
+
 .equation-selection-cue {
   position: absolute;
   border: 1px solid transparent;
@@ -934,7 +966,7 @@ h1 {
 
 .equation-selection-cue.empty {
   left: 50%;
-  top: 50%;
+  top: calc(50% - 24px);
   width: 42px;
   height: 42px;
 }

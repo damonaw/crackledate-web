@@ -2,6 +2,14 @@
 
 This is the deployable web version of Crackle Date for `crackledate.com`.
 
+## Screenshots
+
+<p>
+  <img src="docs/screenshots/game-empty-prompt.jpg" alt="Crackle Date game board with an empty equation prompt" width="300">
+  <img src="docs/screenshots/fraction-selection.jpg" alt="Crackle Date equation editor with a selected fraction" width="300">
+  <img src="docs/screenshots/settings-panel.jpg" alt="Crackle Date settings panel" width="300">
+</p>
+
 ## Stack
 
 - React + Vite frontend for the playable browser board.

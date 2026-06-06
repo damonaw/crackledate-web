@@ -1,0 +1,8 @@
+{
+  "name": "crackledate-web-dev",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev.mjs"
+  }
+}

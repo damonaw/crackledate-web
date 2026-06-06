@@ -46,19 +46,29 @@ type EquationPart = {
 type FormatterOptions = {
   cursorIndex?: number;
   preserveDelimiters?: boolean;
+  editorMarkers?: boolean;
+  selectedSource?: SourceSelection;
 };
 
 type RenderOptions = {
   cursorIndex?: number;
   preserveDelimiters: boolean;
+  editorMarkers?: boolean;
+  selectedSource?: SourceSelection;
+  suppressedSourceSlots?: ReadonlySet<number>;
   suppressStartCursor?: boolean;
   suppressEndCursor?: boolean;
 };
 
 type RenderContext = 'top' | 'fraction' | 'exponent' | 'sqrt' | 'absolute' | 'multiplication' | 'base' | 'postfix';
+type SlotPlacement = 'fractionNumeratorStart' | 'fractionDenominatorEnd';
+type SourceSelection =
+  | { kind: 'token'; index: number }
+  | { kind: 'slot'; index: number; placement?: SlotPlacement };
 
 const placeholderLatex = '\\phantom{0}';
 const cursorLatex = '\\htmlClass{equation-cursor-marker}{\\vphantom{0}}';
+const markerLatex = '\\vphantom{0}';
 
 export function equationToLatex(expression: string, options: FormatterOptions = {}): string {
   const tokens = tokenize(expression);
@@ -84,6 +94,8 @@ function tokensToLatex(tokens: Token[], cursorIndex: number | undefined, options
       const renderedPart = renderEquationPart(part, {
         cursorIndex,
         preserveDelimiters: options.preserveDelimiters ?? false,
+        editorMarkers: options.editorMarkers,
+        selectedSource: options.selectedSource,
         suppressStartCursor: index > 0,
         suppressEndCursor: !isFinalPart,
       });
@@ -92,7 +104,14 @@ function tokensToLatex(tokens: Token[], cursorIndex: number | undefined, options
         return renderedPart;
       }
 
-      return `${renderedPart}${cursorAt(cursorIndex, equals.start)} = ${cursorAt(cursorIndex, equals.end)}`;
+      return [
+        renderedPart,
+        cursorAt(cursorIndex, equals.start),
+        ' ',
+        sourceTokenAt(options, equals.start, '='),
+        ' ',
+        cursorAt(cursorIndex, equals.end),
+      ].join('');
     })
     .join('');
 }
@@ -446,7 +465,10 @@ function placeholderNode(position: number): MathNode {
 
 function renderEquationPart(part: EquationPart, options: RenderOptions): string {
   if (part.tokens.length === 0) {
-    return cursorInsidePart(options.cursorIndex, part) && !cursorSuppressedAtPartBoundary(options, part) ? cursorLatex : '';
+    return [
+      sourceSlotAt(options, part.start),
+      cursorInsidePart(options.cursorIndex, part) && !cursorSuppressedAtPartBoundary(options, part) ? cursorLatex : '',
+    ].join('');
   }
 
   return renderNode(new Parser(part.tokens).parseExpression(), 'top', suppressCursorAtPartBoundary(options, part));
@@ -457,7 +479,10 @@ function renderNode(node: MathNode, context: RenderContext, options: RenderOptio
     case 'number':
       return renderNumber(node, options);
     case 'placeholder':
-      return `${cursorAt(options.cursorIndex, node.start)}${placeholderLatex}`;
+      return [
+        sourceSlotAt(options, node.start),
+        `${cursorAt(options.cursorIndex, node.start)}${placeholderLatex}`,
+      ].join('');
     case 'absolute':
       return renderAbsolute(node, options);
     case 'group':
@@ -465,13 +490,29 @@ function renderNode(node: MathNode, context: RenderContext, options: RenderOptio
     case 'unary':
       return renderUnary(node, options);
     case 'postfix':
-      return `${renderPostfixOperand(node.value, options)}!${cursorAt(options.cursorIndex, node.operatorEnd)}`;
+      return [
+        renderPostfixOperand(node.value, options),
+        sourceOperatorTokenAt(options, node.operatorStart, node.operatorEnd, '!'),
+        cursorAt(options.cursorIndex, node.operatorEnd),
+        sourceSlotAt(options, node.operatorEnd),
+      ].join('');
     case 'binary':
       return renderBinary(node, context, options);
   }
 }
 
 function renderNumber(node: Extract<MathNode, { kind: 'number' }>, options: RenderOptions): string {
+  if (options.editorMarkers) {
+    const characters = Array.from(node.value);
+    return [
+      sourceSlotAt(options, node.start),
+      ...characters.flatMap((character, index) => [
+        sourceTokenAt(options, node.start + index, character),
+        sourceSlotAt(options, node.start + index + 1),
+      ]),
+    ].join('');
+  }
+
   const offset = options.cursorIndex === undefined ? -1 : options.cursorIndex - node.start;
   if (offset < 0 || offset > node.value.length) {
     return node.value;
@@ -481,18 +522,44 @@ function renderNumber(node: Extract<MathNode, { kind: 'number' }>, options: Rend
 }
 
 function renderAbsolute(node: Extract<MathNode, { kind: 'absolute' }>, options: RenderOptions): string {
+  if (!options.editorMarkers) {
+    return [
+      cursorAt(options.cursorIndex, node.start),
+      '\\left|',
+      renderNode(node.value, 'absolute', options),
+      node.closed ? '\\right|' : '\\right.',
+      node.closed ? cursorAt(options.cursorIndex, node.end) : '',
+    ].join('');
+  }
+
   return [
+    sourceSlotAt(options, node.start),
+    sourceTokenAt(
+      options,
+      node.start,
+      '|',
+      'equation-source-delimiter-token',
+    ),
     cursorAt(options.cursorIndex, node.start),
-    '\\left|',
     renderNode(node.value, 'absolute', options),
-    node.closed ? '\\right|' : '\\right.',
+    node.closed
+      ? sourceTokenAt(
+        options,
+        node.end - 1,
+        '|',
+        'equation-source-delimiter-token',
+      )
+      : '',
     node.closed ? cursorAt(options.cursorIndex, node.end) : '',
+    sourceSlotAt(options, node.end),
   ].join('');
 }
 
 function renderUnary(node: Extract<MathNode, { kind: 'unary' }>, options: RenderOptions): string {
   if (node.operator === '√') {
     return [
+      sourceSlotAt(options, node.operatorStart),
+      sourceTokenAnchorAt(options, node.operatorStart, 'equation-source-root-token'),
       cursorAt(options.cursorIndex, node.operatorStart),
       '\\sqrt{',
       renderNode(node.value, 'sqrt', options),
@@ -500,7 +567,12 @@ function renderUnary(node: Extract<MathNode, { kind: 'unary' }>, options: Render
     ].join('');
   }
 
-  return `${cursorAt(options.cursorIndex, node.operatorStart)}-${renderUnaryOperand(node.value, options)}`;
+  return [
+    sourceSlotAt(options, node.operatorStart),
+    cursorAt(options.cursorIndex, node.operatorStart),
+    sourceTokenAt(options, node.operatorStart, '-'),
+    renderUnaryOperand(node.value, options),
+  ].join('');
 }
 
 function renderBinary(node: Extract<MathNode, { kind: 'binary' }>, context: RenderContext, options: RenderOptions): string {
@@ -509,7 +581,7 @@ function renderBinary(node: Extract<MathNode, { kind: 'binary' }>, context: Rend
     case '-': {
       const expression = [
         renderNode(node.left, 'top', options),
-        ` ${node.operator} `,
+        ` ${sourceOperatorTokenAt(options, node.operatorStart, node.operatorEnd, node.operator)} `,
         renderNode(node.right, 'top', options),
       ].join('');
       return needsWrappedAddition(context) ? `\\left(${expression}\\right)` : expression;
@@ -517,26 +589,165 @@ function renderBinary(node: Extract<MathNode, { kind: 'binary' }>, context: Rend
     case '*':
       return [
         renderMultiplicationOperand(node.left, options),
-        ' \\cdot ',
+        ` ${sourceOperatorTokenAt(options, node.operatorStart, node.operatorEnd, '\\cdot')} `,
         renderMultiplicationOperand(node.right, options),
       ].join('');
     case '/':
-      return `\\frac{${renderNode(node.left, 'fraction', options)}}{${renderNode(node.right, 'fraction', options)}}`;
+      return renderFraction(node, options);
     case '^':
-      return `${renderPowerBase(node.left, options)}^{${renderNode(node.right, 'exponent', options)}}`;
+      return [
+        renderPowerBase(node.left, options),
+        sourcePowerTokenAt(options, node.operatorStart, node.operatorEnd),
+        `^{${renderNode(node.right, 'exponent', options)}}`,
+      ].join('');
   }
+}
+
+function sourceOperatorFractionTokenAt(
+  options: Pick<RenderOptions, 'editorMarkers' | 'selectedSource' | 'suppressedSourceSlots'>,
+  start: number,
+  end: number,
+  latex: string,
+  fractionStart: number,
+  fractionEnd: number,
+): string {
+  const fractionToken = sourceOperatorTokenAt(
+    options,
+    start,
+    end,
+    latex,
+    fractionClassName(options, start, fractionStart, fractionEnd),
+  );
+
+  return options.editorMarkers
+    ? [
+      sourceSlotAt(options, fractionStart),
+      fractionToken,
+      sourceSlotAt(options, fractionEnd),
+    ].join('')
+    : fractionToken;
+}
+
+function fractionClassName(
+  options: Pick<RenderOptions, 'editorMarkers' | 'selectedSource'>,
+  dividerIndex: number,
+  fractionStart: number,
+  fractionEnd: number,
+): string {
+  const hasSelectionInRange = options.editorMarkers
+    ? isSelectedSourceInRange(options.selectedSource, fractionStart, fractionEnd)
+    : false;
+  const isDividerSelected =
+    options.editorMarkers && options.selectedSource?.kind === 'token' && options.selectedSource.index === dividerIndex;
+
+  return [
+    'equation-source-fraction-token',
+    hasSelectionInRange ? 'equation-source-fraction-selected' : '',
+    isDividerSelected ? 'equation-source-fraction-divider-selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function renderFraction(node: Extract<MathNode, { kind: 'binary' }>, options: RenderOptions): string {
+  if (node.left.kind === 'unary' && node.left.operator === '-') {
+    const fractionStart = node.left.value.start;
+    const fractionOptions = suppressSourceSlots(options, [fractionStart, node.end]);
+    const numerator = [
+      sourceSlotAt(options, fractionStart, 'fractionNumeratorStart'),
+      renderNode(node.left.value, 'fraction', fractionOptions),
+    ].join('');
+    const denominator = [
+      renderNode(node.right, 'fraction', fractionOptions),
+      sourceSlotAt(options, node.end, 'fractionDenominatorEnd'),
+    ].join('');
+    return [
+      sourceSlotAt(options, node.left.operatorStart),
+      cursorAt(options.cursorIndex, node.left.operatorStart),
+      sourceTokenAt(options, node.left.operatorStart, '-'),
+      sourceOperatorFractionTokenAt(
+        options,
+        node.operatorStart,
+        node.operatorEnd,
+        `\\frac{${numerator}}{${denominator}}`,
+        fractionStart,
+        node.end,
+      ),
+    ].join('');
+  }
+
+  const fractionOptions = suppressSourceSlots(options, [node.start, node.end]);
+  const numerator = [
+    sourceSlotAt(options, node.start, 'fractionNumeratorStart'),
+    renderNode(node.left, 'fraction', fractionOptions),
+  ].join('');
+  const denominator = [
+    renderNode(node.right, 'fraction', fractionOptions),
+    sourceSlotAt(options, node.end, 'fractionDenominatorEnd'),
+  ].join('');
+  return sourceOperatorFractionTokenAt(
+    options,
+    node.operatorStart,
+    node.operatorEnd,
+    `\\frac{${numerator}}{${denominator}}`,
+    node.start,
+    node.end,
+  );
+}
+
+function suppressSourceSlots(options: RenderOptions, positions: number[]): RenderOptions {
+  if (!options.editorMarkers) {
+    return options;
+  }
+
+  return {
+    ...options,
+    suppressedSourceSlots: new Set([
+      ...(options.suppressedSourceSlots ?? []),
+      ...positions,
+    ]),
+  };
+}
+
+function isSelectedSourceInRange(selectedSource: SourceSelection | undefined, start: number, end: number): boolean {
+  if (!selectedSource) return false;
+  return selectedSource.index >= start && selectedSource.index <= end;
 }
 
 function renderGroup(node: Extract<MathNode, { kind: 'group' }>, context: RenderContext, options: RenderOptions): string {
   const rendered = renderNode(node.value, 'top', options);
 
-  if (options.preserveDelimiters || node.value.kind === 'placeholder') {
+  if (options.editorMarkers || options.preserveDelimiters || node.value.kind === 'placeholder') {
+    if (!options.editorMarkers) {
+      return [
+        cursorAt(options.cursorIndex, node.start),
+        '\\left(',
+        rendered,
+        node.closed ? '\\right)' : '\\right.',
+        node.closed ? cursorAt(options.cursorIndex, node.end) : '',
+      ].join('');
+    }
+
     return [
+      sourceSlotAt(options, node.start),
+      sourceTokenAt(
+        options,
+        node.start,
+        '(',
+        'equation-source-delimiter-token',
+      ),
       cursorAt(options.cursorIndex, node.start),
-      '\\left(',
       rendered,
-      node.closed ? '\\right)' : '\\right.',
+      node.closed
+        ? sourceTokenAt(
+          options,
+          node.end - 1,
+          ')',
+          'equation-source-delimiter-token',
+        )
+        : '',
       node.closed ? cursorAt(options.cursorIndex, node.end) : '',
+      sourceSlotAt(options, node.end),
     ].join('');
   }
 
@@ -602,6 +813,109 @@ function needsVisibleGroup(node: MathNode): boolean {
 
 function cursorAt(cursorIndex: number | undefined, position: number): string {
   return cursorIndex === position ? cursorLatex : '';
+}
+
+function sourceSlotAt(
+  options: Pick<RenderOptions, 'editorMarkers' | 'selectedSource' | 'suppressedSourceSlots'>,
+  position: number,
+  placement?: SlotPlacement,
+): string {
+  if (!placement && options.suppressedSourceSlots?.has(position)) {
+    return '';
+  }
+
+  return options.editorMarkers
+    ? htmlClass(sourceClassNames(options, 'slot', position, placement), markerLatex)
+    : '';
+}
+
+function sourceTokenAt(
+  options: Pick<RenderOptions, 'editorMarkers' | 'selectedSource'>,
+  position: number,
+  latex: string,
+  extraClass = '',
+): string {
+  if (!options.editorMarkers) {
+    return latex;
+  }
+
+  const classes = [sourceClassNames(options, 'token', position), extraClass]
+    .filter(Boolean)
+    .join(' ');
+  return htmlClass(classes, latex);
+}
+
+function sourceTokenAnchorAt(
+  options: Pick<RenderOptions, 'editorMarkers' | 'selectedSource'>,
+  position: number,
+  extraClass = '',
+): string {
+  return options.editorMarkers ? sourceTokenAt(options, position, markerLatex, extraClass) : '';
+}
+
+function sourceOperatorTokenAt(
+  options: Pick<RenderOptions, 'editorMarkers' | 'selectedSource'>,
+  start: number,
+  end: number,
+  latex: string,
+  extraClass = '',
+): string {
+  return end > start ? sourceTokenAt(options, start, latex, extraClass) : latex;
+}
+
+function sourcePowerTokenAt(
+  options: Pick<RenderOptions, 'editorMarkers' | 'selectedSource'>,
+  start: number,
+  end: number,
+): string {
+  return options.editorMarkers
+    ? sourceOperatorTokenAt(options, start, end, markerLatex, 'equation-source-power-token')
+    : '';
+}
+
+function sourceClassNames(
+  options: Pick<RenderOptions, 'selectedSource'>,
+  kind: SourceSelection['kind'],
+  index: number,
+  placement?: SlotPlacement,
+): string {
+  return [
+    `equation-source-${kind}`,
+    `equation-source-${kind}-${index}`,
+    placement ? slotPlacementClassName(placement) : '',
+    selectionsMatchSource(options.selectedSource, kind, index, placement) ? 'equation-source-selected' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function slotPlacementClassName(placement: SlotPlacement): string {
+  return `equation-source-slot-placement-${kebabCase(placement)}`;
+}
+
+function selectionsMatchSource(
+  selectedSource: SourceSelection | undefined,
+  kind: SourceSelection['kind'],
+  index: number,
+  placement?: SlotPlacement,
+): boolean {
+  if (selectedSource?.kind !== kind || selectedSource.index !== index) {
+    return false;
+  }
+
+  if (selectedSource.kind === 'token') {
+    return true;
+  }
+
+  return (selectedSource.placement ?? null) === (placement ?? null);
+}
+
+function htmlClass(className: string, latex: string): string {
+  return `\\htmlClass{${className}}{${latex}}`;
+}
+
+function kebabCase(value: string): string {
+  return value.replace(/[A-Z]/g, (character) => `-${character.toLowerCase()}`);
 }
 
 function clampCursorIndex(cursorIndex: number | undefined, maximum: number): number | undefined {

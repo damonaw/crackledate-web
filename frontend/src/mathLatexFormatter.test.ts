@@ -1,10 +1,19 @@
 import { describe, expect, test } from 'vitest';
+import katex from 'katex';
 import { equationToLatex, equationTokensToLatex } from './mathLatexFormatter';
 
 const cursorLatex = '\\htmlClass{equation-cursor-marker}{\\vphantom{0}}';
 
 function cursorCount(value: string): number {
   return value.split(cursorLatex).length - 1;
+}
+
+function katexErrorCount(latex: string): number {
+  return katex.renderToString(latex, {
+    strict: 'ignore',
+    throwOnError: false,
+    trust: true,
+  }).split('katex-error').length - 1;
 }
 
 describe('equationToLatex', () => {
@@ -108,6 +117,276 @@ describe('equationToLatex', () => {
       { value: '÷' },
       { value: '1' },
     ])).toBe('\\frac{\\left|5\\right|}{1}');
+  });
+
+  test('marks fraction source tokens and slots for editor hit testing', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '1' },
+    ], { editorMarkers: true });
+
+    expect(latex).toContain('equation-source-token-0');
+    expect(latex).toContain('equation-source-token-1');
+    expect(latex).toContain('equation-source-token-2');
+    expect(latex).toContain('equation-source-slot-0');
+    expect(latex).toContain('equation-source-slot-1');
+    expect(latex).toContain('equation-source-slot-2');
+    expect(latex).toContain('equation-source-slot-3');
+    expect(latex).toContain('equation-source-fraction-token');
+  });
+
+  test('keeps distinct whole-fraction and internal fraction edge slots in editor rendering', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '1' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 0 } });
+
+    expect((latex.match(/equation-source-slot-0/g) ?? []).length).toBe(2);
+    expect((latex.match(/equation-source-slot-3/g) ?? []).length).toBe(2);
+    expect(latex).toContain('equation-source-slot-placement-fraction-numerator-start');
+    expect(latex).toContain('equation-source-slot-placement-fraction-denominator-end');
+    expect(latex.indexOf('equation-source-slot-0 equation-source-selected')).toBeLessThan(
+      latex.indexOf('equation-source-token-1'),
+    );
+  });
+
+  test('selects fraction-internal edge slots separately from whole-fraction edge slots', () => {
+    const selectedNumeratorStart = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '1' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 0, placement: 'fractionNumeratorStart' } });
+    const selectedDenominatorEnd = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '1' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 3, placement: 'fractionDenominatorEnd' } });
+
+    expect(selectedNumeratorStart).toContain(
+      'equation-source-slot-0 equation-source-slot-placement-fraction-numerator-start equation-source-selected',
+    );
+    expect((selectedNumeratorStart.match(/equation-source-selected/g) ?? []).length).toBe(1);
+    expect(selectedDenominatorEnd).toContain(
+      'equation-source-slot-3 equation-source-slot-placement-fraction-denominator-end equation-source-selected',
+    );
+    expect((selectedDenominatorEnd.match(/equation-source-selected/g) ?? []).length).toBe(1);
+  });
+
+  test('renders a leading negative sign outside a fraction', () => {
+    expect(equationTokensToLatex([
+      { value: '-' },
+      { value: '5' },
+      { value: '÷' },
+      { value: '1' },
+    ])).toBe('-\\frac{5}{1}');
+  });
+
+  test('does not duplicate boundary slots around equals', () => {
+    const latex = equationTokensToLatex([
+      { value: '6' },
+      { value: '+' },
+      { value: '5' },
+      { value: '=' },
+      { value: '2' },
+    ], { editorMarkers: true });
+
+    expect((latex.match(/equation-source-slot-3/g) ?? []).length).toBe(1);
+    expect((latex.match(/equation-source-slot-4/g) ?? []).length).toBe(1);
+  });
+
+  test('renders a single trailing equals insertion slot', () => {
+    const latex = equationTokensToLatex([
+      { value: '6' },
+      { value: '=' },
+    ], { editorMarkers: true });
+
+    expect((latex.match(/equation-source-slot-2/g) ?? []).length).toBe(1);
+  });
+
+  test('keeps a selectable slot after typing an operator first', () => {
+    const latex = equationTokensToLatex([
+      { value: '+' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 1 } });
+
+    expect(latex).toContain('equation-source-slot-1 equation-source-selected');
+  });
+
+  test('keeps a selectable slot after typing an operator after a number', () => {
+    const latex = equationTokensToLatex([
+      { value: '6' },
+      { value: '+' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 2 } });
+
+    expect(latex).toContain('equation-source-slot-2 equation-source-selected');
+  });
+
+  test('marks parenthesis source tokens and slots for editor hit testing', () => {
+    const latex = equationTokensToLatex([
+      { value: '(' },
+      { value: '5' },
+      { value: ')' },
+    ], { editorMarkers: true });
+
+    expect(latex).toContain('equation-source-delimiter-token');
+    expect(latex).toContain('equation-source-token-0');
+    expect(latex).toContain('equation-source-token-1');
+    expect(latex).toContain('equation-source-token-2');
+    expect(latex).toContain('equation-source-slot-0');
+    expect(latex).toContain('equation-source-slot-1');
+    expect(latex).toContain('equation-source-slot-2');
+    expect(latex).toContain('equation-source-slot-3');
+  });
+
+  test('marks absolute value source tokens and slots for editor hit testing', () => {
+    const latex = equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+      { value: '5' },
+      { value: '|', role: 'absoluteClose' },
+    ], { editorMarkers: true });
+
+    expect(latex).toContain('equation-source-delimiter-token');
+    expect(latex).toContain('equation-source-token-0');
+    expect(latex).toContain('equation-source-token-1');
+    expect(latex).toContain('equation-source-token-2');
+    expect(latex).toContain('equation-source-slot-0');
+    expect(latex).toContain('equation-source-slot-1');
+    expect(latex).toContain('equation-source-slot-2');
+    expect(latex).toContain('equation-source-slot-3');
+  });
+
+  test('marks the selected source token or slot for editor layout', () => {
+    const selectedTokenLatex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '1' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 2 } });
+    const selectedSlotLatex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '1' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 1 } });
+
+    expect(selectedTokenLatex).toContain('equation-source-token-2 equation-source-selected');
+    expect(selectedSlotLatex).toContain('equation-source-slot-1 equation-source-selected');
+  });
+
+  test('renders parenthesis delimiter markers without a KaTeX parse error', () => {
+    const latex = equationTokensToLatex([
+      { value: '(' },
+      { value: '5' },
+      { value: ')' },
+    ], { editorMarkers: true, preserveDelimiters: true });
+
+    expect(katexErrorCount(latex)).toBe(0);
+    expect((latex.match(/equation-source-token-2/g) ?? []).length).toBe(1);
+  });
+
+  test('renders absolute value delimiter markers without a KaTeX parse error', () => {
+    const latex = equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+      { value: '5' },
+      { value: '|', role: 'absoluteClose' },
+    ], { editorMarkers: true, preserveDelimiters: true });
+
+    expect(katexErrorCount(latex)).toBe(0);
+    expect((latex.match(/equation-source-token-2/g) ?? []).length).toBe(1);
+  });
+
+  test('adds fraction-selected styling when a denominator token is selected', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 2 } });
+
+    expect(latex).toContain('equation-source-fraction-selected');
+    expect(latex).toContain('equation-source-token-2 equation-source-selected');
+  });
+
+  test('adds divider-specific styling when the fraction operator is selected', () => {
+    const selectedDivider = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 1 } });
+    const selectedMultiDigitDivider = equationTokensToLatex([
+      { value: '5' },
+      { value: '1' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 2 } });
+    const selectedNumerator = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 0 } });
+
+    expect(selectedDivider).toContain('equation-source-fraction-divider-selected');
+    expect(selectedMultiDigitDivider).toContain('equation-source-fraction-divider-selected');
+    expect(selectedNumerator).not.toContain('equation-source-fraction-divider-selected');
+  });
+
+  test('adds fraction-selected styling when a numerator token is selected', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 0 } });
+
+    expect(latex).toContain('equation-source-fraction-selected');
+    expect(latex).toContain('equation-source-token-0 equation-source-selected');
+  });
+
+  test('adds fraction-selected styling when a blank numerator/denominator slot is selected', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 1 } });
+
+    expect(latex).toContain('equation-source-fraction-selected');
+    expect(latex).toContain('equation-source-slot-1 equation-source-selected');
+  });
+
+  test('adds fraction-selected styling when the denominator blank slot is selected', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 3 } });
+
+    expect(latex).toContain('equation-source-fraction-selected');
+    expect(latex).toContain('equation-source-slot-3 equation-source-selected');
+  });
+
+  test('marks selected parenthesis and absolute delimiter tokens for editor layout', () => {
+    const selectedOpenParen = equationTokensToLatex([
+      { value: '(' },
+      { value: '5' },
+      { value: ')' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 0 } });
+    const selectedCloseParen = equationTokensToLatex([
+      { value: '(' },
+      { value: '5' },
+      { value: ')' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 2 } });
+    const selectedOpenAbs = equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+      { value: '5' },
+      { value: '|', role: 'absoluteClose' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 0 } });
+    const selectedCloseAbs = equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+      { value: '5' },
+      { value: '|', role: 'absoluteClose' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 2 } });
+
+    expect(selectedOpenParen).toContain('equation-source-token-0 equation-source-selected');
+    expect(selectedCloseParen).toContain('equation-source-token-2 equation-source-selected');
+    expect(selectedOpenAbs).toContain('equation-source-token-0 equation-source-selected');
+    expect(selectedCloseAbs).toContain('equation-source-token-2 equation-source-selected');
   });
 
   test('renders the cursor inside the exponent when the cursor state is inside the exponent', () => {

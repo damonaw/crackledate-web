@@ -1,9 +1,21 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { createRoot } from 'react-dom/client';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
+import {
+  deleteAtSelection,
+  insertTokensAtSelection,
+  normalizeEditorSelection,
+  moveSelectionHorizontally,
+  type EditorSelection,
+  type SlotPlacement,
+} from './equationEditing';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
+import { statusToastDismissMs } from './notificationTiming';
+import { savedSolutionDateSet } from './savedSolutionDates';
+import { SettingsPanel } from './SettingsPanel';
+import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import './styles.css';
 
@@ -49,6 +61,11 @@ type EquationToken = EquationLatexToken & {
   digitIndex?: number;
 };
 
+type EquationEditorState = {
+  tokens: EquationToken[];
+  selection: EditorSelection;
+};
+
 type ValueSegment = {
   text: string;
   isRepeating: boolean;
@@ -78,6 +95,24 @@ const operators = [
   [')', ')'],
 ];
 
+const keyboardInsertableOperators: Record<string, string> = {
+  '+': '+',
+  '-': '-',
+  '*': '×',
+  '×': '×',
+  '/': '÷',
+  '÷': '÷',
+  '^': '^',
+  '!': '!',
+  '(': '(',
+  ')': ')',
+  '|': '|',
+  s: '√',
+  S: '√',
+  r: '√',
+  R: '√',
+};
+
 const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
@@ -98,10 +133,9 @@ function App() {
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
   const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
-  const [activeView, setActiveView] = useState<'game' | 'solutions' | 'settings'>('game');
+  const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings'>('game');
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
-  const [tokens, setTokens] = useState<EquationToken[]>([]);
-  const [cursorIndex, setCursorIndex] = useState(0);
+  const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
   const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', right: '?', equation: '' });
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState<FeedbackTone>('success');
@@ -110,6 +144,7 @@ function GamePage() {
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
 
+  const { tokens, selection } = editorState;
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
   const usedDigitIndices = useMemo(() => digitIndicesInUse(tokens), [tokens]);
   const nextDigitIndex = useMemo(
@@ -117,6 +152,8 @@ function GamePage() {
     [puzzle, tokens],
   );
   const todaySolutions = puzzle ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
+  const savedSolutionDates = useMemo(() => savedSolutionDateSet(savedSolutions), [savedSolutions]);
+  const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const isEasyMode = difficultyMode === 'easy';
 
@@ -140,8 +177,7 @@ function GamePage() {
       .then((nextPuzzle) => {
         if (!isCurrent) return;
         setPuzzle(nextPuzzle);
-        setTokens([]);
-        setCursorIndex(0);
+        setEditorState(emptyEditorState());
         setEvaluation({ left: '?', right: '?', equation: '' });
         setMessage('');
         setStartTime(null);
@@ -173,16 +209,35 @@ function GamePage() {
     return () => controller.abort();
   }, [equation, selectedDate]);
 
+  const applyEditorEdit = useCallback(
+    (
+      edit: (
+        tokens: EquationToken[],
+        selection: EditorSelection,
+      ) => { tokens: EquationToken[]; selection: EditorSelection },
+    ) => {
+      setEditorState((current) => {
+        const next = edit(current.tokens, current.selection);
+        return {
+          tokens: next.tokens,
+          selection: normalizeEditorSelection(next.selection, next.tokens.length),
+        };
+      });
+      setMessage('');
+    },
+    [],
+  );
+
   const insertText = useCallback(
     (value: string) => {
       if (!startTime) {
         setStartTime(Date.now());
       }
-      setTokens((current) => insertTokenAt(current, cursorIndex, createOperatorToken(value)));
-      setCursorIndex((index) => index + 1);
-      setMessage('');
+      applyEditorEdit((currentTokens, currentSelection) =>
+        insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken(value)]),
+      );
     },
-    [cursorIndex, startTime],
+    [applyEditorEdit, startTime],
   );
 
   const insertPairedDelimiter = useCallback(
@@ -195,24 +250,24 @@ function GamePage() {
       if (!startTime) {
         setStartTime(Date.now());
       }
-      setTokens((current) => {
-        if (isClosingDelimiterToken(current[cursorIndex], closeValue, closeRole)) {
-          return current;
+      applyEditorEdit((currentTokens, currentSelection) => {
+        if (
+          currentSelection.kind === 'slot' &&
+          isClosingDelimiterToken(currentTokens[currentSelection.index], closeValue, closeRole)
+        ) {
+          return {
+            tokens: currentTokens,
+            selection: { kind: 'slot', index: currentSelection.index + 1 },
+          };
         }
 
-        const next = [...current];
-        next.splice(
-          cursorIndex,
-          0,
+        return insertTokensAtSelection(currentTokens, currentSelection, [
           createOperatorToken(openValue, openRole),
           createOperatorToken(closeValue, closeRole),
-        );
-        return next;
+        ]);
       });
-      setCursorIndex((index) => index + 1);
-      setMessage('');
     },
-    [cursorIndex, startTime],
+    [applyEditorEdit, startTime],
   );
 
   const insertClosingDelimiter = useCallback(
@@ -220,17 +275,18 @@ function GamePage() {
       if (!startTime) {
         setStartTime(Date.now());
       }
-      setTokens((current) => {
-        if (current[cursorIndex]?.value === closeValue) {
-          return current;
+      applyEditorEdit((currentTokens, currentSelection) => {
+        if (currentSelection.kind === 'slot' && currentTokens[currentSelection.index]?.value === closeValue) {
+          return {
+            tokens: currentTokens,
+            selection: { kind: 'slot', index: currentSelection.index + 1 },
+          };
         }
 
-        return insertTokenAt(current, cursorIndex, createOperatorToken(closeValue));
+        return insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken(closeValue)]);
       });
-      setCursorIndex((index) => index + 1);
-      setMessage('');
     },
-    [cursorIndex, startTime],
+    [applyEditorEdit, startTime],
   );
 
   const insertOperator = useCallback(
@@ -257,34 +313,17 @@ function GamePage() {
     if (!startTime) {
       setStartTime(Date.now());
     }
-    setTokens((current) => insertTokenAt(current, cursorIndex, createDigitToken(nextDigit, nextDigitIndex)));
-    setCursorIndex((index) => index + 1);
-    setMessage('');
-  }, [cursorIndex, nextDigit, nextDigitIndex, startTime]);
+    applyEditorEdit((currentTokens, currentSelection) =>
+      insertTokensAtSelection(currentTokens, currentSelection, [createDigitToken(nextDigit, nextDigitIndex)]),
+    );
+  }, [applyEditorEdit, nextDigit, nextDigitIndex, startTime]);
 
   const backspace = useCallback(() => {
-    if (cursorIndex === 0) return;
-    setTokens((current) => {
-      const left = current[cursorIndex - 1];
-      const right = current[cursorIndex];
-      if (
-        (left?.value === '(' && right?.value === ')') ||
-        isAbsoluteValuePair(left, right)
-      ) {
-        const next = [...current];
-        next.splice(cursorIndex - 1, 2);
-        return next;
-      }
-
-      return current.filter((_, index) => index !== cursorIndex - 1);
-    });
-    setCursorIndex((index) => Math.max(0, index - 1));
-    setMessage('');
-  }, [cursorIndex]);
+    applyEditorEdit((currentTokens, currentSelection) => deleteAtSelection(currentTokens, currentSelection));
+  }, [applyEditorEdit]);
 
   const clear = useCallback(() => {
-    setTokens([]);
-    setCursorIndex(0);
+    setEditorState(emptyEditorState());
     setEvaluation({ left: '?', right: '?', equation: '' });
     setMessage('');
     setStartTime(null);
@@ -350,11 +389,6 @@ function GamePage() {
     setActiveView('game');
   }, []);
 
-  const showStart = useCallback(() => {
-    setIsPlaying(false);
-    setActiveView('game');
-  }, []);
-
   const showSolutions = useCallback(() => {
     localStorage.setItem(playStartedKey, 'true');
     setIsPlaying(true);
@@ -367,7 +401,38 @@ function GamePage() {
     setActiveView('settings');
   }, []);
 
+  const clearBrowserData = useCallback(() => {
+    const confirmed = window.confirm('Clear saved solutions and settings from this browser?');
+    if (!confirmed) return;
+
+    localStorage.removeItem(storageKey);
+    localStorage.removeItem(playStartedKey);
+    localStorage.removeItem(themePreferenceKey);
+    localStorage.removeItem(difficultyModeKey);
+    setSavedSolutions({});
+    setThemePreference('system');
+    setDifficultyMode('easy');
+    setEditorState(emptyEditorState());
+    setEvaluation({ left: '?', right: '?', equation: '' });
+    setStartTime(null);
+    setIsPlaying(false);
+    setActiveView('game');
+    setMessageTone('success');
+    setMessage('Local data cleared.');
+  }, []);
+
+  const showCalendar = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setIsPlaying(true);
+    setActiveView('calendar');
+  }, []);
+
   const showGame = useCallback(() => {
+    setActiveView('game');
+  }, []);
+
+  const chooseCalendarDate = useCallback((dateIdentifier: string) => {
+    setSelectedDate(dateIdentifier);
     setActiveView('game');
   }, []);
 
@@ -383,7 +448,9 @@ function GamePage() {
     <main
       className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'} ${
         isPlaying && activeView === 'game' ? 'game-shell' : ''
-      } ${activeView === 'solutions' ? 'solutions-shell detail-shell' : ''} ${
+      } ${activeView === 'calendar' ? 'calendar-shell detail-shell' : ''} ${
+        activeView === 'solutions' ? 'solutions-shell detail-shell' : ''
+      } ${
         activeView === 'settings' ? 'settings-shell detail-shell' : ''
       }`}
     >
@@ -393,8 +460,8 @@ function GamePage() {
             className="top-date-picker"
             label={dateInputLabel}
             displayDate={puzzle?.displayDate ?? 'Crackle Date'}
-            selectedDate={selectedDate}
-            onSelectedDateChange={setSelectedDate}
+            isActive={activeView === 'calendar'}
+            onOpen={activeView === 'calendar' ? showGame : showCalendar}
           />
           <nav className="site-nav" aria-label="Site">
             <button
@@ -420,16 +487,24 @@ function GamePage() {
       )}
 
       {!isPlaying && (
-        <StartPage
-          solutionCount={todaySolutions.length}
-          onPlay={playPuzzle}
-        />
+        <StartPage onPlay={playPuzzle} />
       )}
 
       {isPlaying && activeView === 'game' && (
         <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
           <div className="expression-area">
-            <EquationEditor tokens={tokens} cursorIndex={cursorIndex} onCursorChange={setCursorIndex} />
+            <EquationEditor
+              tokens={tokens}
+              selection={selection}
+              onSelectionChange={(nextSelection) =>
+                setEditorState((current) => ({
+                  ...current,
+                  selection: normalizeEditorSelection(nextSelection, current.tokens.length),
+                }))
+              }
+              onBackspace={backspace}
+              onInsertValue={insertOperator}
+            />
 
             {isEasyMode && (
               <div className="helper-row" aria-live="polite">
@@ -486,10 +561,19 @@ function GamePage() {
 
       <StatusToast message={feedbackMessage} tone={feedbackTone} />
 
+      {isPlaying && activeView === 'calendar' && (
+        <CalendarPage
+          selectedDate={selectedDate}
+          savedSolutionDates={savedSolutionDates}
+          onSelectedDateChange={chooseCalendarDate}
+        />
+      )}
+
       {isPlaying && activeView === 'solutions' && (
         <SolutionsPage
           displayDate={puzzle?.displayDate ?? 'Selected date'}
           solutions={todaySolutions}
+          badges={badges}
         />
       )}
 
@@ -499,7 +583,7 @@ function GamePage() {
           difficultyMode={difficultyMode}
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
-          onShowSolutions={showSolutions}
+          onClearData={clearBrowserData}
         />
       )}
     </main>
@@ -507,92 +591,36 @@ function GamePage() {
 }
 
 function StatusToast({ message, tone }: { message: string; tone: FeedbackTone }) {
-  if (!message) {
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (!message) {
+      setIsVisible(false);
+      return undefined;
+    }
+
+    setIsVisible(true);
+    const timeoutId = window.setTimeout(() => setIsVisible(false), statusToastDismissMs);
+    return () => window.clearTimeout(timeoutId);
+  }, [message, tone]);
+
+  if (!message || !isVisible) {
     return null;
   }
 
   return (
     <div className="toast-region" aria-live={tone === 'error' ? 'assertive' : 'polite'}>
-      <div
+      <button
         className={`status-toast ${tone === 'error' ? 'error' : 'success'}`}
-        role={tone === 'error' ? 'alert' : 'status'}
+        type="button"
+        aria-label={`Dismiss notification: ${message}`}
         data-testid="status-toast"
+        onClick={() => setIsVisible(false)}
       >
         <span className="status-toast-accent" aria-hidden="true" />
         <span>{message}</span>
-      </div>
+      </button>
     </div>
-  );
-}
-
-function SettingsPanel({
-  themePreference,
-  difficultyMode,
-  onThemePreferenceChange,
-  onDifficultyModeChange,
-  onShowSolutions,
-}: {
-  themePreference: ThemePreference;
-  difficultyMode: DifficultyMode;
-  onThemePreferenceChange: (preference: ThemePreference) => void;
-  onDifficultyModeChange: (mode: DifficultyMode) => void;
-  onShowSolutions: () => void;
-}) {
-  return (
-    <section className="settings-page" aria-labelledby="settings-title">
-      <div className="settings-page-header">
-        <div>
-          <h1 id="settings-title">Settings</h1>
-          <p>Saved on this browser</p>
-        </div>
-      </div>
-
-      <div className="settings-group">
-        <fieldset className="settings-row">
-          <legend>Appearance</legend>
-          <div className="segmented-control">
-            {(['system', 'light', 'dark'] as const).map((preference) => (
-              <label key={preference}>
-                <input
-                  type="radio"
-                  name="appearance"
-                  value={preference}
-                  checked={themePreference === preference}
-                  onChange={() => onThemePreferenceChange(preference)}
-                />
-                <span>{preference === 'system' ? 'Auto' : preference[0].toUpperCase() + preference.slice(1)}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset className="settings-row">
-          <legend>Difficulty</legend>
-          <div className="segmented-control">
-            {(['easy', 'hard'] as const).map((mode) => (
-              <label key={mode}>
-                <input
-                  type="radio"
-                  name="difficulty"
-                  value={mode}
-                  checked={difficultyMode === mode}
-                  onChange={() => onDifficultyModeChange(mode)}
-                />
-                <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-      </div>
-
-      <nav className="settings-links" aria-label="Help and policies">
-        <button className="mobile-only-link" type="button" onClick={onShowSolutions}>
-          Saved Solutions
-        </button>
-        <a href="/privacy/">Privacy</a>
-        <a href="/support/">Support</a>
-      </nav>
-    </section>
   );
 }
 
@@ -620,9 +648,11 @@ function StatsIcon() {
 function SolutionsPage({
   displayDate,
   solutions,
+  badges,
 }: {
   displayDate: string;
   solutions: SavedSolution[];
+  badges: SolutionBadge[];
 }) {
   return (
     <section className="solutions-page" aria-labelledby="solutions-page-title">
@@ -632,7 +662,41 @@ function SolutionsPage({
           <p>{displayDate}</p>
         </div>
       </div>
+      <BadgesSection badges={badges} />
       <SolutionsList solutions={solutions} />
+    </section>
+  );
+}
+
+function BadgesSection({ badges }: { badges: SolutionBadge[] }) {
+  const earnedCount = badges.filter((badge) => badge.earned).length;
+
+  return (
+    <section className="badges-section" aria-labelledby="badges-title">
+      <div className="badges-header">
+        <div>
+          <h2 id="badges-title">Badges</h2>
+          <p>
+            {earnedCount} of {badges.length} earned
+          </p>
+        </div>
+      </div>
+
+      <div className="badge-grid">
+        {badges.map((badge) => (
+          <article
+            className={`solution-badge ${badge.earned ? 'earned' : 'locked'}`}
+            key={badge.id}
+            aria-label={`${badge.title}, ${badge.earned ? 'earned' : 'locked'}`}
+          >
+            <div>
+              <strong>{badge.title}</strong>
+              <p>{badge.description}</p>
+            </div>
+            <span className="badge-status">{badge.earned ? 'Earned' : 'Locked'}</span>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }
@@ -664,19 +728,23 @@ function MathEquation({
   cursorIndex,
   tokens,
   preserveDelimiters = false,
+  editorMarkers = false,
+  selectedSource,
 }: {
   equation: string;
   className?: string;
   cursorIndex?: number;
   tokens?: EquationLatexToken[];
   preserveDelimiters?: boolean;
+  editorMarkers?: boolean;
+  selectedSource?: { kind: 'token'; index: number } | { kind: 'slot'; index: number; placement?: SlotPlacement };
 }) {
   const latex = useMemo(
     () =>
       tokens
-        ? equationTokensToLatex(tokens, { cursorIndex, preserveDelimiters })
-        : equationToLatex(equation, { cursorIndex, preserveDelimiters }),
-    [cursorIndex, equation, preserveDelimiters, tokens],
+        ? equationTokensToLatex(tokens, { cursorIndex, preserveDelimiters, editorMarkers, selectedSource })
+        : equationToLatex(equation, { cursorIndex, preserveDelimiters, editorMarkers, selectedSource }),
+    [cursorIndex, editorMarkers, equation, preserveDelimiters, selectedSource, tokens],
   );
   const html = useMemo(
     () =>
@@ -748,14 +816,17 @@ function appendValueSegment(segments: ValueSegment[], text: string, isRepeating:
   segments.push({ text, isRepeating });
 }
 
-function StartPage({
-  solutionCount,
-  onPlay,
-}: {
-  solutionCount: number;
-  onPlay: () => void;
-}) {
-  const [infoMode, setInfoMode] = useState<'rules' | 'stats' | null>(null);
+function StartPage({ onPlay }: { onPlay: () => void }) {
+  const [showInstructions, setShowInstructions] = useState(false);
+
+  if (showInstructions) {
+    return (
+      <HowToPlayStartView
+        onBack={() => setShowInstructions(false)}
+        onPlay={onPlay}
+      />
+    );
+  }
 
   return (
     <section className="start-panel" aria-labelledby="start-title">
@@ -774,39 +845,67 @@ function StartPage({
           <button
             className="start-action-button"
             type="button"
-            aria-pressed={infoMode === 'rules'}
-            onClick={() => setInfoMode((mode) => (mode === 'rules' ? null : 'rules'))}
+            onClick={() => setShowInstructions(true)}
           >
             How to Play
-          </button>
-          <button
-            className="start-action-button"
-            type="button"
-            aria-pressed={infoMode === 'stats'}
-            onClick={() => setInfoMode((mode) => (mode === 'stats' ? null : 'stats'))}
-          >
-            Stats
           </button>
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
             Play
           </button>
         </div>
+      </div>
+    </section>
+  );
+}
 
-        {infoMode && (
-          <div className="start-info-card">
-            {infoMode === 'rules' ? (
-              <>
-                <strong>Use the date digits in order.</strong>
-                <span>Add operators between digits and make both sides of the equals sign match.</span>
-              </>
-            ) : (
-              <>
-                <strong>{solutionCount === 1 ? '1 saved solution' : `${solutionCount} saved solutions`}</strong>
-                <span>Stats and solutions are stored locally in this browser.</span>
-              </>
-            )}
+function HowToPlayStartView({ onBack, onPlay }: { onBack: () => void; onPlay: () => void }) {
+  const steps = [
+    {
+      title: 'Use the date digits in order.',
+      body: 'Tap the active blue digit to place it in the equation. Digits can only be used from left to right.',
+    },
+    {
+      title: 'Add operators between digits.',
+      body: 'Use +, −, ×, ÷, roots, exponents, factorials, parentheses, and absolute value bars to shape each side.',
+    },
+    {
+      title: 'Balance both sides.',
+      body: 'Add one equals sign, then make the left and right sides evaluate to the same value.',
+    },
+    {
+      title: 'Submit a correct equation.',
+      body: 'Correct solutions are saved locally in this browser and can unlock badges.',
+    },
+  ];
+
+  return (
+    <section className="start-panel" aria-labelledby="how-to-play-title">
+      <div className="how-to-play-card">
+        <div className="how-to-play-header">
+          <img className="start-icon" src="/app-icon.png" alt="" />
+          <div>
+            <p className="document-kicker">Crackle Date</p>
+            <h1 id="how-to-play-title">How to Play</h1>
           </div>
-        )}
+        </div>
+
+        <ol className="how-to-play-list">
+          {steps.map((step) => (
+            <li className="how-to-play-step" key={step.title}>
+              <strong>{step.title}</strong>
+              <p>{step.body}</p>
+            </li>
+          ))}
+        </ol>
+
+        <div className="how-to-play-actions">
+          <button className="start-action-button secondary-button" type="button" onClick={onBack}>
+            Back
+          </button>
+          <button className="start-action-button play-button" type="button" onClick={onPlay}>
+            Play
+          </button>
+        </div>
       </div>
     </section>
   );
@@ -816,109 +915,124 @@ function DatePickerControl({
   className,
   label,
   displayDate,
-  selectedDate,
-  onSelectedDateChange,
+  isActive,
+  onOpen,
 }: {
   className: string;
   label: string;
   displayDate: string;
+  isActive: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <div className={className}>
+      <button
+        className="date-picker-trigger"
+        type="button"
+        aria-label={label}
+        aria-pressed={isActive}
+        onClick={onOpen}
+      >
+        <span>{displayDate}</span>
+      </button>
+    </div>
+  );
+}
+
+function CalendarPage({
+  selectedDate,
+  savedSolutionDates,
+  onSelectedDateChange,
+}: {
   selectedDate: string;
+  savedSolutionDates: ReadonlySet<string>;
   onSelectedDateChange: (date: string) => void;
 }) {
-  const pickerId = useId();
-  const pickerRef = useRef<HTMLDivElement>(null);
   const selectedDateObject = useMemo(() => dateFromIdentifier(selectedDate), [selectedDate]);
-  const [isOpen, setIsOpen] = useState(false);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(selectedDateObject));
   const todayIdentifier = useMemo(() => localDateIdentifier(new Date()), []);
   const calendarDays = useMemo(() => calendarDaysForMonth(visibleMonth), [visibleMonth]);
   const monthLabel = useMemo(() => monthFormatter.format(visibleMonth), [visibleMonth]);
 
   useEffect(() => {
-    if (!isOpen) {
-      setVisibleMonth(startOfMonth(selectedDateObject));
-    }
-  }, [isOpen, selectedDateObject]);
-
-  useEffect(() => {
-    if (!isOpen) return undefined;
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (pickerRef.current?.contains(event.target as Node)) return;
-      setIsOpen(false);
-    };
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener('pointerdown', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isOpen]);
-
-  const chooseDate = useCallback(
-    (dateIdentifier: string) => {
-      onSelectedDateChange(dateIdentifier);
-      setIsOpen(false);
-    },
-    [onSelectedDateChange],
-  );
+    setVisibleMonth(startOfMonth(selectedDateObject));
+  }, [selectedDateObject]);
 
   return (
-    <div className={className} ref={pickerRef}>
-      <button
-        className="date-picker-trigger"
-        type="button"
-        aria-label={label}
-        aria-expanded={isOpen}
-        aria-controls={isOpen ? pickerId : undefined}
-        onClick={() => setIsOpen((open) => !open)}
-      >
-        <span>{displayDate}</span>
-      </button>
-
-      {isOpen && (
-        <div className="date-picker-popover" id={pickerId} role="dialog" aria-label="Choose puzzle date">
-          <div className="date-picker-header">
-            <button type="button" aria-label="Previous month" onClick={() => setVisibleMonth((month) => addMonths(month, -1))}>
-              &lt;
-            </button>
-            <strong>{monthLabel}</strong>
-            <button type="button" aria-label="Next month" onClick={() => setVisibleMonth((month) => addMonths(month, 1))}>
-              &gt;
-            </button>
-          </div>
-
-          <div className="date-picker-weekdays" aria-hidden="true">
-            {weekdayLabels.map((weekday, index) => (
-              <span key={`${weekday}-${index}`}>{weekday}</span>
-            ))}
-          </div>
-
-          <div className="date-picker-grid">
-            {calendarDays.map((day) => (
-              <button
-                className={`date-picker-day ${day.isCurrentMonth ? '' : 'outside'} ${
-                  day.dateIdentifier === selectedDate ? 'selected' : ''
-                } ${day.dateIdentifier === todayIdentifier ? 'today' : ''}`}
-                type="button"
-                key={day.dateIdentifier}
-                aria-label={fullDateFormatter.format(day.date)}
-                aria-pressed={day.dateIdentifier === selectedDate}
-                onClick={() => chooseDate(day.dateIdentifier)}
-              >
-                {day.day}
-              </button>
-            ))}
-          </div>
+    <section className="calendar-page" aria-labelledby="calendar-page-title">
+      <div className="calendar-page-header">
+        <div>
+          <h1 id="calendar-page-title">Choose Date</h1>
+          <p>Saved days are marked in green.</p>
         </div>
-      )}
-    </div>
+      </div>
+
+      <div className="date-picker-calendar" role="group" aria-label="Choose puzzle date">
+        <div className="date-picker-header">
+          <button type="button" aria-label="Previous month" onClick={() => setVisibleMonth((month) => addMonths(month, -1))}>
+            ‹
+          </button>
+          <strong>{monthLabel}</strong>
+          <button type="button" aria-label="Next month" onClick={() => setVisibleMonth((month) => addMonths(month, 1))}>
+            ›
+          </button>
+        </div>
+
+        <CalendarGrid
+          calendarDays={calendarDays}
+          selectedDate={selectedDate}
+          todayIdentifier={todayIdentifier}
+          savedSolutionDates={savedSolutionDates}
+          onSelectedDateChange={onSelectedDateChange}
+        />
+      </div>
+    </section>
+  );
+}
+
+function CalendarGrid({
+  calendarDays,
+  selectedDate,
+  todayIdentifier,
+  savedSolutionDates,
+  onSelectedDateChange,
+}: {
+  calendarDays: CalendarDay[];
+  selectedDate: string;
+  todayIdentifier: string;
+  savedSolutionDates: ReadonlySet<string>;
+  onSelectedDateChange: (date: string) => void;
+}) {
+  return (
+    <>
+      <div className="date-picker-weekdays" aria-hidden="true">
+        {weekdayLabels.map((weekday, index) => (
+          <span key={`${weekday}-${index}`}>{weekday}</span>
+        ))}
+      </div>
+
+      <div className="date-picker-grid">
+        {calendarDays.map((day) => {
+          const hasSavedSolution = savedSolutionDates.has(day.dateIdentifier);
+          return (
+            <button
+              className={`date-picker-day ${day.isCurrentMonth ? '' : 'outside'} ${
+                day.dateIdentifier === selectedDate ? 'selected' : ''
+              } ${day.dateIdentifier === todayIdentifier ? 'today' : ''} ${
+                hasSavedSolution ? 'has-saved-solution' : ''
+              }`}
+              type="button"
+              key={day.dateIdentifier}
+              aria-label={`${fullDateFormatter.format(day.date)}${hasSavedSolution ? ', saved solution' : ''}`}
+              aria-pressed={day.dateIdentifier === selectedDate}
+              onClick={() => onSelectedDateChange(day.dateIdentifier)}
+            >
+              {day.day}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -962,78 +1076,410 @@ function DigitRail({
 
 function EquationEditor({
   tokens,
-  cursorIndex,
-  onCursorChange,
+  selection,
+  onSelectionChange,
+  onBackspace,
+  onInsertValue,
 }: {
   tokens: EquationToken[];
-  cursorIndex: number;
-  onCursorChange: (index: number) => void;
+  selection: EditorSelection;
+  onSelectionChange: (selection: EditorSelection) => void;
+  onBackspace: () => void;
+  onInsertValue: (value: string) => void;
 }) {
+  const editorRef = useRef<HTMLDivElement | null>(null);
+  const [hitTargets, setHitTargets] = useState<EquationHitTarget[]>([]);
+  const normalizedSelection = normalizeEditorSelection(selection, tokens.length);
+  const equation = tokensToEquation(tokens);
+  const maxSlotIndex = tokens.length;
+
+  const refreshHitTargets = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return [];
+    const measuredTargets = measureEquationHitTargets(editor, maxSlotIndex);
+    setHitTargets(measuredTargets);
+    return measuredTargets;
+  }, [maxSlotIndex]);
+
+  useLayoutEffect(() => {
+    refreshHitTargets();
+    const frameId = window.requestAnimationFrame(refreshHitTargets);
+    const editor = editorRef.current;
+    const resizeObserver =
+      editor && 'ResizeObserver' in window
+        ? new ResizeObserver(() => refreshHitTargets())
+        : null;
+
+    if (editor) {
+      resizeObserver?.observe(editor);
+    }
+    window.addEventListener('resize', refreshHitTargets);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', refreshHitTargets);
+    };
+  }, [equation, normalizedSelection.index, normalizedSelection.kind, refreshHitTargets, tokens.length]);
+
+  const selectFromPointer = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const editor = editorRef.current;
+      if (!editor) return;
+
+      const targets = refreshHitTargets();
+      const editorRect = editor.getBoundingClientRect();
+      const nextTarget = targetAtPoint(targets, event.clientX - editorRect.left, event.clientY - editorRect.top);
+
+      if (!nextTarget) return;
+      event.preventDefault();
+      editor.focus();
+      onSelectionChange(nextTarget.selection);
+    },
+    [onSelectionChange, refreshHitTargets],
+  );
+
+  const handleEditorKey = useCallback(
+    (event: {
+      key: string;
+      metaKey?: boolean;
+      ctrlKey?: boolean;
+      altKey?: boolean;
+      preventDefault: () => void;
+    }) => {
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        const direction = event.key === 'ArrowLeft' ? -1 : 1;
+        onSelectionChange(
+          nextSelectionFromRenderedTargets(hitTargets, normalizedSelection, direction)
+            ?? moveSelectionHorizontally(tokens.length, normalizedSelection, direction),
+        );
+        return;
+      }
+
+      if (!event.metaKey && !event.ctrlKey && !event.altKey) {
+        const value = keyboardInsertableOperators[event.key];
+        if (value !== undefined) {
+          event.preventDefault();
+          onInsertValue(value);
+          return;
+        }
+      }
+
+      if (event.key !== 'Backspace') return;
+      event.preventDefault();
+      onBackspace();
+    },
+    [
+      hitTargets,
+      normalizedSelection,
+      onBackspace,
+      onInsertValue,
+      onSelectionChange,
+      tokens.length,
+    ],
+  );
+
+  const isEditableTarget = useCallback((target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      return true;
+    }
+
+    const closestFormControl = target.closest(
+      'input, textarea, [contenteditable], [contenteditable="true"], [role="textbox"]',
+    );
+    return !!closestFormControl;
+  }, []);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Backspace' && keyboardInsertableOperators[event.key] === undefined) {
+        return;
+      }
+
+      if (event.target instanceof Node && editorRef.current?.contains(event.target)) {
+        return;
+      }
+
+      if (isEditableTarget(event.target)) {
+        return;
+      }
+
+      handleEditorKey(event);
+      editorRef.current?.focus();
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [handleEditorKey, isEditableTarget]);
+
   if (tokens.length === 0) {
     return (
-      <div className="equation-box" aria-label="Equation input" data-testid="equation-editor">
-        <CursorSlot index={0} active onCursorChange={onCursorChange} label="Move cursor to start" empty />
+      <div
+        ref={editorRef}
+        className="equation-box empty"
+        aria-label="Equation input"
+        data-testid="equation-editor"
+        tabIndex={0}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          editorRef.current?.focus();
+          onSelectionChange({ kind: 'slot', index: 0 });
+        }}
+        onKeyDown={handleEditorKey}
+      >
+        <div className="equation-selection-layer" aria-hidden="true">
+          <span className="equation-selection-cue empty" />
+        </div>
       </div>
     );
   }
 
-  const equation = tokensToEquation(tokens);
-
   return (
-    <div className="equation-box" aria-label="Equation input" data-testid="equation-editor">
+    <div
+      ref={editorRef}
+      className="equation-box"
+      aria-label="Equation input"
+      data-testid="equation-editor"
+      tabIndex={0}
+      onPointerDown={selectFromPointer}
+      onKeyDown={handleEditorKey}
+    >
       <div className="equation-preview" aria-hidden="true">
-        <MathEquation equation={equation} tokens={tokens} cursorIndex={cursorIndex} preserveDelimiters />
-      </div>
-      <div className="equation-hit-layer">
-        <CursorSlot index={0} active={cursorIndex === 0} onCursorChange={onCursorChange} label="Move cursor to start" />
-        {tokens.map((token, index) => (
-          <React.Fragment key={token.id}>
-            <button
-              className="equation-token"
-              type="button"
-              onClick={() => onCursorChange(index + 1)}
-              aria-label={`Move cursor after ${token.value}`}
-              data-testid={`equation-token-${index}`}
-            >
-              {token.value}
-            </button>
-            <CursorSlot
-              index={index + 1}
-              active={cursorIndex === index + 1}
-              onCursorChange={onCursorChange}
-              label={index === tokens.length - 1 ? 'Move cursor to end' : `Move cursor after ${token.value}`}
-            />
-          </React.Fragment>
-        ))}
+        <MathEquation
+          equation={equation}
+          tokens={tokens}
+          preserveDelimiters
+          editorMarkers
+          selectedSource={normalizedSelection}
+        />
       </div>
     </div>
   );
 }
 
-function CursorSlot({
-  index,
-  active,
-  onCursorChange,
-  label,
-  empty = false,
-}: {
-  index: number;
-  active: boolean;
-  onCursorChange: (index: number) => void;
-  label: string;
-  empty?: boolean;
-}) {
-  return (
-    <button
-      className={`cursor-slot ${active ? 'active' : ''} ${empty ? 'empty' : ''}`}
-      type="button"
-      onClick={() => onCursorChange(index)}
-      aria-label={label}
-      data-testid={`cursor-slot-${index}`}
-    >
-      <span className="cursor" aria-hidden="true" />
-    </button>
-  );
+type LocalRect = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
+type EquationHitTarget = {
+  selection: EditorSelection;
+  hitRect: LocalRect;
+  centerX: number;
+  centerY: number;
+};
+
+const equationSelectionSize = 42;
+const fractionOperatorHitHeight = 22;
+const fractionSelectedHitSize = 64;
+
+function nextSelectionFromRenderedTargets(
+  targets: EquationHitTarget[],
+  currentSelection: EditorSelection,
+  direction: -1 | 1,
+): EditorSelection | null {
+  const orderedTargets = orderedEquationHitTargets(targets);
+  if (orderedTargets.length === 0) {
+    return null;
+  }
+
+  const currentIndex = orderedTargets.findIndex((target) => selectionKey(target.selection) === selectionKey(currentSelection));
+  if (currentIndex === -1) {
+    return null;
+  }
+
+  const nextIndex = (currentIndex + direction + orderedTargets.length) % orderedTargets.length;
+  return orderedTargets[nextIndex]?.selection ?? null;
+}
+
+function orderedEquationHitTargets(targets: EquationHitTarget[]): EquationHitTarget[] {
+  const uniqueTargets = new Map<string, EquationHitTarget>();
+  for (const target of targets) {
+    uniqueTargets.set(selectionKey(target.selection), target);
+  }
+
+  return [...uniqueTargets.values()].sort((first, second) => {
+    const orderDelta = selectionOrder(first.selection) - selectionOrder(second.selection);
+    if (orderDelta !== 0) return orderDelta;
+    return first.centerX - second.centerX;
+  });
+}
+
+function selectionKey(selection: EditorSelection): string {
+  return selection.kind === 'slot'
+    ? `${selection.kind}:${selection.index}:${selection.placement ?? 'source'}`
+    : `${selection.kind}:${selection.index}`;
+}
+
+function selectionOrder(selection: EditorSelection): number {
+  if (selection.kind === 'token') {
+    return selection.index * 2 + 1;
+  }
+
+  const baseOrder = selection.index * 2;
+  if (selection.placement === 'fractionNumeratorStart') {
+    return baseOrder + 0.25;
+  }
+  if (selection.placement === 'fractionDenominatorEnd') {
+    return baseOrder - 0.25;
+  }
+  return baseOrder;
+}
+
+function measureEquationHitTargets(editor: HTMLElement, maxSlotIndex: number): EquationHitTarget[] {
+  const editorRect = editor.getBoundingClientRect();
+  const tokenTargets = Array.from(editor.querySelectorAll<HTMLElement>('.katex-html .equation-source-token'))
+    .map((element) => targetFromMarker(element, editorRect, 'token', maxSlotIndex))
+    .filter((target): target is EquationHitTarget => Boolean(target));
+  const slotTargets = Array.from(editor.querySelectorAll<HTMLElement>('.katex-html .equation-source-slot'))
+    .map((element) => targetFromMarker(element, editorRect, 'slot', maxSlotIndex))
+    .filter((target): target is EquationHitTarget => Boolean(target));
+
+  return [...tokenTargets, ...slotTargets];
+}
+
+function targetFromMarker(
+  element: HTMLElement,
+  editorRect: DOMRect,
+  kind: EditorSelection['kind'],
+  maxSlotIndex: number,
+): EquationHitTarget | null {
+  const index = sourceMarkerIndex(element, `equation-source-${kind}-`);
+  if (index === null) return null;
+  const placement = kind === 'slot' ? sourceMarkerSlotPlacement(element) : undefined;
+  const selection: EditorSelection = placement
+    ? { kind, index, placement }
+    : { kind, index };
+
+  const rect = element.getBoundingClientRect();
+  const localRect = {
+    left: rect.left - editorRect.left,
+    top: rect.top - editorRect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+  const centerX = localRect.left + localRect.width / 2;
+  const centerY = localRect.top + localRect.height / 2;
+
+  if (element.classList.contains('equation-source-fraction-token')) {
+    const isFractionSelected = element.classList.contains('equation-source-selected') || element.classList.contains('equation-source-fraction-selected');
+    if (isFractionSelected) {
+      return {
+        selection,
+        hitRect: squareAround(centerX, centerY, fractionSelectedHitSize),
+        centerX,
+        centerY,
+      };
+    }
+
+    const width = Math.max(equationSelectionSize, localRect.width);
+    return {
+      selection,
+      hitRect: {
+        left: centerX - width / 2,
+        top: centerY - fractionOperatorHitHeight / 2,
+        width,
+        height: fractionOperatorHitHeight,
+      },
+      centerX,
+      centerY,
+    };
+  }
+
+  if (kind === 'slot' && index === 0) {
+    const baseRect = squareAround(centerX, centerY, equationSelectionSize);
+    return {
+      selection,
+      hitRect: {
+        left: baseRect.left - equationSelectionSize,
+        top: baseRect.top,
+        width: baseRect.width + equationSelectionSize,
+        height: baseRect.height,
+      },
+      centerX,
+      centerY,
+    };
+  }
+
+  if (kind === 'slot' && index === maxSlotIndex && maxSlotIndex > 0) {
+    const baseRect = squareAround(centerX, centerY, equationSelectionSize);
+    return {
+      selection,
+      hitRect: {
+        left: baseRect.left,
+        top: baseRect.top,
+        width: baseRect.width + equationSelectionSize,
+        height: baseRect.height,
+      },
+      centerX,
+      centerY,
+    };
+  }
+
+  return {
+    selection,
+    hitRect: squareAround(centerX, centerY, equationSelectionSize),
+    centerX,
+    centerY,
+  };
+}
+
+function sourceMarkerIndex(element: HTMLElement, prefix: string): number | null {
+  for (const className of element.classList) {
+    if (!className.startsWith(prefix)) continue;
+    const value = Number(className.slice(prefix.length));
+    if (Number.isInteger(value)) return value;
+  }
+
+  return null;
+}
+
+function sourceMarkerSlotPlacement(element: HTMLElement): SlotPlacement | undefined {
+  if (element.classList.contains('equation-source-slot-placement-fraction-numerator-start')) {
+    return 'fractionNumeratorStart';
+  }
+  if (element.classList.contains('equation-source-slot-placement-fraction-denominator-end')) {
+    return 'fractionDenominatorEnd';
+  }
+  return undefined;
+}
+
+function targetAtPoint(targets: EquationHitTarget[], x: number, y: number): EquationHitTarget | null {
+  const matchingTargets = targets.filter((target) => rectContains(target.hitRect, x, y));
+  if (matchingTargets.length === 0) return null;
+
+  return matchingTargets.sort((first, second) => {
+    const distanceDelta = distanceToTarget(first, x, y) - distanceToTarget(second, x, y);
+    if (distanceDelta !== 0) return distanceDelta;
+    return rectArea(first.hitRect) - rectArea(second.hitRect);
+  })[0];
+}
+
+function squareAround(centerX: number, centerY: number, size: number): LocalRect {
+  return {
+    left: centerX - size / 2,
+    top: centerY - size / 2,
+    width: size,
+    height: size,
+  };
+}
+
+function rectContains(rect: LocalRect, x: number, y: number): boolean {
+  return x >= rect.left && x <= rect.left + rect.width && y >= rect.top && y <= rect.top + rect.height;
+}
+
+function rectArea(rect: LocalRect): number {
+  return rect.width * rect.height;
+}
+
+function distanceToTarget(target: EquationHitTarget, x: number, y: number): number {
+  return Math.hypot(target.centerX - x, target.centerY - y);
 }
 
 function PrivacyPage() {
@@ -1234,6 +1680,13 @@ function loadDifficultyMode(): DifficultyMode {
   return localStorage.getItem(difficultyModeKey) === 'hard' ? 'hard' : 'easy';
 }
 
+function emptyEditorState(): EquationEditorState {
+  return {
+    tokens: [],
+    selection: { kind: 'slot', index: 0 },
+  };
+}
+
 function createTokenId(): string {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`;
 }
@@ -1246,12 +1699,6 @@ function createDigitToken(value: number, digitIndex: number): EquationToken {
   return { id: createTokenId(), value: String(value), digitIndex };
 }
 
-function insertTokenAt(tokens: EquationToken[], cursorIndex: number, token: EquationToken): EquationToken[] {
-  const next = [...tokens];
-  next.splice(cursorIndex, 0, token);
-  return next;
-}
-
 function isClosingDelimiterToken(
   token: EquationToken | undefined,
   closeValue: string,
@@ -1262,10 +1709,6 @@ function isClosingDelimiterToken(
   }
 
   return closeRole === undefined || token.role === closeRole;
-}
-
-function isAbsoluteValuePair(left: EquationToken | undefined, right: EquationToken | undefined): boolean {
-  return left?.value === '|' && left.role === 'absoluteOpen' && right?.value === '|' && right.role === 'absoluteClose';
 }
 
 function tokensToEquation(tokens: EquationToken[]): string {
@@ -1339,4 +1782,13 @@ function formatTime(seconds: number): string {
   return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;
 }
 
-createRoot(document.getElementById('root')!).render(<App />);
+const rootElement = document.getElementById('root')!;
+const hotMeta = import.meta as ImportMeta & { hot?: { data: { root?: Root } } };
+const hotData = hotMeta.hot?.data;
+const root = hotData?.root ?? createRoot(rootElement);
+
+if (hotData) {
+  hotData.root = root;
+}
+
+root.render(<App />);

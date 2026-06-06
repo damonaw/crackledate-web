@@ -12,7 +12,21 @@ This keeps the runtime small and simple: the single container can sit behind any
 
 ## Local Development
 
-Open the local app at `http://localhost:5173/`.
+Open the hot-reload local app at `http://localhost:5173/`.
+
+From the repo root:
+
+```bash
+npm run dev
+```
+
+This starts the Go API on `http://localhost:5174` and the Vite frontend on
+`http://localhost:5173`. Frontend changes hot reload through Vite, and backend
+changes under `cmd/` or `internal/` restart the API automatically.
+
+Override the API port with `CRACKLEDATE_API_PORT` if needed.
+
+You can also run the two processes manually.
 
 Frontend:
 

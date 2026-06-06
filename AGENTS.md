@@ -11,6 +11,19 @@ Guidance for Codex and other coding agents working in this repository.
 
 ## Local Development
 
+Use the root dev runner for hot-reload local work:
+
+```bash
+npm run dev
+```
+
+This starts the Go backend and Vite frontend as separate processes. Open
+`http://localhost:5173/` for the local app. Vite hot reloads frontend changes,
+and the runner restarts the Go backend when backend files change. The runner
+uses `CRACKLEDATE_API_PORT` when set, otherwise API port `5174`.
+
+Manual process startup still works.
+
 Run the backend from the repo root:
 
 ```bash

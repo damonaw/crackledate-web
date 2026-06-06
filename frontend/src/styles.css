@@ -516,7 +516,7 @@ h1 {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 70px;
+  min-height: 82px;
   margin: 0 0 4px;
   padding-inline: 0;
 }
@@ -526,21 +526,21 @@ h1 {
   display: grid;
   place-items: center;
   color: var(--ios-secondary-label);
-  font-size: 1.5rem;
+  font-size: 1.95rem;
   font-weight: 700;
   line-height: 1;
 }
 
 .digit-rail span {
-  min-width: 18px;
-  height: 44px;
+  min-width: 24px;
+  height: 54px;
   border: 0;
   background: transparent;
 }
 
 .digit-rail button {
-  width: 44px;
-  height: 44px;
+  width: 54px;
+  height: 54px;
   border: 0;
   background: transparent;
   cursor: pointer;
@@ -792,23 +792,31 @@ h1 {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+  align-items: stretch;
 }
 
 .operator-grid button {
-  min-height: 70px;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: 0;
   border: 1px solid rgba(142, 142, 147, 0.25);
   border-radius: 14px;
   background: var(--ios-tertiary-background);
   color: var(--ios-label);
   font-size: 1.95rem;
   font-weight: 650;
+  line-height: 1;
+  text-align: center;
   cursor: pointer;
 }
 
 .operator-grid .wide,
 .operator-grid .submit {
-  min-height: 60px;
   grid-column: span 2;
+  aspect-ratio: auto;
+  min-height: 70px;
   border-radius: 12px;
 }
 
@@ -1223,20 +1231,21 @@ h1 {
   }
 
   .digit-rail button {
-    width: 38px;
-    height: 38px;
+    width: 46px;
+    height: 46px;
   }
 
   .digit-rail span {
-    height: 38px;
-    min-width: 16px;
+    height: 46px;
+    min-width: 20px;
   }
 
   .operator-grid {
     gap: 9px;
   }
 
-  .operator-grid button {
+  .operator-grid .wide,
+  .operator-grid .submit {
     min-height: 64px;
   }
 }

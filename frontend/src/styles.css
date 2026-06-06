@@ -780,7 +780,7 @@ h1 {
 
 .equation-box {
   position: relative;
-  min-height: 152px;
+  min-height: 104px;
   border-radius: 12px;
   border: 1px solid transparent;
   background: var(--ios-secondary-background);
@@ -803,7 +803,7 @@ h1 {
 
 .equation-preview {
   width: 100%;
-  min-height: 96px;
+  min-height: 72px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -934,7 +934,7 @@ h1 {
   position: relative;
   z-index: 1;
   width: min(300px, 100%);
-  margin: 56px auto 0;
+  margin: 0 auto;
   color: var(--ios-secondary-label);
   font-size: 0.95rem;
   font-weight: 700;
@@ -962,13 +962,6 @@ h1 {
   border-radius: 999px;
   vertical-align: -0.16em;
   animation: blink 1.05s steps(2, start) infinite;
-}
-
-.equation-selection-cue.empty {
-  left: 50%;
-  top: calc(50% - 24px);
-  width: 42px;
-  height: 42px;
 }
 
 @keyframes blink {

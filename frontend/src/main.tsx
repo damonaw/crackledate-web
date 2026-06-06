@@ -10,6 +10,7 @@ import {
   type EditorSelection,
   type SlotPlacement,
 } from './equationEditing';
+import { EquationEmptyState } from './EquationEmptyState';
 import { EquationHelperRow } from './EquationHelperRow';
 import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
@@ -1252,12 +1253,7 @@ function EquationEditor({
         }}
         onKeyDown={handleEditorKey}
       >
-        <p className="equation-empty-prompt">
-          Start building your Crackle Date with the numbers and math operators
-        </p>
-        <div className="equation-selection-layer" aria-hidden="true">
-          <span className="equation-selection-cue empty" />
-        </div>
+        <EquationEmptyState />
       </div>
     );
   }

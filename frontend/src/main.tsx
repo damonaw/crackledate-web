@@ -10,6 +10,7 @@ import {
   type EditorSelection,
   type SlotPlacement,
 } from './equationEditing';
+import { EquationSelectorControls, type SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
@@ -65,6 +66,8 @@ type EquationEditorState = {
   tokens: EquationToken[];
   selection: EditorSelection;
 };
+
+type SelectorMoveHandler = (direction: SelectorDirection) => void;
 
 type ValueSegment = {
   text: string;
@@ -143,6 +146,7 @@ function GamePage() {
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
+  const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
 
   const { tokens, selection } = editorState;
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
@@ -329,6 +333,10 @@ function GamePage() {
     setStartTime(null);
   }, []);
 
+  const moveSelectorFromControls = useCallback((direction: SelectorDirection) => {
+    selectorMoveRef.current?.(direction);
+  }, []);
+
   const submit = useCallback(async () => {
     if (!puzzle) return;
     const normalizedEquation = equation.trim();
@@ -504,15 +512,17 @@ function GamePage() {
               }
               onBackspace={backspace}
               onInsertValue={insertOperator}
+              selectorMoveRef={selectorMoveRef}
             />
 
             {isEasyMode && (
-              <div className="helper-row" aria-live="polite">
-                <div className="helper-value">
+              <div className="helper-row" aria-label="Equation helpers">
+                <div className="helper-value" aria-live="polite">
                   <span className="helper-label">L</span>
                   <RepeatingDecimalValue value={evaluation.left || '?'} />
                 </div>
-                <div className="helper-value">
+                <EquationSelectorControls onMove={moveSelectorFromControls} />
+                <div className="helper-value" aria-live="polite">
                   <span className="helper-label">R</span>
                   <RepeatingDecimalValue value={evaluation.right || '?'} />
                 </div>
@@ -1080,15 +1090,16 @@ function EquationEditor({
   onSelectionChange,
   onBackspace,
   onInsertValue,
+  selectorMoveRef,
 }: {
   tokens: EquationToken[];
   selection: EditorSelection;
   onSelectionChange: (selection: EditorSelection) => void;
   onBackspace: () => void;
   onInsertValue: (value: string) => void;
+  selectorMoveRef?: React.MutableRefObject<SelectorMoveHandler | null>;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const [hitTargets, setHitTargets] = useState<EquationHitTarget[]>([]);
   const normalizedSelection = normalizeEditorSelection(selection, tokens.length);
   const equation = tokensToEquation(tokens);
   const maxSlotIndex = tokens.length;
@@ -1097,7 +1108,6 @@ function EquationEditor({
     const editor = editorRef.current;
     if (!editor) return [];
     const measuredTargets = measureEquationHitTargets(editor, maxSlotIndex);
-    setHitTargets(measuredTargets);
     return measuredTargets;
   }, [maxSlotIndex]);
 
@@ -1139,6 +1149,29 @@ function EquationEditor({
     [onSelectionChange, refreshHitTargets],
   );
 
+  const moveSelector = useCallback(
+    (direction: SelectorDirection) => {
+      const targets = refreshHitTargets();
+      onSelectionChange(
+        nextSelectionFromRenderedTargets(targets, normalizedSelection, direction)
+          ?? moveSelectionHorizontally(tokens.length, normalizedSelection, direction),
+      );
+      editorRef.current?.focus();
+    },
+    [normalizedSelection, onSelectionChange, refreshHitTargets, tokens.length],
+  );
+
+  useLayoutEffect(() => {
+    if (!selectorMoveRef) return undefined;
+
+    selectorMoveRef.current = moveSelector;
+    return () => {
+      if (selectorMoveRef.current === moveSelector) {
+        selectorMoveRef.current = null;
+      }
+    };
+  }, [moveSelector, selectorMoveRef]);
+
   const handleEditorKey = useCallback(
     (event: {
       key: string;
@@ -1150,10 +1183,7 @@ function EquationEditor({
       if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         event.preventDefault();
         const direction = event.key === 'ArrowLeft' ? -1 : 1;
-        onSelectionChange(
-          nextSelectionFromRenderedTargets(hitTargets, normalizedSelection, direction)
-            ?? moveSelectionHorizontally(tokens.length, normalizedSelection, direction),
-        );
+        moveSelector(direction);
         return;
       }
 
@@ -1171,12 +1201,9 @@ function EquationEditor({
       onBackspace();
     },
     [
-      hitTargets,
-      normalizedSelection,
       onBackspace,
       onInsertValue,
-      onSelectionChange,
-      tokens.length,
+      moveSelector,
     ],
   );
 

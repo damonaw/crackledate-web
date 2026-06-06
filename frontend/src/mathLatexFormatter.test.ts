@@ -350,14 +350,27 @@ describe('equationToLatex', () => {
     expect(latex).toContain('equation-source-slot-1 equation-source-selected');
   });
 
-  test('adds fraction-selected styling when the denominator blank slot is selected', () => {
+  test('adds fraction-selected styling when the denominator blank slot inside the fraction is selected', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+    ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 3, placement: 'fractionDenominatorEnd' } });
+
+    expect(latex).toContain('equation-source-fraction-selected');
+    expect(latex).toContain(
+      'equation-source-slot-3 equation-source-slot-placement-fraction-denominator-end equation-source-selected',
+    );
+  });
+
+  test('does not add fraction-selected styling when the normal slot after a fraction is selected', () => {
     const latex = equationTokensToLatex([
       { value: '5' },
       { value: '÷' },
       { value: '2' },
     ], { editorMarkers: true, selectedSource: { kind: 'slot', index: 3 } });
 
-    expect(latex).toContain('equation-source-fraction-selected');
+    expect(latex).not.toContain('equation-source-fraction-selected');
     expect(latex).toContain('equation-source-slot-3 equation-source-selected');
   });
 

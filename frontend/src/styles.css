@@ -861,15 +861,11 @@ h1 {
   position: relative;
   min-width: 78px;
   height: 78px;
-  border: 1px solid rgba(0, 122, 255, 0.46);
-  border-radius: 10px;
-  background: var(--ios-blue-soft);
   box-sizing: border-box;
   display: inline-grid !important;
   place-items: center;
   padding: 7px 8px;
   vertical-align: middle;
-  box-shadow: inset 0 0 0 1px rgba(0, 122, 255, 0.14);
   opacity: 1;
 }
 
@@ -896,8 +892,7 @@ h1 {
 }
 
 .equation-source-fraction-divider-selected.equation-source-fraction-token {
-  border-color: rgba(0, 122, 255, 0.72);
-  background: rgba(0, 122, 255, 0.24);
+  background: transparent;
 }
 
 .equation-source-fraction-divider-selected.equation-source-fraction-token::after {

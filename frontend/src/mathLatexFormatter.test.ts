@@ -414,6 +414,30 @@ describe('equationToLatex', () => {
     expect(selectedCloseAbs).toContain('equation-source-token-2 equation-source-selected');
   });
 
+  test('renders only one selected marker around an unfinished parenthesis', () => {
+    const selectedOpenParen = equationTokensToLatex([
+      { value: '(' },
+    ], { editorMarkers: true, preserveDelimiters: true, selectedSource: { kind: 'token', index: 0 } });
+    const selectedSlotAfterOpenParen = equationTokensToLatex([
+      { value: '(' },
+    ], { editorMarkers: true, preserveDelimiters: true, selectedSource: { kind: 'slot', index: 1 } });
+
+    expect((selectedOpenParen.match(/equation-source-selected/g) ?? []).length).toBe(1);
+    expect((selectedSlotAfterOpenParen.match(/equation-source-selected/g) ?? []).length).toBe(1);
+  });
+
+  test('renders only one selected marker around an unfinished absolute value', () => {
+    const selectedOpenAbs = equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+    ], { editorMarkers: true, preserveDelimiters: true, selectedSource: { kind: 'token', index: 0 } });
+    const selectedSlotAfterOpenAbs = equationTokensToLatex([
+      { value: '|', role: 'absoluteOpen' },
+    ], { editorMarkers: true, preserveDelimiters: true, selectedSource: { kind: 'slot', index: 1 } });
+
+    expect((selectedOpenAbs.match(/equation-source-selected/g) ?? []).length).toBe(1);
+    expect((selectedSlotAfterOpenAbs.match(/equation-source-selected/g) ?? []).length).toBe(1);
+  });
+
   test('renders the cursor inside the exponent when the cursor state is inside the exponent', () => {
     expect(equationToLatex('5^24÷2=0×2×6', { cursorIndex: 4 })).toBe(
       `\\frac{5^{24${cursorLatex}}}{2} = 0 \\cdot 2 \\cdot 6`,

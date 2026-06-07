@@ -551,7 +551,7 @@ function renderAbsolute(node: Extract<MathNode, { kind: 'absolute' }>, options: 
       )
       : '',
     node.closed ? cursorAt(options.cursorIndex, node.end) : '',
-    sourceSlotAt(options, node.end),
+    node.closed ? sourceSlotAt(options, node.end) : '',
   ].join('');
 }
 
@@ -755,7 +755,7 @@ function renderGroup(node: Extract<MathNode, { kind: 'group' }>, context: Render
         )
         : '',
       node.closed ? cursorAt(options.cursorIndex, node.end) : '',
-      sourceSlotAt(options, node.end),
+      node.closed ? sourceSlotAt(options, node.end) : '',
     ].join('');
   }
 

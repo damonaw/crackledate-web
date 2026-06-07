@@ -860,11 +860,11 @@ h1 {
 .equation-source-fraction-selected.equation-source-fraction-token {
   position: relative;
   min-width: 78px;
-  height: 88px;
+  height: 96px;
   box-sizing: border-box;
   display: inline-grid !important;
   place-items: center;
-  padding: 10px 8px;
+  padding: 12px 8px;
   vertical-align: middle;
   opacity: 1;
   overflow: visible;
@@ -880,7 +880,7 @@ h1 {
   > .vlist-r:first-child
   > .vlist
   > span:first-child {
-  transform: translateY(0.16em);
+  transform: translateY(0.06em);
 }
 
 .equation-source-fraction-selected.equation-source-fraction-token
@@ -889,7 +889,7 @@ h1 {
   > .vlist-r:first-child
   > .vlist
   > span:nth-child(3) {
-  transform: translateY(-0.16em);
+  transform: translateY(-0.22em);
 }
 
 .equation-source-fraction-divider-selected.equation-source-fraction-token {

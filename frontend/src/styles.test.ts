@@ -1,5 +1,8 @@
+// @ts-expect-error The app tsconfig intentionally excludes Node types, but this test reads a local fixture.
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
-import styles from './styles.css?raw';
+
+const styles = readFileSync(new URL('./styles.css', import.meta.url), 'utf8');
 
 function declarationsFor(selector: string): string {
   const escapedSelector = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -16,5 +19,11 @@ describe('stylesheet regressions', () => {
     expect(selectedFractionDeclarations).not.toMatch(/\bborder(?:-radius|-color)?\s*:/);
     expect(selectedFractionDeclarations).not.toMatch(/\bbackground\s*:/);
     expect(selectedFractionDeclarations).not.toMatch(/\bbox-shadow\s*:/);
+  });
+
+  test('keeps selected fraction parts spaced away from the divider', () => {
+    expect(styles).toContain('height: 88px;');
+    expect(styles).toContain('transform: translateY(-0.16em);');
+    expect(styles).toContain('transform: translateY(0.16em);');
   });
 });

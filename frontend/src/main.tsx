@@ -637,7 +637,7 @@ function GamePage() {
             <ToolbarButton
               label={authUser ? 'Account' : 'Log in'}
               icon={<AccountIcon />}
-              isExpanded={Boolean(authUser)}
+              isExpanded={authModalMode !== null}
               onClick={openLogin}
               ariaLabel={authUser ? `Account ${authUser.email}` : 'Log in'}
             />

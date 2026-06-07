@@ -31,7 +31,7 @@
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100svh;
   overflow-x: hidden;
   background: var(--ios-background);
 }
@@ -52,14 +52,14 @@ a {
 .app-shell {
   position: relative;
   width: min(430px, 100%);
-  min-height: 100vh;
+  min-height: 100svh;
   margin: 0 auto;
   padding: 22px 12px 28px;
 }
 
 .document-page {
   width: min(720px, 100%);
-  min-height: 100vh;
+  min-height: 100svh;
   margin: 0 auto;
   padding: 22px 12px 56px;
 }
@@ -1535,13 +1535,11 @@ h1 {
 
 @media (max-width: 520px) {
   .game-shell {
-    height: 100vh;
-    height: 100dvh;
-    min-height: 0;
+    min-height: 100svh;
     display: grid;
     grid-template-rows: auto minmax(0, 1fr);
     padding-bottom: max(6px, env(safe-area-inset-bottom, 0px));
-    overflow-y: auto;
+    overflow-y: visible;
   }
 
   .game-shell .game-top-bar {

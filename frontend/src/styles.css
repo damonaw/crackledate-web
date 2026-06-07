@@ -880,7 +880,7 @@ h1 {
   > .vlist-r:first-child
   > .vlist
   > span:first-child {
-  transform: translateY(-0.16em);
+  transform: translateY(0.16em);
 }
 
 .equation-source-fraction-selected.equation-source-fraction-token
@@ -889,7 +889,7 @@ h1 {
   > .vlist-r:first-child
   > .vlist
   > span:nth-child(3) {
-  transform: translateY(0.16em);
+  transform: translateY(-0.16em);
 }
 
 .equation-source-fraction-divider-selected.equation-source-fraction-token {

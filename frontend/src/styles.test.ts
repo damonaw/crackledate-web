@@ -23,7 +23,10 @@ describe('stylesheet regressions', () => {
 
   test('keeps selected fraction parts spaced away from the divider', () => {
     expect(styles).toContain('height: 88px;');
-    expect(styles).toContain('transform: translateY(-0.16em);');
     expect(styles).toContain('transform: translateY(0.16em);');
+    expect(styles).toContain('transform: translateY(-0.16em);');
+    expect(styles.indexOf('transform: translateY(0.16em);')).toBeLessThan(
+      styles.indexOf('transform: translateY(-0.16em);'),
+    );
   });
 });

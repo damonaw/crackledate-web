@@ -635,13 +635,6 @@ function GamePage() {
               onClick={activeView === 'settings' ? showGame : showSettingsPage}
             />
             <ToolbarButton
-              label={authUser ? 'Account' : 'Log in'}
-              icon={<AccountIcon />}
-              isExpanded={authModalMode !== null}
-              onClick={openLogin}
-              ariaLabel={authUser ? `Account ${authUser.email}` : 'Log in'}
-            />
-            <ToolbarButton
               label={themePreference === 'dark' ? 'Light' : 'Dark'}
               icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
               className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
@@ -1061,15 +1054,6 @@ function StatsIcon() {
       <path d="M8 16v-5" />
       <path d="M12 16V8" />
       <path d="M16 16v-3" />
-    </svg>
-  );
-}
-
-function AccountIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21a8 8 0 0 1 16 0" />
     </svg>
   );
 }

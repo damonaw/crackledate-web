@@ -5,6 +5,7 @@ export type SolutionSubmission = {
   difficulty: 'easy' | 'hard';
   platform: 'web';
   appVersion?: string;
+  clientRejectionReason?: string;
 };
 
 type FetchFunction = typeof fetch;
@@ -18,6 +19,7 @@ export async function submitSolutionRecord(
   try {
     await fetchImpl('/api/submissions', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(submission),
     });

@@ -7,7 +7,7 @@ RUN npm run build
 
 FROM golang:1.23-alpine AS backend
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY internal ./internal
 COPY cmd ./cmd
 COPY --from=frontend /src/frontend/dist ./cmd/server/public
@@ -23,5 +23,5 @@ WORKDIR /app
 COPY --from=backend /out/crackledate-web /app/crackledate-web
 EXPOSE 8080
 ENV PORT=8080
-ENV SUBMISSIONS_PATH=/data/submissions.ndjson
+ENV SUBMISSIONS_PATH=/data/submissions.db
 ENTRYPOINT ["/app/crackledate-web"]

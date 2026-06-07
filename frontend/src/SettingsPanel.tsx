@@ -1,18 +1,28 @@
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
+type AuthUser = {
+  email: string;
+  emailVerified: boolean;
+};
 
 export function SettingsPanel({
   themePreference,
   difficultyMode,
+  authUser = null,
   onThemePreferenceChange,
   onDifficultyModeChange,
+  onLogin = () => undefined,
+  onLogout = () => undefined,
   onClearData,
   onShowHowToPlay,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
+  authUser?: AuthUser | null;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
+  onLogin?: () => void;
+  onLogout?: () => void;
   onClearData: () => void;
   onShowHowToPlay: () => void;
 }) {
@@ -21,10 +31,24 @@ export function SettingsPanel({
       <div className="settings-page-header">
         <div>
           <h1 id="settings-title">Settings</h1>
+          <p>{authUser?.emailVerified ? `Synced as ${authUser.email}` : 'Saved on this browser'}</p>
         </div>
       </div>
 
       <div className="settings-group">
+        <div className="settings-row account-row">
+          <span>Account</span>
+          {authUser ? (
+            <button type="button" onClick={onLogout}>
+              Log out
+            </button>
+          ) : (
+            <button type="button" onClick={onLogin}>
+              Log in
+            </button>
+          )}
+        </div>
+
         <fieldset className="settings-row">
           <legend>Appearance</legend>
           <div className="segmented-control">

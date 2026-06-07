@@ -3,6 +3,20 @@ import { createRoot, type Root } from 'react-dom/client';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import {
+  countStoredSolutions,
+  fetchAccountPreferences,
+  fetchAccountSolutions,
+  fetchCurrentUser,
+  importAccountSolutions,
+  login,
+  logout,
+  resendVerification,
+  saveAccountPreferences,
+  signup,
+  verifyCode,
+  type AuthUser,
+} from './auth';
+import {
   deleteAtSelection,
   insertTokensAtSelection,
   nextAbsoluteDelimiterRole,
@@ -60,6 +74,7 @@ type StoredSolutions = Record<string, SavedSolution[]>;
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
 type FeedbackTone = 'success' | 'error';
+type AuthModalMode = 'login' | 'signup' | 'verify' | 'account';
 
 type EquationToken = EquationLatexToken & {
   id: string;
@@ -153,6 +168,11 @@ function GamePage() {
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
+  const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
+  const [showImportPrompt, setShowImportPrompt] = useState(false);
+  const [pendingImportSolutions, setPendingImportSolutions] = useState<StoredSolutions>({});
+  const [accountPreferencesLoaded, setAccountPreferencesLoaded] = useState(false);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
 
   const { tokens, selection } = editorState;
@@ -167,6 +187,67 @@ function GamePage() {
   const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const isEasyMode = difficultyMode === 'easy';
+  const isVerifiedAccount = Boolean(authUser?.emailVerified);
+  const accountImportKey = authUser ? `crackledate.web.import-offered.${authUser.email}` : '';
+
+  const syncAccountData = useCallback(async (user: AuthUser, options: { promptImport?: boolean } = {}) => {
+    if (!user.emailVerified) {
+      setAccountPreferencesLoaded(false);
+      return;
+    }
+
+    const localSolutions = loadSolutions();
+    const hasLocalSolutions = countStoredSolutions(localSolutions) > 0;
+    const [preferences, accountSolutions] = await Promise.all([
+      fetchAccountPreferences(),
+      fetchAccountSolutions(),
+    ]);
+
+    setThemePreference(preferences.themePreference);
+    setDifficultyMode(preferences.difficultyMode);
+    setAccountPreferencesLoaded(true);
+    setSavedSolutions(accountSolutions);
+    localStorage.setItem(storageKey, JSON.stringify(accountSolutions));
+
+    const importKey = `crackledate.web.import-offered.${user.email}`;
+    if (options.promptImport && hasLocalSolutions && localStorage.getItem(importKey) !== 'true') {
+      setPendingImportSolutions(localSolutions);
+      setShowImportPrompt(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+    fetchCurrentUser()
+      .then((user) => {
+        if (!isCurrent) return;
+        setAuthUser(user);
+        if (user?.emailVerified) {
+          void syncAccountData(user, { promptImport: true });
+        } else {
+          setAccountPreferencesLoaded(false);
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('verified') === '1') {
+          setMessageTone('success');
+          setMessage('Email verified. Your account is ready.');
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+        if (params.get('verified') === '0') {
+          setMessageTone('error');
+          setMessage('Verification link expired or was already used.');
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      })
+      .catch(() => {
+        if (!isCurrent) return;
+        setAccountPreferencesLoaded(false);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [syncAccountData]);
 
   useEffect(() => {
     if (themePreference === 'system') {
@@ -180,6 +261,12 @@ function GamePage() {
   useEffect(() => {
     localStorage.setItem(difficultyModeKey, difficultyMode);
   }, [difficultyMode]);
+
+  useEffect(() => {
+    if (isVerifiedAccount && accountPreferencesLoaded) {
+      void saveAccountPreferences({ themePreference, difficultyMode });
+    }
+  }, [accountPreferencesLoaded, difficultyMode, isVerifiedAccount, themePreference]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -456,6 +543,52 @@ function GamePage() {
     chooseCalendarDate(localDateIdentifier(new Date()));
   }, [chooseCalendarDate]);
 
+  const openLogin = useCallback(() => {
+    setAuthModalMode(authUser ? 'account' : 'login');
+  }, [authUser]);
+
+  const handleAuthenticated = useCallback(
+    (user: AuthUser) => {
+      setAuthUser(user);
+      if (user.emailVerified) {
+        setAuthModalMode(null);
+        void syncAccountData(user, { promptImport: true });
+      } else {
+        setAuthModalMode('verify');
+        setAccountPreferencesLoaded(false);
+      }
+    },
+    [syncAccountData],
+  );
+
+  const handleLogout = useCallback(async () => {
+    await logout();
+    setAuthUser(null);
+    setAuthModalMode(null);
+    setShowImportPrompt(false);
+    setPendingImportSolutions({});
+    setAccountPreferencesLoaded(false);
+  }, []);
+
+  const importLocalSolutions = useCallback(async () => {
+    if (!authUser?.emailVerified || !accountImportKey) return;
+    const imported = await importAccountSolutions(pendingImportSolutions);
+    localStorage.setItem(accountImportKey, 'true');
+    setShowImportPrompt(false);
+    setPendingImportSolutions({});
+    await syncAccountData(authUser);
+    setMessageTone('success');
+    setMessage(imported === 1 ? 'Imported 1 local solution.' : `Imported ${imported} local solutions.`);
+  }, [accountImportKey, authUser, pendingImportSolutions, syncAccountData]);
+
+  const skipLocalImport = useCallback(() => {
+    if (accountImportKey) {
+      localStorage.setItem(accountImportKey, 'true');
+    }
+    setShowImportPrompt(false);
+    setPendingImportSolutions({});
+  }, [accountImportKey]);
+
   const showEvaluationError = shouldSurfaceEvaluationError(
     tokens,
     nextDigitIndex,
@@ -502,6 +635,13 @@ function GamePage() {
               onClick={activeView === 'settings' ? showGame : showSettingsPage}
             />
             <ToolbarButton
+              label={authUser ? 'Account' : 'Log in'}
+              icon={<AccountIcon />}
+              isExpanded={Boolean(authUser)}
+              onClick={openLogin}
+              ariaLabel={authUser ? `Account ${authUser.email}` : 'Log in'}
+            />
+            <ToolbarButton
               label={themePreference === 'dark' ? 'Light' : 'Dark'}
               icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
               className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
@@ -514,7 +654,11 @@ function GamePage() {
       )}
 
       {!isPlaying && (
-        <StartPage onPlay={playPuzzle} />
+        <StartPage
+          onPlay={playPuzzle}
+          onLogin={openLogin}
+          authUser={authUser}
+        />
       )}
 
       {isPlaying && activeView === 'game' && (
@@ -605,8 +749,11 @@ function GamePage() {
         <SettingsPanel
           themePreference={themePreference}
           difficultyMode={difficultyMode}
+          authUser={authUser}
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
+          onLogin={openLogin}
+          onLogout={handleLogout}
           onClearData={clearBrowserData}
           onShowHowToPlay={showHowToPlay}
         />
@@ -616,6 +763,27 @@ function GamePage() {
         <HowToPlayStartView
           initiallyShowDetail={showHowToPlayDetailFirst}
           onPlay={playPuzzle}
+        />
+      )}
+
+      {authModalMode && (
+        <AuthModal
+          mode={authModalMode}
+          user={authUser}
+          themePreference={themePreference}
+          difficultyMode={difficultyMode}
+          onModeChange={setAuthModalMode}
+          onAuthenticated={handleAuthenticated}
+          onLogout={handleLogout}
+          onClose={() => setAuthModalMode(null)}
+        />
+      )}
+
+      {showImportPrompt && (
+        <ImportPrompt
+          count={countStoredSolutions(pendingImportSolutions)}
+          onImport={importLocalSolutions}
+          onSkip={skipLocalImport}
         />
       )}
     </main>
@@ -656,6 +824,226 @@ function StatusToast({ message, tone }: { message: string; tone: FeedbackTone })
   );
 }
 
+function AuthModal({
+  mode,
+  user,
+  themePreference,
+  difficultyMode,
+  onModeChange,
+  onAuthenticated,
+  onLogout,
+  onClose,
+}: {
+  mode: AuthModalMode;
+  user: AuthUser | null;
+  themePreference: ThemePreference;
+  difficultyMode: DifficultyMode;
+  onModeChange: (mode: AuthModalMode) => void;
+  onAuthenticated: (user: AuthUser) => void;
+  onLogout: () => void;
+  onClose: () => void;
+}) {
+  const [email, setEmail] = useState(user?.email ?? '');
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [isBusy, setIsBusy] = useState(false);
+
+  useEffect(() => {
+    if (user?.email) {
+      setEmail(user.email);
+    }
+    setError('');
+    setNotice('');
+  }, [mode, user]);
+
+  const submitAuth = useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault();
+      setError('');
+      setNotice('');
+      setIsBusy(true);
+      try {
+        if (mode === 'signup') {
+          if (password.length < 8) {
+            throw new Error('Password must be at least 8 characters');
+          }
+          const nextUser = await signup(email, password, { themePreference, difficultyMode });
+          onAuthenticated(nextUser);
+          setNotice('Verification email sent. Click the link or enter the code.');
+          return;
+        }
+        if (mode === 'login') {
+          const nextUser = await login(email, password);
+          onAuthenticated(nextUser);
+          if (!nextUser.emailVerified) {
+            setNotice('Verify your email before account syncing turns on.');
+          }
+          return;
+        }
+        if (mode === 'verify') {
+          const nextUser = await verifyCode(email, code);
+          onAuthenticated(nextUser);
+        }
+      } catch (authError) {
+        setError(authError instanceof Error ? authError.message : 'Account request failed');
+      } finally {
+        setIsBusy(false);
+      }
+    },
+    [code, difficultyMode, email, mode, onAuthenticated, password, themePreference],
+  );
+
+  const resend = useCallback(async () => {
+    setError('');
+    setNotice('');
+    setIsBusy(true);
+    try {
+      await resendVerification(email);
+      setNotice('Verification email sent.');
+    } catch (resendError) {
+      setError(resendError instanceof Error ? resendError.message : 'Could not send verification email');
+    } finally {
+      setIsBusy(false);
+    }
+  }, [email]);
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <button className="modal-close" type="button" aria-label="Close" onClick={onClose}>
+          x
+        </button>
+
+        {mode === 'account' ? (
+          <>
+            <h2 id="auth-title">Account</h2>
+            <p>{user?.email}</p>
+            {user?.emailVerified ? (
+              <span className="auth-status verified">Verified</span>
+            ) : (
+              <span className="auth-status">Email not verified</span>
+            )}
+            {!user?.emailVerified && (
+              <button className="auth-primary" type="button" onClick={() => onModeChange('verify')}>
+                Enter verification code
+              </button>
+            )}
+            {!user?.emailVerified && (
+              <button className="auth-secondary" type="button" disabled={isBusy} onClick={resend}>
+                Resend email
+              </button>
+            )}
+            <button className="auth-secondary" type="button" onClick={onLogout}>
+              Log out
+            </button>
+          </>
+        ) : (
+          <form onSubmit={submitAuth}>
+            <h2 id="auth-title">
+              {mode === 'signup' ? 'Create account' : mode === 'verify' ? 'Verify email' : 'Log in'}
+            </h2>
+            <label>
+              Email
+              <input
+                type="email"
+                value={email}
+                autoComplete="email"
+                required
+                onChange={(event) => setEmail(event.target.value)}
+              />
+            </label>
+            {mode !== 'verify' && (
+              <label>
+                Password
+                <input
+                  type="password"
+                  value={password}
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  minLength={8}
+                  maxLength={128}
+                  required
+                  onChange={(event) => setPassword(event.target.value)}
+                />
+              </label>
+            )}
+            {mode === 'signup' && (
+              <p className={`password-note ${password.length >= 8 ? 'ok' : ''}`}>
+                Minimum 8 characters.
+              </p>
+            )}
+            {mode === 'verify' && (
+              <label>
+                Verification code
+                <input
+                  type="text"
+                  value={code}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  minLength={6}
+                  maxLength={6}
+                  required
+                  onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                />
+              </label>
+            )}
+            {error && <p className="auth-error">{error}</p>}
+            {notice && <p className="auth-notice">{notice}</p>}
+            <button className="auth-primary" type="submit" disabled={isBusy}>
+              {isBusy ? 'Working...' : mode === 'signup' ? 'Create account' : mode === 'verify' ? 'Verify' : 'Log in'}
+            </button>
+            {mode === 'verify' && (
+              <button className="auth-secondary" type="button" disabled={isBusy} onClick={resend}>
+                Resend email
+              </button>
+            )}
+            {mode === 'login' && (
+              <button className="auth-switch" type="button" onClick={() => onModeChange('signup')}>
+                Create an account
+              </button>
+            )}
+            {mode === 'signup' && (
+              <button className="auth-switch" type="button" onClick={() => onModeChange('login')}>
+                I already have an account
+              </button>
+            )}
+          </form>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ImportPrompt({
+  count,
+  onImport,
+  onSkip,
+}: {
+  count: number;
+  onImport: () => void;
+  onSkip: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
+        <h2 id="import-title">Import local solutions?</h2>
+        <p>
+          {count === 1
+            ? 'Attach 1 saved browser solution to this account.'
+            : `Attach ${count} saved browser solutions to this account.`}
+        </p>
+        <button className="auth-primary" type="button" onClick={onImport}>
+          Import
+        </button>
+        <button className="auth-secondary" type="button" onClick={onSkip}>
+          Not now
+        </button>
+      </section>
+    </div>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg aria-hidden="true" viewBox="0 0 24 24">
@@ -673,6 +1061,15 @@ function StatsIcon() {
       <path d="M8 16v-5" />
       <path d="M12 16V8" />
       <path d="M16 16v-3" />
+    </svg>
+  );
+}
+
+function AccountIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21a8 8 0 0 1 16 0" />
     </svg>
   );
 }
@@ -922,7 +1319,15 @@ function appendValueSegment(segments: ValueSegment[], text: string, isRepeating:
   segments.push({ text, isRepeating });
 }
 
-function StartPage({ onPlay }: { onPlay: () => void }) {
+function StartPage({
+  onPlay,
+  onLogin,
+  authUser,
+}: {
+  onPlay: () => void;
+  onLogin: () => void;
+  authUser: AuthUser | null;
+}) {
   const [showInstructions, setShowInstructions] = useState(false);
 
   if (showInstructions) {
@@ -953,6 +1358,9 @@ function StartPage({ onPlay }: { onPlay: () => void }) {
             onClick={() => setShowInstructions(true)}
           >
             How to Play
+          </button>
+          <button className="start-action-button" type="button" onClick={onLogin}>
+            {authUser ? 'Account' : 'Log in'}
           </button>
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
             Play
@@ -1660,7 +2068,7 @@ function PrivacyPage() {
         rows={[
           {
             label: 'On this device',
-            body: 'Saved solutions, settings, theme choice, difficulty mode, and whether you have started playing are stored locally on your device or in this browser.',
+            body: 'When signed out, saved solutions, settings, theme choice, difficulty mode, and whether you have started playing are stored locally on your device or in this browser.',
           },
           {
             label: 'Clearing data',
@@ -1670,11 +2078,25 @@ function PrivacyPage() {
       />
 
       <DocumentSection
+        title="Optional Accounts"
+        rows={[
+          {
+            label: 'Email login',
+            body: 'If you create an account, Crackle Date stores your email address, password hash, email verification status, sessions, preferences, and saved solutions.',
+          },
+          {
+            label: 'Verification',
+            body: 'New accounts must verify their email address by link or code before account syncing is enabled.',
+          },
+        ]}
+      />
+
+      <DocumentSection
         title="Anonymous Web Submissions"
         rows={[
           {
             label: 'What is sent',
-            body: 'When you submit a correct web solution, Crackle Date sends the puzzle date, equation, solve time, difficulty mode, platform, app version, and submission time so aggregate solving data can be reviewed.',
+            body: 'When you submit a web solution, Crackle Date sends the puzzle date, equation, solve time, difficulty mode, platform, app version, and submission time. If you are signed in and verified, the attempt is linked to your account.',
           },
           {
             label: 'What is not sent',
@@ -1682,7 +2104,7 @@ function PrivacyPage() {
           },
           {
             label: 'Server logs',
-            body: 'The server may keep basic operational request logs needed to run and secure the site. Solution records are not tied to an account because Crackle Date does not have accounts.',
+            body: 'The server may keep basic operational request logs needed to run and secure the site. Solution records are only tied to an account when you are signed in with a verified email.',
           },
         ]}
       />
@@ -1695,8 +2117,8 @@ function PrivacyPage() {
             body: 'Crackle Date does not show ads, sell personal information, or track you across other apps or websites.',
           },
           {
-            label: 'No account',
-            body: 'There is no login, profile, password, payment flow, leaderboard, or public user-generated content feed.',
+            label: 'No public profile',
+            body: 'Accounts are only for saving your own puzzle history and settings; there is no public profile, leaderboard, or user-generated content feed.',
           },
         ]}
       />
@@ -1725,7 +2147,7 @@ function SupportPage() {
           },
           {
             label: 'Missing history',
-            body: 'Saved solutions and badges are local to this browser. Clearing site data, using private browsing, or switching devices can hide or remove local history.',
+            body: 'If you are signed out, saved solutions and badges are local to this browser. Sign in and verify your email to sync history across visits.',
           },
         ]}
       />
@@ -1752,7 +2174,7 @@ function SupportPage() {
         title="Privacy Reminder"
         rows={[
           {
-            label: 'No account needed',
+            label: 'Account optional',
             body: 'Do not send passwords, payment details, private identifiers, or unrelated personal information. Crackle Date does not need those details for support.',
           },
         ]}

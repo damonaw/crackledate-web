@@ -55,8 +55,11 @@ The Vite dev server proxies `/api` to `http://localhost:8080`.
 ## Environment
 
 - `PORT`: backend HTTP port; defaults to `8080`.
-- `SUBMISSIONS_PATH`: newline-delimited JSON store for submitted solutions; defaults to `data/submissions.ndjson` locally and `/data/submissions.ndjson` in Docker.
+- `SUBMISSIONS_PATH`: storage target for submission attempts and accounts. `.db`/`.sqlite`/`.sqlite3` enables SQLite rows and account features. Defaults to `data/submissions.db` locally and `/data/submissions.db` in Docker.
 - `CLIENT_HASH_SECRET`: optional salt for rotating request-log client hashes. Set this in production so daily and weekly client hashes cannot be compared across deployments.
+- `PUBLIC_BASE_URL`: public site origin used in verification emails, for example `https://crackledate.com`.
+- `SESSION_COOKIE_SECURE`: set to `true` in production so auth cookies are marked Secure behind HTTPS.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`: SMTP settings for verification emails. If SMTP is not configured, verification links/codes are logged to stderr for development.
 
 ## Docker
 
@@ -77,8 +80,28 @@ The compose file binds the container to loopback so it is intended to be reached
 - `/api/evaluate`
 - `/api/validate`
 - `/api/submissions`
+- `/api/auth/signup`
+- `/api/auth/login`
+- `/api/auth/logout`
+- `/api/auth/me`
+- `/api/auth/verify`
+- `/api/auth/verify-code`
+- `/api/auth/resend-verification`
+- `/api/me/preferences`
+- `/api/me/solutions`
+- `/api/me/solutions/import`
 
-Successful web solves are posted to `/api/submissions` after local save. The backend validates the
-equation before appending an anonymous JSON line to `SUBMISSIONS_PATH`, which defaults to
-`/data/submissions.ndjson` in Docker and `data/submissions.ndjson` for local `go run`. The Docker
-Compose service uses a named `submissions` volume so submitted solutions survive rebuilds.
+Web attempts are posted to `/api/submissions`. The backend validates the equation and stores each attempt
+in `SUBMISSIONS_PATH` with `submissionStatus` (`accepted` or `rejected`) and `rejectionReason` for failures.
+Browser-local duplicate rejections can include `clientRejectionReason`, but accepted/rejected status is
+computed by the server. The default storage target is `/data/submissions.db` in Docker and
+`data/submissions.db` for local `go run`. The Docker compose service uses a named `submissions` volume
+so submitted data survive rebuilds.
+
+JSON API request bodies are capped at 32 KiB. POST requests are also rate-limited per client IP for the
+submission, validation, and evaluation routes to reduce spam and resource-exhaustion attempts.
+
+Accounts are optional. Email/password accounts require email verification by either clicking the emailed
+link or entering the emailed 6-digit code. Passwords must be at least 8 characters and are stored with
+Argon2id hashes. Verified accounts can sync saved solutions, submission attempts, theme preference, and
+difficulty mode.

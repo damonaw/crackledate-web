@@ -16,9 +16,12 @@ import (
 
 func TestHandleSubmitSolutionStoresValidatedAnonymousPayload(t *testing.T) {
 	submissionsPath := filepath.Join(t.TempDir(), "submissions.ndjson")
-	store := newSubmissionStore(submissionsPath)
+	store, err := newSubmissionStore(submissionsPath)
+	if err != nil {
+		t.Fatalf("newSubmissionStore: %v", err)
+	}
 	now := time.Date(2026, 5, 30, 14, 15, 16, 0, time.UTC)
-	handler := handleSubmitSolution(store, func() time.Time { return now })
+	handler := handleSubmitSolution(store, nil, func() time.Time { return now })
 
 	body := strings.NewReader(`{
 		"date": "2026-05-16",
@@ -67,12 +70,18 @@ func TestHandleSubmitSolutionStoresValidatedAnonymousPayload(t *testing.T) {
 	if record.Platform != "web" || record.AppVersion != "0.1.0" {
 		t.Fatalf("platform/version = %q/%q", record.Platform, record.AppVersion)
 	}
+	if record.SubmissionStatus != acceptedSubmission {
+		t.Fatalf("submissionStatus = %q", record.SubmissionStatus)
+	}
 }
 
-func TestHandleSubmitSolutionRejectsInvalidEquationWithoutStoring(t *testing.T) {
+func TestHandleSubmitSolutionStoresRejectedAttempt(t *testing.T) {
 	submissionsPath := filepath.Join(t.TempDir(), "submissions.ndjson")
-	store := newSubmissionStore(submissionsPath)
-	handler := handleSubmitSolution(store, func() time.Time { return time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC) })
+	store, err := newSubmissionStore(submissionsPath)
+	if err != nil {
+		t.Fatalf("newSubmissionStore: %v", err)
+	}
+	handler := handleSubmitSolution(store, nil, func() time.Time { return time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC) })
 
 	body := strings.NewReader(`{
 		"date": "2026-05-16",
@@ -89,8 +98,132 @@ func TestHandleSubmitSolutionRejectsInvalidEquationWithoutStoring(t *testing.T) 
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 Bad Request, got %d with body %s", response.Code, response.Body.String())
 	}
-	if lines := readSubmissionLines(t, submissionsPath); len(lines) != 0 {
-		t.Fatalf("expected no stored submissions, got %q", lines)
+	lines := readSubmissionLines(t, submissionsPath)
+	if len(lines) != 1 {
+		t.Fatalf("expected one rejected attempt, got %q", lines)
+	}
+
+	var record submittedSolutionRecord
+	if err := json.Unmarshal(lines[0], &record); err != nil {
+		t.Fatalf("failed to decode stored submission: %v\n%s", err, lines[0])
+	}
+	if record.SubmissionStatus != rejectedSubmission {
+		t.Fatalf("submissionStatus = %q", record.SubmissionStatus)
+	}
+	if record.RejectionReason == "" {
+		t.Fatalf("expected rejection reason to be recorded: %#v", record)
+	}
+}
+
+func TestHandleSubmitSolutionStoresMalformedRequestBody(t *testing.T) {
+	submissionsPath := filepath.Join(t.TempDir(), "submissions-invalid-body.ndjson")
+	store, err := newSubmissionStore(submissionsPath)
+	if err != nil {
+		t.Fatalf("newSubmissionStore: %v", err)
+	}
+	handler := handleSubmitSolution(store, nil, func() time.Time { return time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC) })
+
+	request := httptest.NewRequest(http.MethodPost, "/api/submissions", strings.NewReader(`not-json`))
+	response := httptest.NewRecorder()
+
+	handler(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d with body %s", response.Code, response.Body.String())
+	}
+	lines := readSubmissionLines(t, submissionsPath)
+	if len(lines) != 1 {
+		t.Fatalf("expected one rejected attempt, got %q", lines)
+	}
+
+	var record submittedSolutionRecord
+	if err := json.Unmarshal(lines[0], &record); err != nil {
+		t.Fatalf("failed to decode stored submission: %v\n%s", err, lines[0])
+	}
+	if record.SubmissionStatus != rejectedSubmission {
+		t.Fatalf("submissionStatus = %q", record.SubmissionStatus)
+	}
+	if record.RejectionReason != "Invalid request body" {
+		t.Fatalf("rejectionReason = %q", record.RejectionReason)
+	}
+}
+
+func TestHandleSubmitSolutionStoresClientRejectedDuplicateAttempt(t *testing.T) {
+	submissionsPath := filepath.Join(t.TempDir(), "submissions.ndjson")
+	store, err := newSubmissionStore(submissionsPath)
+	if err != nil {
+		t.Fatalf("newSubmissionStore: %v", err)
+	}
+	handler := handleSubmitSolution(store, nil, func() time.Time { return time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC) })
+
+	body := strings.NewReader(`{
+		"date": "2026-05-16",
+		"equation": "5+√16=2^0+2+6",
+		"seconds": 0,
+		"difficulty": "easy",
+		"platform": "web",
+		"clientRejectionReason": "Solution already saved for this date."
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
+	response := httptest.NewRecorder()
+
+	handler(response, request)
+
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 Bad Request, got %d with body %s", response.Code, response.Body.String())
+	}
+
+	var record submittedSolutionRecord
+	if err := json.Unmarshal(readSingleSubmissionLine(t, submissionsPath), &record); err != nil {
+		t.Fatalf("failed to decode stored submission: %v", err)
+	}
+	if record.SubmissionStatus != rejectedSubmission {
+		t.Fatalf("submissionStatus = %q", record.SubmissionStatus)
+	}
+	if record.RejectionReason != duplicateSolutionReason {
+		t.Fatalf("rejectionReason = %q", record.RejectionReason)
+	}
+	if record.Value != "9" {
+		t.Fatalf("Value = %q", record.Value)
+	}
+}
+
+func TestSubmissionStoreWritesSQLiteDatabase(t *testing.T) {
+	submissionsPath := filepath.Join(t.TempDir(), "submissions.db")
+	store, err := newSubmissionStore(submissionsPath)
+	if err != nil {
+		t.Fatalf("newSubmissionStore: %v", err)
+	}
+	t.Cleanup(store.close)
+	handler := handleSubmitSolution(store, nil, func() time.Time { return time.Date(2026, 5, 30, 0, 0, 0, 0, time.UTC) })
+
+	body := strings.NewReader(`{
+		"date": "2026-05-16",
+		"equation": "5+√16=2^0+2+6",
+		"seconds": 136,
+		"difficulty": "easy",
+		"platform": "web"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
+	response := httptest.NewRecorder()
+
+	handler(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d with body %s", response.Code, response.Body.String())
+	}
+
+	var puzzleDate string
+	var equation string
+	var status string
+	if err := store.db.QueryRow(`
+		SELECT puzzle_date, equation, submission_status
+		FROM submission_attempts
+	`).Scan(&puzzleDate, &equation, &status); err != nil {
+		t.Fatalf("query stored SQLite submission: %v", err)
+	}
+	if puzzleDate != "2026-05-16" || equation != "5+√16=2^0+2+6" || status != acceptedSubmission {
+		t.Fatalf("stored SQLite submission = %q/%q/%q", puzzleDate, equation, status)
 	}
 }
 

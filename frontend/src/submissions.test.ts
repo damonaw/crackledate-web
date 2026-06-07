@@ -19,6 +19,7 @@ describe('submitSolutionRecord', () => {
 
     expect(fetchImpl).toHaveBeenCalledWith('/api/submissions', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         date: '2026-05-16',

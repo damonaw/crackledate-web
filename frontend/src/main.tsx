@@ -139,7 +139,9 @@ function App() {
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
   const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
-  const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings'>('game');
+  const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
+    'game',
+  );
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
   const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', right: '?', equation: '' });
@@ -395,6 +397,12 @@ function GamePage() {
     setActiveView('settings');
   }, []);
 
+  const showHowToPlay = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setIsPlaying(true);
+    setActiveView('howToPlay');
+  }, []);
+
   const clearBrowserData = useCallback(() => {
     const confirmed = window.confirm('Clear saved solutions and settings from this browser?');
     if (!confirmed) return;
@@ -446,6 +454,8 @@ function GamePage() {
         activeView === 'solutions' ? 'solutions-shell detail-shell' : ''
       } ${
         activeView === 'settings' ? 'settings-shell detail-shell' : ''
+      } ${
+        activeView === 'howToPlay' ? 'how-to-play-shell detail-shell' : ''
       }`}
     >
       {isPlaying && (
@@ -573,6 +583,15 @@ function GamePage() {
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
           onClearData={clearBrowserData}
+          onShowHowToPlay={showHowToPlay}
+        />
+      )}
+
+      {isPlaying && activeView === 'howToPlay' && (
+        <HowToPlayStartView
+          backLabel="Back to Settings"
+          onBack={showSettingsPage}
+          onPlay={playPuzzle}
         />
       )}
     </main>
@@ -847,7 +866,15 @@ function StartPage({ onPlay }: { onPlay: () => void }) {
   );
 }
 
-function HowToPlayStartView({ onBack, onPlay }: { onBack: () => void; onPlay: () => void }) {
+function HowToPlayStartView({
+  backLabel = 'Back',
+  onBack,
+  onPlay,
+}: {
+  backLabel?: string;
+  onBack: () => void;
+  onPlay: () => void;
+}) {
   const steps = [
     {
       title: 'Use the date digits in order.',
@@ -889,7 +916,7 @@ function HowToPlayStartView({ onBack, onPlay }: { onBack: () => void; onPlay: ()
 
         <div className="how-to-play-actions">
           <button className="start-action-button secondary-button" type="button" onClick={onBack}>
-            Back
+            {backLabel}
           </button>
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
             Play

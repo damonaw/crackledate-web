@@ -7,12 +7,14 @@ export function SettingsPanel({
   onThemePreferenceChange,
   onDifficultyModeChange,
   onClearData,
+  onShowHowToPlay,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
   onClearData: () => void;
+  onShowHowToPlay: () => void;
 }) {
   return (
     <section className="settings-page" aria-labelledby="settings-title">
@@ -62,6 +64,9 @@ export function SettingsPanel({
       </div>
 
       <nav className="settings-links" aria-label="Help and policies">
+        <button className="settings-link-button" type="button" onClick={onShowHowToPlay}>
+          How to Play
+        </button>
         <a href="/privacy/">Privacy</a>
         <a href="/support/">Support</a>
         <button className="clear-data-button" type="button" onClick={onClearData}>

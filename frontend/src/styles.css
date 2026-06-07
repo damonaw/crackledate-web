@@ -405,7 +405,8 @@ a {
   border-top: 1px solid var(--ios-separator);
 }
 
-.settings-links a::after {
+.settings-links a::after,
+.settings-links .settings-link-button::after {
   content: "›";
   color: var(--ios-secondary-label);
   font-size: 1.3rem;
@@ -668,6 +669,14 @@ h1 {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.how-to-play-shell .start-panel {
+  display: block;
+}
+
+.how-to-play-shell .how-to-play-card {
+  transform: none;
 }
 
 .secondary-button {

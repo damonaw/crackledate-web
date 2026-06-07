@@ -12,9 +12,12 @@ describe('SettingsPanel', () => {
         onThemePreferenceChange={() => {}}
         onDifficultyModeChange={() => {}}
         onClearData={() => {}}
+        onShowHowToPlay={() => {}}
       />,
     );
 
+    expect(markup).toContain('How to Play');
+    expect(markup).toContain('settings-link-button');
     expect(markup).toContain('An Ouroborialis Game');
     expect(markup).toContain('settings-branding-mark');
     expect(markup).toContain('settings-branding-copy');

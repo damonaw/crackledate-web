@@ -1,11 +1,11 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --ios-background: #ffffff;
   --ios-grouped-background: #f2f2f7;
   --ios-secondary-background: #f2f2f7;
   --ios-tertiary-background: #ffffff;
   --ios-label: #000000;
-  --ios-secondary-label: #8a8a8e;
+  --ios-secondary-label: #5f6368;
   --ios-separator: rgba(60, 60, 67, 0.22);
   --ios-blue: #007aff;
   --ios-blue-soft: rgba(0, 122, 255, 0.18);
@@ -74,6 +74,7 @@ a {
 }
 
 .game-top-bar {
+  justify-content: space-between;
   margin-bottom: 14px;
 }
 
@@ -278,7 +279,30 @@ a {
   font-weight: 650;
 }
 
-.site-nav button,
+.site-nav {
+  justify-content: flex-end;
+}
+
+.toolbar-home-button {
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.toolbar-home-button img {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: block;
+}
+
+.toolbar-trigger,
 .page-nav a {
   min-height: 36px;
   border: 1px solid var(--glass-border);
@@ -295,25 +319,33 @@ a {
   cursor: pointer;
 }
 
-.page-nav a[aria-current="page"] {
-  background: var(--ios-blue);
-  color: #ffffff;
-  border-color: rgba(0, 122, 255, 0.42);
-  box-shadow: 0 10px 22px rgba(0, 122, 255, 0.2);
-}
-
-.settings-trigger,
-.stats-trigger {
+.toolbar-trigger {
   width: 44px;
   height: 44px;
   min-height: 44px;
+  gap: 0;
+  overflow: hidden;
   padding: 0;
+  transition:
+    width 160ms ease,
+    padding 160ms ease,
+    background-color 160ms ease,
+    border-color 160ms ease;
 }
 
-.settings-trigger svg,
-.stats-trigger svg {
+.toolbar-trigger[data-expanded="true"] {
+  width: auto;
+  max-width: min(210px, 48vw);
+  border-color: rgba(0, 122, 255, 0.35);
+  background: var(--ios-blue-soft);
+  gap: 7px;
+  padding: 0 13px;
+}
+
+.toolbar-trigger svg {
   width: 22px;
   height: 22px;
+  flex: 0 0 auto;
   fill: none;
   stroke: currentColor;
   stroke-linecap: round;
@@ -321,10 +353,43 @@ a {
   stroke-width: 2;
 }
 
-.settings-trigger[aria-pressed="true"],
-.stats-trigger[aria-pressed="true"] {
-  border-color: rgba(0, 122, 255, 0.35);
-  background: var(--ios-blue-soft);
+.toolbar-trigger span {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition:
+    max-width 160ms ease,
+    opacity 120ms ease;
+}
+
+.toolbar-trigger[data-expanded="true"] span {
+  max-width: 160px;
+  opacity: 1;
+}
+
+.toolbar-trigger.theme-target-light {
+  background: color-mix(in srgb, var(--ios-tertiary-background) 82%, #ffffff);
+  border-color: color-mix(in srgb, var(--glass-border) 72%, #ffb000);
+  color: #d99a00;
+  box-shadow: 0 7px 16px rgba(0, 0, 0, 0.04);
+}
+
+.toolbar-trigger.theme-target-light svg {
+  filter: drop-shadow(0 0 5px rgba(255, 176, 0, 0.14));
+}
+
+.toolbar-trigger.theme-target-dark {
+  background: #1c1c1e;
+  border-color: rgba(28, 28, 30, 0.28);
+  color: #ffffff;
+}
+
+.page-nav a[aria-current="page"] {
+  background: var(--ios-blue);
+  color: #ffffff;
+  border-color: rgba(0, 122, 255, 0.42);
+  box-shadow: 0 10px 22px rgba(0, 122, 255, 0.2);
 }
 
 .settings-page-header {
@@ -1349,6 +1414,7 @@ h1 {
   min-height: 46px;
 }
 
+.calendar-today-button,
 .solutions-page-header button {
   min-height: 38px;
   border: 1px solid var(--glass-border);
@@ -1725,52 +1791,6 @@ h1 {
   }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ios-background: #000000;
-    --ios-grouped-background: #000000;
-    --ios-secondary-background: #1c1c1e;
-    --ios-tertiary-background: #2c2c2e;
-    --ios-label: #ffffff;
-    --ios-secondary-label: #98989d;
-    --ios-separator: rgba(84, 84, 88, 0.65);
-    --ios-blue-soft: rgba(10, 132, 255, 0.22);
-    --ios-blue: #0a84ff;
-    --ios-green: #30d158;
-    --ios-red: #ff453a;
-    --ios-orange: #ff9f0a;
-    --ios-gray: #8e8e93;
-    --glass-fill: rgba(28, 28, 30, 0.72);
-    --glass-border: rgba(84, 84, 88, 0.48);
-    --toast-fill: rgba(28, 28, 30, 0.9);
-    --shadow-soft: none;
-  }
-
-  .brand img {
-    box-shadow: none;
-  }
-
-  .start-icon {
-    box-shadow: none;
-  }
-
-  .document-brand img {
-    box-shadow: none;
-  }
-
-  .settings-page,
-  .calendar-page,
-  .solutions-page,
-  .document-card {
-    background: var(--ios-secondary-background);
-  }
-
-  .document-hero {
-    background: var(--ios-secondary-background);
-  }
-
-}
-
 :root[data-theme="dark"] {
   color-scheme: dark;
   --ios-background: #000000;
@@ -1778,7 +1798,7 @@ h1 {
   --ios-secondary-background: #1c1c1e;
   --ios-tertiary-background: #2c2c2e;
   --ios-label: #ffffff;
-  --ios-secondary-label: #98989d;
+  --ios-secondary-label: #c7c7cc;
   --ios-separator: rgba(84, 84, 88, 0.65);
   --ios-blue-soft: rgba(10, 132, 255, 0.22);
   --ios-blue: #0a84ff;
@@ -1822,7 +1842,7 @@ h1 {
   --ios-secondary-background: #f2f2f7;
   --ios-tertiary-background: #ffffff;
   --ios-label: #000000;
-  --ios-secondary-label: #8a8a8e;
+  --ios-secondary-label: #5f6368;
   --ios-separator: rgba(60, 60, 67, 0.22);
   --ios-blue: #007aff;
   --ios-blue-soft: rgba(0, 122, 255, 0.18);

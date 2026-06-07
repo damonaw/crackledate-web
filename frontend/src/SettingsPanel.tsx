@@ -21,7 +21,6 @@ export function SettingsPanel({
       <div className="settings-page-header">
         <div>
           <h1 id="settings-title">Settings</h1>
-          <p>Saved on this browser</p>
         </div>
       </div>
 

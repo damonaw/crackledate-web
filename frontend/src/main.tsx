@@ -381,6 +381,10 @@ function GamePage() {
     return `Puzzle date, currently ${puzzle.displayDate}`;
   }, [puzzle]);
 
+  const toggleThemePreference = useCallback(() => {
+    setThemePreference((current) => (current === 'dark' ? 'light' : 'dark'));
+  }, []);
+
   const playPuzzle = useCallback(() => {
     localStorage.setItem(playStartedKey, 'true');
     setIsPlaying(true);
@@ -422,7 +426,7 @@ function GamePage() {
     localStorage.removeItem(themePreferenceKey);
     localStorage.removeItem(difficultyModeKey);
     setSavedSolutions({});
-    setThemePreference('system');
+    setThemePreference('light');
     setDifficultyMode('easy');
     setEditorState(emptyEditorState());
     setEvaluation({ left: '?', right: '?', equation: '' });
@@ -448,6 +452,10 @@ function GamePage() {
     setActiveView('game');
   }, []);
 
+  const chooseToday = useCallback(() => {
+    chooseCalendarDate(localDateIdentifier(new Date()));
+  }, [chooseCalendarDate]);
+
   const showEvaluationError = shouldSurfaceEvaluationError(
     tokens,
     nextDigitIndex,
@@ -470,32 +478,37 @@ function GamePage() {
     >
       {isPlaying && (
         <header className="top-bar game-top-bar">
-          <DatePickerControl
-            className="top-date-picker"
-            label={dateInputLabel}
-            displayDate={puzzle?.displayDate ?? 'Crackle Date'}
-            isActive={activeView === 'calendar'}
-            onOpen={activeView === 'calendar' ? showGame : showCalendar}
-          />
+          <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
+            <img src="/app-icon.png" alt="" />
+          </button>
           <nav className="site-nav" aria-label="Site">
-            <button
-              className="stats-trigger"
-              type="button"
-              aria-label="Stats"
-              aria-pressed={activeView === 'solutions'}
+            <ToolbarButton
+              label={puzzle?.displayDate ?? 'Calendar'}
+              icon={<CalendarIcon />}
+              isExpanded={activeView === 'calendar'}
+              onClick={activeView === 'calendar' ? showGame : showCalendar}
+              ariaLabel={dateInputLabel}
+            />
+            <ToolbarButton
+              label="Stats"
+              icon={<StatsIcon />}
+              isExpanded={activeView === 'solutions'}
               onClick={activeView === 'solutions' ? showGame : showSolutions}
-            >
-              <StatsIcon />
-            </button>
-            <button
-              className="settings-trigger"
-              type="button"
-              aria-label="Settings"
-              aria-pressed={activeView === 'settings'}
+            />
+            <ToolbarButton
+              label="Settings"
+              icon={<SettingsIcon />}
+              isExpanded={activeView === 'settings'}
               onClick={activeView === 'settings' ? showGame : showSettingsPage}
-            >
-              <SettingsIcon />
-            </button>
+            />
+            <ToolbarButton
+              label={themePreference === 'dark' ? 'Light' : 'Dark'}
+              icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
+              className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
+              isExpanded={false}
+              onClick={toggleThemePreference}
+              ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
+            />
           </nav>
         </header>
       )}
@@ -576,6 +589,7 @@ function GamePage() {
           selectedDate={selectedDate}
           savedSolutionDates={savedSolutionDates}
           onSelectedDateChange={chooseCalendarDate}
+          onToday={chooseToday}
         />
       )}
 
@@ -600,9 +614,7 @@ function GamePage() {
 
       {isPlaying && activeView === 'howToPlay' && (
         <HowToPlayStartView
-          backLabel="Back to Settings"
           initiallyShowDetail={showHowToPlayDetailFirst}
-          onBack={showSettingsPage}
           onPlay={playPuzzle}
         />
       )}
@@ -812,6 +824,74 @@ function RepeatingDecimalValue({ value }: { value: string }) {
   );
 }
 
+function ToolbarButton({
+  label,
+  icon,
+  isExpanded,
+  onClick,
+  ariaLabel = label,
+  className = '',
+}: {
+  label: string;
+  icon: React.ReactNode;
+  isExpanded: boolean;
+  onClick: () => void;
+  ariaLabel?: string;
+  className?: string;
+}) {
+  return (
+    <button
+      className={`toolbar-trigger ${className}`}
+      type="button"
+      aria-label={ariaLabel}
+      aria-pressed={isExpanded}
+      data-expanded={isExpanded}
+      onClick={onClick}
+    >
+      {icon}
+      <span>{label}</span>
+    </button>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <rect x="4" y="5" width="16" height="15" rx="3" />
+      <path d="M8 3v4" />
+      <path d="M16 3v4" />
+      <path d="M4 10h16" />
+      <path d="M8 14h.01" />
+      <path d="M12 14h.01" />
+      <path d="M16 14h.01" />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.93 4.93 1.41 1.41" />
+      <path d="m17.66 17.66 1.41 1.41" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.34 17.66-1.41 1.41" />
+      <path d="m19.07 4.93-1.41 1.41" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M20 14.2A7.6 7.6 0 0 1 9.8 4 8 8 0 1 0 20 14.2Z" />
+    </svg>
+  );
+}
+
 function repeatingDecimalSegments(value: string): ValueSegment[] {
   const segments: ValueSegment[] = [];
   const characters = Array.from(value);
@@ -848,7 +928,6 @@ function StartPage({ onPlay }: { onPlay: () => void }) {
   if (showInstructions) {
     return (
       <HowToPlayStartView
-        onBack={() => setShowInstructions(false)}
         onPlay={onPlay}
       />
     );
@@ -885,14 +964,10 @@ function StartPage({ onPlay }: { onPlay: () => void }) {
 }
 
 function HowToPlayStartView({
-  backLabel = 'Back',
   initiallyShowDetail = false,
-  onBack,
   onPlay,
 }: {
-  backLabel?: string;
   initiallyShowDetail?: boolean;
-  onBack: () => void;
   onPlay: () => void;
 }) {
   const [showDetail, setShowDetail] = useState(initiallyShowDetail);
@@ -917,8 +992,21 @@ function HowToPlayStartView({
             <img className="start-icon" src="/app-icon.png" alt="" />
             <div>
               <p className="document-kicker">Crackle Date</p>
-              <h1 id="how-to-play-detail-title">More Detail</h1>
+              <h1 id="how-to-play-detail-title">Cracked Instructions</h1>
             </div>
+          </div>
+
+          <div className="how-to-play-actions">
+            <button
+              className="start-action-button secondary-button"
+              type="button"
+              onClick={() => setShowDetail(false)}
+            >
+              Quick Guide
+            </button>
+            <button className="start-action-button play-button" type="button" onClick={onPlay}>
+              Play
+            </button>
           </div>
 
           <article className="how-to-play-detail-card" aria-live="polite">
@@ -951,18 +1039,6 @@ function HowToPlayStartView({
             </button>
           </div>
 
-          <div className="how-to-play-actions">
-            <button
-              className="start-action-button secondary-button"
-              type="button"
-              onClick={() => setShowDetail(false)}
-            >
-              Quick Guide
-            </button>
-            <button className="start-action-button play-button" type="button" onClick={onPlay}>
-              Play
-            </button>
-          </div>
         </div>
       </section>
     );
@@ -979,6 +1055,15 @@ function HowToPlayStartView({
           </div>
         </div>
 
+        <div className="how-to-play-actions">
+          <button className="start-action-button secondary-button" type="button" onClick={() => setShowDetail(true)}>
+            Cracked Instructions
+          </button>
+          <button className="start-action-button play-button" type="button" onClick={onPlay}>
+            Play
+          </button>
+        </div>
+
         <ol className="how-to-play-list">
           {HOW_TO_PLAY_SECTIONS.map((section) => (
             <li className="how-to-play-step" key={section.title}>
@@ -992,47 +1077,8 @@ function HowToPlayStartView({
           ))}
         </ol>
 
-        <div className="how-to-play-actions">
-          <button className="start-action-button secondary-button" type="button" onClick={onBack}>
-            {backLabel}
-          </button>
-          <button className="start-action-button secondary-button" type="button" onClick={() => setShowDetail(true)}>
-            More Detail
-          </button>
-          <button className="start-action-button play-button" type="button" onClick={onPlay}>
-            Play
-          </button>
-        </div>
       </div>
     </section>
-  );
-}
-
-function DatePickerControl({
-  className,
-  label,
-  displayDate,
-  isActive,
-  onOpen,
-}: {
-  className: string;
-  label: string;
-  displayDate: string;
-  isActive: boolean;
-  onOpen: () => void;
-}) {
-  return (
-    <div className={className}>
-      <button
-        className="date-picker-trigger"
-        type="button"
-        aria-label={label}
-        aria-pressed={isActive}
-        onClick={onOpen}
-      >
-        <span>{displayDate}</span>
-      </button>
-    </div>
   );
 }
 
@@ -1040,10 +1086,12 @@ function CalendarPage({
   selectedDate,
   savedSolutionDates,
   onSelectedDateChange,
+  onToday,
 }: {
   selectedDate: string;
   savedSolutionDates: ReadonlySet<string>;
   onSelectedDateChange: (date: string) => void;
+  onToday: () => void;
 }) {
   const selectedDateObject = useMemo(() => dateFromIdentifier(selectedDate), [selectedDate]);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(selectedDateObject));
@@ -1062,6 +1110,9 @@ function CalendarPage({
           <h1 id="calendar-page-title">Choose Date</h1>
           <p>Saved days are marked in green.</p>
         </div>
+        <button className="calendar-today-button" type="button" onClick={onToday}>
+          Today
+        </button>
       </div>
 
       <div className="date-picker-calendar" role="group" aria-label="Choose puzzle date">
@@ -1602,18 +1653,18 @@ function PrivacyPage() {
       currentPage="privacy"
       title="Privacy"
       subtitle="Crackle Date is built to be played without accounts, ads, or cross-app tracking."
-      meta="Last updated May 24, 2026"
+      meta="Last updated June 7, 2026"
     >
       <DocumentSection
         title="Local Storage"
         rows={[
           {
-            label: 'iOS app',
-            body: 'Preferences, tutorial state, statistics, and saved solutions stay on your device using Apple system storage.',
+            label: 'On this device',
+            body: 'Saved solutions, settings, theme choice, difficulty mode, and whether you have started playing are stored locally on your device or in this browser.',
           },
           {
-            label: 'Web app',
-            body: 'Saved web solutions and settings are stored in this browser so your puzzle history works between visits.',
+            label: 'Clearing data',
+            body: 'You can remove local web data from the Settings page with Clear Data, or by clearing this site in your browser settings.',
           },
         ]}
       />
@@ -1623,15 +1674,15 @@ function PrivacyPage() {
         rows={[
           {
             label: 'What is sent',
-            body: 'When a web solution is completed, the web app sends the puzzle date, equation, resulting value, solve time, difficulty mode, platform, app version, and submission time.',
+            body: 'When you submit a correct web solution, Crackle Date sends the puzzle date, equation, solve time, difficulty mode, platform, app version, and submission time so aggregate solving data can be reviewed.',
           },
           {
             label: 'What is not sent',
-            body: 'Submitted records do not include your name, email address, account ID, device advertising identifier, or the contents of your browser storage.',
+            body: 'Submitted records do not include your name, email address, account ID, passwords, payment information, advertising identifier, or the contents of browser storage.',
           },
           {
-            label: 'Reliability logs',
-            body: 'The server keeps basic request logs for reliability and uses rotating client hashes instead of storing raw IP addresses in solution records.',
+            label: 'Server logs',
+            body: 'The server may keep basic operational request logs needed to run and secure the site. Solution records are not tied to an account because Crackle Date does not have accounts.',
           },
         ]}
       />
@@ -1640,12 +1691,12 @@ function PrivacyPage() {
         title="Tracking"
         rows={[
           {
-            label: 'No ads',
+            label: 'No advertising profile',
             body: 'Crackle Date does not show ads, sell personal information, or track you across other apps or websites.',
           },
           {
             label: 'No account',
-            body: 'There is no account system, login, profile, leaderboard, or user-generated content feed.',
+            body: 'There is no login, profile, password, payment flow, leaderboard, or public user-generated content feed.',
           },
         ]}
       />
@@ -1658,22 +1709,23 @@ function SupportPage() {
     <DocumentShell
       currentPage="support"
       title="Support"
-      subtitle="Quick checks and details to include when something does not behave the way you expect."
+      subtitle="Quick checks for gameplay, saved data, display issues, and details to include when something does not behave as expected."
+      meta="Last updated June 7, 2026"
     >
       <DocumentSection
         title="Common Checks"
         rows={[
           {
             label: 'Equation rejected',
-            body: 'Confirm the date digits are used in order and that both sides of the equals sign evaluate to the same value.',
+            body: 'Confirm every date digit is used in order, the equation has exactly one equals sign, and both sides evaluate to the same value before submitting.',
           },
           {
-            label: 'Unexpected result',
-            body: 'Check for unfinished parentheses, absolute value bars, roots, exponents, or division groups before submitting.',
+            label: 'Cursor or formatting issue',
+            body: 'If a fraction, parenthesis, absolute value bar, or selected slot looks wrong, try the arrow controls, Backspace, or Clear before rebuilding the equation.',
           },
           {
             label: 'Missing history',
-            body: 'Saved web solutions are stored in this browser. Clearing browser storage or switching devices can remove local history.',
+            body: 'Saved solutions and badges are local to this browser. Clearing site data, using private browsing, or switching devices can hide or remove local history.',
           },
         ]}
       />
@@ -1683,15 +1735,15 @@ function SupportPage() {
         rows={[
           {
             label: 'Puzzle date',
-            body: 'Include the puzzle date and whether you were playing easy or hard mode.',
+            body: 'Include the puzzle date, difficulty mode, and whether the issue happened on the game board, calendar, settings, solutions, or instructions screen.',
           },
           {
             label: 'Equation',
-            body: 'Include the equation you typed, especially if formatting, cursor movement, or evaluation looked wrong.',
+            body: 'Include the exact equation you typed, especially if formatting, selection, cursor movement, validation, or evaluation looked wrong.',
           },
           {
             label: 'Device',
-            body: 'Include whether you were using the iOS app or web app, plus your device, browser, and operating system when possible.',
+            body: 'Include the device, browser, operating system, screen size if relevant, and whether light or dark mode was active.',
           },
         ]}
       />
@@ -1701,7 +1753,7 @@ function SupportPage() {
         rows={[
           {
             label: 'No account needed',
-            body: 'Crackle Date does not need passwords, payment details, or personal account information for support.',
+            body: 'Do not send passwords, payment details, private identifiers, or unrelated personal information. Crackle Date does not need those details for support.',
           },
         ]}
       />
@@ -1787,7 +1839,7 @@ function loadSolutions(): StoredSolutions {
 
 function loadThemePreference(): ThemePreference {
   const value = localStorage.getItem(themePreferenceKey);
-  return value === 'light' || value === 'dark' ? value : 'system';
+  return value === 'light' || value === 'dark' || value === 'system' ? value : 'light';
 }
 
 function loadDifficultyMode(): DifficultyMode {

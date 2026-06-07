@@ -374,6 +374,18 @@ describe('equationToLatex', () => {
     expect(latex).toContain('equation-source-slot-3 equation-source-selected');
   });
 
+  test('does not add fraction-selected styling when the token after a fraction is selected', () => {
+    const latex = equationTokensToLatex([
+      { value: '5' },
+      { value: '÷' },
+      { value: '2' },
+      { value: '=' },
+    ], { editorMarkers: true, selectedSource: { kind: 'token', index: 3 } });
+
+    expect(latex).not.toContain('equation-source-fraction-selected');
+    expect(latex).toContain('equation-source-token-3 equation-source-selected');
+  });
+
   test('marks selected parenthesis and absolute delimiter tokens for editor layout', () => {
     const selectedOpenParen = equationTokensToLatex([
       { value: '(' },

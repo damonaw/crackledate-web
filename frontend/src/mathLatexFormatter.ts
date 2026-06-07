@@ -712,7 +712,7 @@ function suppressSourceSlots(options: RenderOptions, positions: number[]): Rende
 function isSelectedSourceInRange(selectedSource: SourceSelection | undefined, start: number, end: number): boolean {
   if (!selectedSource) return false;
   if (selectedSource.kind === 'token') {
-    return selectedSource.index >= start && selectedSource.index <= end;
+    return selectedSource.index >= start && selectedSource.index < end;
   }
 
   if (selectedSource.placement) {

@@ -3,6 +3,7 @@ import {
   deleteAtSelection,
   insertTokensAtSelection,
   moveSelectionHorizontally,
+  nextAbsoluteDelimiterRole,
   type EditorSelection,
 } from './equationEditing';
 
@@ -102,5 +103,22 @@ describe('equation editing selection', () => {
       kind: 'slot',
       index: 0,
     });
+  });
+
+  test('chooses absolute delimiter roles from the unmatched bars before the insertion point', () => {
+    const tokens = [
+      token('|', { role: 'absoluteOpen' }),
+      token('6'),
+      token('|', { role: 'absoluteClose' }),
+      token('+'),
+      token('|', { role: 'absoluteOpen' }),
+      token('2'),
+    ];
+
+    expect(nextAbsoluteDelimiterRole([], { kind: 'slot', index: 0 })).toBe('absoluteOpen');
+    expect(nextAbsoluteDelimiterRole(tokens, { kind: 'slot', index: 2 })).toBe('absoluteClose');
+    expect(nextAbsoluteDelimiterRole(tokens, { kind: 'slot', index: 4 })).toBe('absoluteOpen');
+    expect(nextAbsoluteDelimiterRole(tokens, { kind: 'slot', index: 6 })).toBe('absoluteClose');
+    expect(nextAbsoluteDelimiterRole(tokens, { kind: 'token', index: 1 })).toBe('absoluteClose');
   });
 });

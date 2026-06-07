@@ -788,7 +788,7 @@ h1 {
   align-items: center;
   justify-content: center;
   align-content: center;
-  padding: 12px 14px;
+  padding: 4px 8px;
   font-size: 1.65rem;
   overflow-x: auto;
   overflow-y: visible;
@@ -803,7 +803,7 @@ h1 {
 
 .equation-preview {
   width: 100%;
-  min-height: 72px;
+  min-height: 92px;
   display: flex;
   align-items: center;
   justify-content: center;

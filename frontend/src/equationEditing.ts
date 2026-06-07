@@ -82,6 +82,26 @@ export function deleteAtSelection<T extends EditableEquationToken>(
   return removeRange(tokens, normalizedSelection.index - 1, 1);
 }
 
+export function nextAbsoluteDelimiterRole(
+  tokens: readonly EditableEquationToken[],
+  selection: EditorSelection,
+): NonNullable<EditableEquationToken['role']> {
+  const normalizedSelection = normalizeEditorSelection(selection, tokens.length);
+  const boundaryIndex = normalizedSelection.index;
+  let unmatchedOpenCount = 0;
+
+  for (const token of tokens.slice(0, boundaryIndex)) {
+    if (token.value !== '|') continue;
+    if (token.role === 'absoluteClose') {
+      unmatchedOpenCount = Math.max(0, unmatchedOpenCount - 1);
+      continue;
+    }
+    unmatchedOpenCount += 1;
+  }
+
+  return unmatchedOpenCount > 0 ? 'absoluteClose' : 'absoluteOpen';
+}
+
 export function normalizeEditorSelection(selection: EditorSelection, tokenCount: number): EditorSelection {
   if (selection.kind === 'token') {
     if (tokenCount === 0) return { kind: 'slot', index: 0 };

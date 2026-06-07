@@ -5,6 +5,7 @@ import 'katex/dist/katex.min.css';
 import {
   deleteAtSelection,
   insertTokensAtSelection,
+  nextAbsoluteDelimiterRole,
   normalizeEditorSelection,
   moveSelectionHorizontally,
   type EditorSelection,
@@ -246,31 +247,14 @@ function GamePage() {
     [applyEditorEdit, startTime],
   );
 
-  const insertPairedDelimiter = useCallback(
-    (
-      openValue: string,
-      closeValue: string,
-      openRole?: EquationToken['role'],
-      closeRole?: EquationToken['role'],
-    ) => {
+  const insertAbsoluteDelimiter = useCallback(
+    () => {
       if (!startTime) {
         setStartTime(Date.now());
       }
       applyEditorEdit((currentTokens, currentSelection) => {
-        if (
-          currentSelection.kind === 'slot' &&
-          isClosingDelimiterToken(currentTokens[currentSelection.index], closeValue, closeRole)
-        ) {
-          return {
-            tokens: currentTokens,
-            selection: { kind: 'slot', index: currentSelection.index + 1 },
-          };
-        }
-
-        return insertTokensAtSelection(currentTokens, currentSelection, [
-          createOperatorToken(openValue, openRole),
-          createOperatorToken(closeValue, closeRole),
-        ]);
+        const role = nextAbsoluteDelimiterRole(currentTokens, currentSelection);
+        return insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken('|', role)]);
       });
     },
     [applyEditorEdit, startTime],
@@ -298,11 +282,11 @@ function GamePage() {
   const insertOperator = useCallback(
     (value: string) => {
       if (value === '|') {
-        insertPairedDelimiter('|', '|', 'absoluteOpen', 'absoluteClose');
+        insertAbsoluteDelimiter();
         return;
       }
       if (value === '(') {
-        insertPairedDelimiter('(', ')');
+        insertText('(');
         return;
       }
       if (value === ')') {
@@ -311,7 +295,7 @@ function GamePage() {
       }
       insertText(value);
     },
-    [insertClosingDelimiter, insertPairedDelimiter, insertText],
+    [insertAbsoluteDelimiter, insertClosingDelimiter, insertText],
   );
 
   const appendDigit = useCallback(() => {
@@ -1717,18 +1701,6 @@ function createOperatorToken(value: string, role?: EquationToken['role']): Equat
 
 function createDigitToken(value: number, digitIndex: number): EquationToken {
   return { id: createTokenId(), value: String(value), digitIndex };
-}
-
-function isClosingDelimiterToken(
-  token: EquationToken | undefined,
-  closeValue: string,
-  closeRole?: EquationToken['role'],
-): boolean {
-  if (!token || token.value !== closeValue) {
-    return false;
-  }
-
-  return closeRole === undefined || token.role === closeRole;
 }
 
 function tokensToEquation(tokens: EquationToken[]): string {

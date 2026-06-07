@@ -15,6 +15,7 @@ import { EquationEmptyState } from './EquationEmptyState';
 import { EquationHelperRow } from './EquationHelperRow';
 import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
+import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
 import { savedSolutionDateSet } from './savedSolutionDates';
@@ -142,6 +143,7 @@ function GamePage() {
   const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
     'game',
   );
+  const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
   const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', right: '?', equation: '' });
@@ -400,6 +402,14 @@ function GamePage() {
   const showHowToPlay = useCallback(() => {
     localStorage.setItem(playStartedKey, 'true');
     setIsPlaying(true);
+    setShowHowToPlayDetailFirst(false);
+    setActiveView('howToPlay');
+  }, []);
+
+  const showDetailedHowToPlay = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setIsPlaying(true);
+    setShowHowToPlayDetailFirst(true);
     setActiveView('howToPlay');
   }, []);
 
@@ -508,6 +518,7 @@ function GamePage() {
               }
               onBackspace={backspace}
               onInsertValue={insertOperator}
+              onShowDetailedInstructions={showDetailedHowToPlay}
               selectorMoveRef={selectorMoveRef}
             />
 
@@ -590,6 +601,7 @@ function GamePage() {
       {isPlaying && activeView === 'howToPlay' && (
         <HowToPlayStartView
           backLabel="Back to Settings"
+          initiallyShowDetail={showHowToPlayDetailFirst}
           onBack={showSettingsPage}
           onPlay={playPuzzle}
         />
@@ -677,36 +689,42 @@ function SolutionsPage({
 }
 
 function BadgesSection({ badges }: { badges: SolutionBadge[] }) {
-  const earnedCount = badges.filter((badge) => badge.earned).length;
+  const earnedBadges = badges.filter((badge) => badge.earned);
+
+  if (earnedBadges.length === 0) {
+    return null;
+  }
 
   return (
     <section className="badges-section" aria-labelledby="badges-title">
       <div className="badges-header">
-        <div>
-          <h2 id="badges-title">Badges</h2>
-          <p>
-            {earnedCount} of {badges.length} earned
-          </p>
-        </div>
+        <h2 id="badges-title">Badges</h2>
       </div>
 
       <div className="badge-grid">
-        {badges.map((badge) => (
+        {earnedBadges.map((badge) => (
           <article
-            className={`solution-badge ${badge.earned ? 'earned' : 'locked'}`}
+            className="solution-badge"
             key={badge.id}
-            aria-label={`${badge.title}, ${badge.earned ? 'earned' : 'locked'}`}
+            aria-label={`${badge.title}, earned ${formatBadgeEarnedDate(badge.earnedDate)}`}
           >
-            <div>
-              <strong>{badge.title}</strong>
-              <p>{badge.description}</p>
-            </div>
-            <span className="badge-status">{badge.earned ? 'Earned' : 'Locked'}</span>
+            {badge.iconSrc && (
+              <img className="badge-icon" src={badge.iconSrc} alt="" />
+            )}
+            <strong>{badge.title}</strong>
+            <time dateTime={badge.earnedDate}>{formatBadgeEarnedDate(badge.earnedDate)}</time>
           </article>
         ))}
       </div>
     </section>
   );
+}
+
+function formatBadgeEarnedDate(dateIdentifier: string | undefined): string {
+  if (!dateIdentifier) return 'Date unknown';
+  const [year, month, day] = dateIdentifier.split('-').map(Number);
+  if (!year || !month || !day) return dateIdentifier;
+  return fullDateFormatter.format(new Date(year, month - 1, day));
 }
 
 function SolutionsList({ solutions }: { solutions: SavedSolution[] }) {
@@ -868,31 +886,87 @@ function StartPage({ onPlay }: { onPlay: () => void }) {
 
 function HowToPlayStartView({
   backLabel = 'Back',
+  initiallyShowDetail = false,
   onBack,
   onPlay,
 }: {
   backLabel?: string;
+  initiallyShowDetail?: boolean;
   onBack: () => void;
   onPlay: () => void;
 }) {
-  const steps = [
-    {
-      title: 'Use the date digits in order.',
-      body: 'Tap the active blue digit to place it in the equation. Digits can only be used from left to right.',
-    },
-    {
-      title: 'Add operators between digits.',
-      body: 'Use +, −, ×, ÷, roots, exponents, factorials, parentheses, and absolute value bars to shape each side.',
-    },
-    {
-      title: 'Balance both sides.',
-      body: 'Add one equals sign, then make the left and right sides evaluate to the same value.',
-    },
-    {
-      title: 'Submit a correct equation.',
-      body: 'Correct solutions are saved locally in this browser and can unlock badges.',
-    },
-  ];
+  const [showDetail, setShowDetail] = useState(initiallyShowDetail);
+  const [detailIndex, setDetailIndex] = useState(0);
+  const detailCard = HOW_TO_PLAY_DETAIL_CARDS[detailIndex];
+
+  const goToPreviousDetail = useCallback(() => {
+    setDetailIndex((current) =>
+      (current - 1 + HOW_TO_PLAY_DETAIL_CARDS.length) % HOW_TO_PLAY_DETAIL_CARDS.length
+    );
+  }, []);
+
+  const goToNextDetail = useCallback(() => {
+    setDetailIndex((current) => (current + 1) % HOW_TO_PLAY_DETAIL_CARDS.length);
+  }, []);
+
+  if (showDetail && detailCard) {
+    return (
+      <section className="start-panel" aria-labelledby="how-to-play-detail-title">
+        <div className="how-to-play-card detailed-how-to-play-card">
+          <div className="how-to-play-header">
+            <img className="start-icon" src="/app-icon.png" alt="" />
+            <div>
+              <p className="document-kicker">Crackle Date</p>
+              <h1 id="how-to-play-detail-title">More Detail</h1>
+            </div>
+          </div>
+
+          <article className="how-to-play-detail-card" aria-live="polite">
+            <img src={detailCard.imageSrc} alt={detailCard.imageAlt} />
+            <div className="how-to-play-detail-note">
+              <p className="how-to-play-detail-count">
+                {detailIndex + 1} of {HOW_TO_PLAY_DETAIL_CARDS.length}
+              </p>
+              <h2>{detailCard.title}</h2>
+              <p>{detailCard.note}</p>
+            </div>
+          </article>
+
+          <div className="how-to-play-detail-controls" aria-label="Detailed instruction controls">
+            <button
+              className="selector-arrow-button"
+              type="button"
+              onClick={goToPreviousDetail}
+              aria-label="Previous instruction card"
+            >
+              ←
+            </button>
+            <button
+              className="selector-arrow-button"
+              type="button"
+              onClick={goToNextDetail}
+              aria-label="Next instruction card"
+            >
+              →
+            </button>
+          </div>
+
+          <div className="how-to-play-actions">
+            <button
+              className="start-action-button secondary-button"
+              type="button"
+              onClick={() => setShowDetail(false)}
+            >
+              Quick Guide
+            </button>
+            <button className="start-action-button play-button" type="button" onClick={onPlay}>
+              Play
+            </button>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="start-panel" aria-labelledby="how-to-play-title">
@@ -906,10 +980,14 @@ function HowToPlayStartView({
         </div>
 
         <ol className="how-to-play-list">
-          {steps.map((step) => (
-            <li className="how-to-play-step" key={step.title}>
-              <strong>{step.title}</strong>
-              <p>{step.body}</p>
+          {HOW_TO_PLAY_SECTIONS.map((section) => (
+            <li className="how-to-play-step" key={section.title}>
+              <strong>{section.title}</strong>
+              <ul>
+                {section.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </li>
           ))}
         </ol>
@@ -917,6 +995,9 @@ function HowToPlayStartView({
         <div className="how-to-play-actions">
           <button className="start-action-button secondary-button" type="button" onClick={onBack}>
             {backLabel}
+          </button>
+          <button className="start-action-button secondary-button" type="button" onClick={() => setShowDetail(true)}>
+            More Detail
           </button>
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
             Play
@@ -1096,6 +1177,7 @@ function EquationEditor({
   onSelectionChange,
   onBackspace,
   onInsertValue,
+  onShowDetailedInstructions,
   selectorMoveRef,
 }: {
   tokens: EquationToken[];
@@ -1103,6 +1185,7 @@ function EquationEditor({
   onSelectionChange: (selection: EditorSelection) => void;
   onBackspace: () => void;
   onInsertValue: (value: string) => void;
+  onShowDetailedInstructions: () => void;
   selectorMoveRef?: React.MutableRefObject<SelectorMoveHandler | null>;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
@@ -1264,7 +1347,7 @@ function EquationEditor({
         }}
         onKeyDown={handleEditorKey}
       >
-        <EquationEmptyState />
+        <EquationEmptyState onShowDetailedInstructions={onShowDetailedInstructions} />
       </div>
     );
   }

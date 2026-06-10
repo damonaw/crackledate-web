@@ -1,4 +1,4 @@
-// @ts-expect-error The app tsconfig intentionally excludes Node types, but this test reads a local fixture.
+// @ts-ignore The app tsconfig intentionally excludes Node types, but this test reads a local fixture.
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 

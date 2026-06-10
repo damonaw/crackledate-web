@@ -1,8 +1,35 @@
 {
-  "name": "crackledate-web-dev",
+  "name": "crackledate",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "frontend",
+    "packages/*",
+    "apps/*"
+  ],
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native-reanimated": "4.3.1",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-worklets": "0.8.3"
+  },
+  "dependencies": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-reanimated": "4.3.1",
+    "react-native-safe-area-context": "5.7.0",
+    "react-native-worklets": "0.8.3"
+  },
   "scripts": {
-    "dev": "node scripts/dev.mjs"
+    "dev": "node scripts/dev.mjs",
+    "test": "npm run test --workspaces --if-present",
+    "test:web": "npm --workspace frontend test",
+    "test:core": "npm --workspace @crackledate/core test",
+    "test:android": "npm --workspace @crackledate/android test",
+    "build:web": "npm --workspace frontend run build",
+    "build:core": "npm --workspace @crackledate/core run build",
+    "build:android": "npm --workspace @crackledate/android run build"
   }
 }

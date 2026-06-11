@@ -769,10 +769,10 @@ function EquationSlot({
   options: RenderOptions;
   extraStyle?: object;
 }) {
-  const selected = selectionMatchesLatexSlot(context.selected, index, placement);
-  if (isSuppressedSlot(options, index, placement) && !selected) {
+  if (isSuppressedSlot(options, index, placement)) {
     return null;
   }
+  const selected = selectionMatchesLatexSlot(context.selected, index, placement);
 
   return (
     <Pressable

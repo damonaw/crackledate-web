@@ -28,7 +28,6 @@ import {
 import { EquationEmptyState } from './EquationEmptyState';
 import { EquationHelperRow } from './EquationHelperRow';
 import type { SelectorDirection } from './EquationSelectorControls';
-import { canonicalPuzzlePath, dateFromRouteLocation, routeForPuzzleDate } from './dateRouting';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
@@ -154,10 +153,7 @@ function App() {
 }
 
 function GamePage() {
-  const todayIdentifier = useMemo(() => localDateIdentifier(new Date()), []);
-  const [selectedDate, setSelectedDate] = useState(
-    () => dateFromRouteLocation(new URL(window.location.href)) ?? todayIdentifier,
-  );
+  const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
   const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
   const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
     'game',
@@ -252,24 +248,6 @@ function GamePage() {
       isCurrent = false;
     };
   }, [syncAccountData]);
-
-  useEffect(() => {
-    const canonicalPath = canonicalPuzzlePath(new URL(window.location.href), todayIdentifier);
-    if (canonicalPath && currentRoutePath() !== canonicalPath) {
-      window.history.replaceState({ puzzleDate: selectedDate }, '', canonicalPath);
-    }
-  }, [selectedDate, todayIdentifier]);
-
-  useEffect(() => {
-    const syncDateFromHistory = () => {
-      const nextDate = dateFromRouteLocation(new URL(window.location.href)) ?? todayIdentifier;
-      setSelectedDate(nextDate);
-      setActiveView('game');
-    };
-
-    window.addEventListener('popstate', syncDateFromHistory);
-    return () => window.removeEventListener('popstate', syncDateFromHistory);
-  }, [todayIdentifier]);
 
   useEffect(() => {
     if (themePreference === 'system') {
@@ -557,17 +535,13 @@ function GamePage() {
   }, []);
 
   const chooseCalendarDate = useCallback((dateIdentifier: string) => {
-    const nextPath = routeForPuzzleDate(dateIdentifier, todayIdentifier);
-    if (currentRoutePath() !== nextPath) {
-      window.history.pushState({ puzzleDate: dateIdentifier }, '', nextPath);
-    }
     setSelectedDate(dateIdentifier);
     setActiveView('game');
-  }, [todayIdentifier]);
+  }, []);
 
   const chooseToday = useCallback(() => {
-    chooseCalendarDate(todayIdentifier);
-  }, [chooseCalendarDate, todayIdentifier]);
+    chooseCalendarDate(localDateIdentifier(new Date()));
+  }, [chooseCalendarDate]);
 
   const openLogin = useCallback(() => {
     setAuthModalMode(authUser ? 'account' : 'login');
@@ -2070,8 +2044,8 @@ function PrivacyPage() {
     <DocumentShell
       currentPage="privacy"
       title="Privacy"
-      subtitle="Crackle Date is built to be played without accounts. Archive play may include advertising after ads are enabled."
-      meta="Last updated June 9, 2026"
+      subtitle="Crackle Date is built to be played without accounts, ads, or cross-app tracking."
+      meta="Last updated June 7, 2026"
     >
       <DocumentSection
         title="Local Storage"
@@ -2110,7 +2084,7 @@ function PrivacyPage() {
           },
           {
             label: 'What is not sent',
-            body: 'Submitted solution records do not include your name, email address, account ID, passwords, payment information, advertising identifiers from the submission payload, or the contents of browser storage.',
+            body: 'Submitted records do not include your name, email address, account ID, passwords, payment information, advertising identifier, or the contents of browser storage.',
           },
           {
             label: 'Server logs',
@@ -2120,23 +2094,11 @@ function PrivacyPage() {
       />
 
       <DocumentSection
-        title="Advertising and Tracking"
+        title="Tracking"
         rows={[
           {
-            label: 'Archive ads',
-            body: 'Crackle Date may show ads when you choose older puzzles, such as dates more than a week before today.',
-          },
-          {
-            label: 'Ad partners',
-            body: 'If ads are enabled, advertising partners may use cookies, browser storage, IP address, device or browser details, web beacons, or similar identifiers to serve, measure, limit, and secure ads.',
-          },
-          {
-            label: 'Choices',
-            body: 'Where required, consent or privacy choices may be shown before ad-enabled content. Browser settings and ad controls may also limit personalized advertising.',
-          },
-          {
-            label: 'Solution records',
-            body: 'Crackle Date does not create account profiles or attach submitted solution records to a login.',
+            label: 'No advertising profile',
+            body: 'Crackle Date does not show ads, sell personal information, or track you across other apps or websites.',
           },
           {
             label: 'No public profile',
@@ -2288,10 +2250,6 @@ function loadThemePreference(): ThemePreference {
 
 function loadDifficultyMode(): DifficultyMode {
   return localStorage.getItem(difficultyModeKey) === 'hard' ? 'hard' : 'easy';
-}
-
-function currentRoutePath(): string {
-  return `${window.location.pathname}${window.location.search}`;
 }
 
 function emptyEditorState(): EquationEditorState {

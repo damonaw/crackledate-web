@@ -380,8 +380,6 @@ func normalizedPlatform(value string) (string, error) {
 		return "web", nil
 	case "ios":
 		return "ios", nil
-	case "android":
-		return "android", nil
 	default:
 		return "", errors.New("Invalid platform")
 	}

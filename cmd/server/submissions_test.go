@@ -75,6 +75,46 @@ func TestHandleSubmitSolutionStoresValidatedAnonymousPayload(t *testing.T) {
 	}
 }
 
+func TestHandleSubmitSolutionAcceptsAndroidPlatform(t *testing.T) {
+	submissionsPath := filepath.Join(t.TempDir(), "submissions.ndjson")
+	store, err := newSubmissionStore(submissionsPath)
+	if err != nil {
+		t.Fatalf("newSubmissionStore: %v", err)
+	}
+	handler := handleSubmitSolution(store, nil, func() time.Time {
+		return time.Date(2026, 5, 30, 14, 15, 16, 0, time.UTC)
+	})
+
+	body := strings.NewReader(`{
+		"date": "2026-05-16",
+		"equation": "5+√16=2^0+2+6",
+		"seconds": 136,
+		"difficulty": "hard",
+		"platform": "android",
+		"appVersion": "1.0.0"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/api/submissions", body)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	handler(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("expected 201 Created, got %d with body %s", response.Code, response.Body.String())
+	}
+
+	var record submittedSolutionRecord
+	if err := json.Unmarshal(readSingleSubmissionLine(t, submissionsPath), &record); err != nil {
+		t.Fatalf("failed to decode stored submission: %v", err)
+	}
+	if record.Platform != "android" {
+		t.Fatalf("Platform = %q", record.Platform)
+	}
+	if record.Difficulty != "hard" || !record.HardMode {
+		t.Fatalf("difficulty/hard mode = %q/%v", record.Difficulty, record.HardMode)
+	}
+}
+
 func TestHandleSubmitSolutionStoresRejectedAttempt(t *testing.T) {
 	submissionsPath := filepath.Join(t.TempDir(), "submissions.ndjson")
 	store, err := newSubmissionStore(submissionsPath)

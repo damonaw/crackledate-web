@@ -31,8 +31,10 @@ type evaluateRequest struct {
 }
 
 type validateRequest struct {
-	Date     string `json:"date"`
-	Equation string `json:"equation"`
+	Date        string `json:"date"`
+	Equation    string `json:"equation"`
+	Mode        string `json:"mode,omitempty"`
+	TargetValue string `json:"targetValue,omitempty"`
 }
 
 const maxAPIJSONBodyBytes int64 = 32 * 1024
@@ -55,6 +57,7 @@ func main() {
 	mux.HandleFunc("/api/evaluate", handleEvaluate)
 	mux.HandleFunc("/api/validate", handleValidate)
 	mux.HandleFunc("/api/submissions", handleSubmitSolution(submissions, auth, time.Now))
+	mux.HandleFunc("/api/hint", handleHint)
 	mux.HandleFunc("/api/auth/signup", auth.handleSignup)
 	mux.HandleFunc("/api/auth/login", auth.handleLogin)
 	mux.HandleFunc("/api/auth/logout", auth.handleLogout)
@@ -126,7 +129,99 @@ func handleValidate(writer http.ResponseWriter, request *http.Request) {
 		return
 	}
 	puzzle := game.PuzzleForDate(date)
-	writeJSON(writer, http.StatusOK, game.ValidateEquation(payload.Equation, puzzle.Digits))
+	writeJSON(writer, http.StatusOK, game.ValidateEquation(payload.Equation, puzzle.Digits, payload.Mode, payload.TargetValue))
+}
+
+func handleHint(writer http.ResponseWriter, request *http.Request) {
+	dateStr := request.URL.Query().Get("date")
+	mode := request.URL.Query().Get("mode")
+	targetValue := request.URL.Query().Get("targetValue")
+
+	prefix := request.URL.Query().Get("prefix")
+
+	date, err := game.ParsePuzzleDate(dateStr, time.Now())
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "Invalid date"})
+		return
+	}
+	puzzle := game.PuzzleForDate(date)
+
+	sol, err := game.SolvePuzzle(puzzle.Digits, mode, targetValue, prefix)
+	if err != nil {
+		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "No solution found"})
+		return
+	}
+
+	var step1, step2, step3 string
+	step3 = sol
+
+	switch mode {
+	case "double_equality":
+		parts := strings.Split(sol, "=")
+		evalRes := game.RunningValues(sol)
+		step1 = evalRes.Left
+		if len(parts) >= 2 {
+			step2 = parts[0] + "=" + parts[1]
+		} else {
+			step2 = parts[0]
+		}
+	case "target":
+		parts := strings.Split(sol, "=")
+		if len(parts) >= 2 {
+			step1 = parts[0]
+			step2 = getSmartPrefix(parts[1])
+		} else {
+			step1 = parts[0]
+			step2 = parts[0]
+		}
+	case "single_expr":
+		step1 = getSmartHalfPrefix(sol)
+		step2 = getSmartAlmostPrefix(sol)
+	default: // classic
+		parts := strings.Split(sol, "=")
+		evalRes := game.RunningValues(sol)
+		step1 = evalRes.Left
+		step2 = parts[0]
+	}
+
+	balancingHint, mathTip := computeBalancingHintAndTip(sol, mode, prefix, puzzle.Digits)
+
+	writeJSON(writer, http.StatusOK, map[string]string{
+		"solution":      sol,
+		"step1":         step1,
+		"step2":         step2,
+		"step3":         step3,
+		"balancingHint": balancingHint,
+		"mathTip":       mathTip,
+	})
+}
+
+func getSmartPrefix(s string) string {
+	runes := []rune(s)
+	if len(runes) <= 3 {
+		return string(runes)
+	}
+	return string(runes[:3]) + "..."
+}
+
+func getSmartHalfPrefix(s string) string {
+	runes := []rune(s)
+	half := len(runes) / 2
+	if half < 3 {
+		half = 3
+	}
+	if half >= len(runes) {
+		return s
+	}
+	return string(runes[:half]) + "..."
+}
+
+func getSmartAlmostPrefix(s string) string {
+	runes := []rune(s)
+	if len(runes) <= 4 {
+		return s
+	}
+	return string(runes[:len(runes)-2]) + "..."
 }
 
 func handleStatic(publicFiles fs.FS) http.HandlerFunc {
@@ -408,3 +503,126 @@ func requestLogger(next http.Handler, config analyticsConfig) http.Handler {
 		}
 	})
 }
+
+func stripOuterParentheses(s string) string {
+	for len(s) >= 2 && s[0] == '(' && s[len(s)-1] == ')' {
+		depth := 0
+		match := true
+		for i := 0; i < len(s)-1; i++ {
+			if s[i] == '(' {
+				depth++
+			} else if s[i] == ')' {
+				depth--
+				if depth == 0 {
+					match = false
+					break
+				}
+			}
+		}
+		if match && depth == 1 {
+			s = s[1 : len(s)-1]
+		} else {
+			break
+		}
+	}
+	return s
+}
+
+func findLastTopLevelOperator(s string) int {
+	depth := 0
+	lastOpIdx := -1
+	for i, r := range s {
+		if r == '(' {
+			depth++
+		} else if r == ')' {
+			depth--
+		} else if depth == 0 {
+			if r == '+' || r == '-' || r == '*' || r == '/' || r == '^' {
+				lastOpIdx = i
+			}
+		}
+	}
+	return lastOpIdx
+}
+
+func countDigits(s string) int {
+	count := 0
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			count++
+		}
+	}
+	return count
+}
+
+func formatExprForDisplay(s string) string {
+	s = strings.ReplaceAll(s, "*", " × ")
+	s = strings.ReplaceAll(s, "/", " ÷ ")
+	s = strings.ReplaceAll(s, "-", " − ")
+	s = strings.ReplaceAll(s, "+", " + ")
+	s = strings.ReplaceAll(s, "  ", " ")
+	return strings.TrimSpace(s)
+}
+
+func computeBalancingHintAndTip(sol string, mode string, prefix string, digits []int) (string, string) {
+	if mode != "classic" {
+		return "", ""
+	}
+	parts := strings.Split(sol, "=")
+	if len(parts) != 2 {
+		return "", ""
+	}
+	rhs := parts[1]
+	rhs = strings.ReplaceAll(rhs, " ", "")
+
+	usedCount := countDigits(prefix)
+	if usedCount >= len(digits) {
+		return "", ""
+	}
+	unusedDigits := digits[usedCount:]
+	if len(unusedDigits) < 2 {
+		return "", ""
+	}
+	lastDigit := unusedDigits[len(unusedDigits)-1]
+
+	rhs = stripOuterParentheses(rhs)
+	lastOpIdx := findLastTopLevelOperator(rhs)
+	if lastOpIdx == -1 {
+		return "", ""
+	}
+
+	prefixExpr := rhs[:lastOpIdx]
+	suffixExpr := rhs[lastOpIdx+1:]
+
+	if countDigits(suffixExpr) != 1 {
+		return "", ""
+	}
+
+	evalRes := game.RunningValues(prefixExpr)
+	if evalRes.Left == "?" || evalRes.Left == "" {
+		return "", ""
+	}
+
+	valStr := evalRes.Left
+	tip := ""
+	if strings.Contains(prefixExpr, "^0") {
+		tip = "Tip: remember that x^0 = 1 (any number raised to 0 is equal to 1)."
+	} else if strings.Contains(prefixExpr, "^") {
+		tip = "Tip: remember that x^y is x raised to the power of y (e.g., 2^3 = 8)."
+	} else if strings.Contains(prefixExpr, "!") {
+		tip = "Tip: remember that x! is the factorial of x (e.g., 0! = 1, 3! = 6)."
+	} else if strings.Contains(prefixExpr, "√") {
+		tip = "Tip: remember that √x is the square root of x (e.g., √4 = 2, √0 = 0)."
+	} else if strings.Contains(prefixExpr, "|") {
+		tip = "Tip: remember that |x| is the absolute value of x (e.g., |-3| = 3)."
+	} else {
+		tip = "Tip: try combining the digits using arithmetic operations."
+	}
+
+	displayPrefix := formatExprForDisplay(prefixExpr)
+	tip = fmt.Sprintf("%s You can make %s using the remaining digits: %s = %s", tip, valStr, displayPrefix, valStr)
+
+	hint := fmt.Sprintf("%d is the last digit, so you need to make the rest of the right side digits equal %s for the left side to equal the right side.", lastDigit, valStr)
+	return hint, tip
+}
+

@@ -1,5 +1,6 @@
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
+type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
 type AuthUser = {
   email: string;
   emailVerified: boolean;
@@ -8,23 +9,29 @@ type AuthUser = {
 export function SettingsPanel({
   themePreference,
   difficultyMode,
+  gameMode,
   authUser = null,
   onThemePreferenceChange,
   onDifficultyModeChange,
+  onGameModeChange,
   onLogin = () => undefined,
   onLogout = () => undefined,
   onClearData,
   onShowHowToPlay,
+  onRestartTutorial = () => undefined,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
+  gameMode: GameMode;
   authUser?: AuthUser | null;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
+  onGameModeChange: (mode: GameMode) => void;
   onLogin?: () => void;
   onLogout?: () => void;
   onClearData: () => void;
   onShowHowToPlay: () => void;
+  onRestartTutorial?: () => void;
 }) {
   return (
     <section className="settings-page" aria-labelledby="settings-title">
@@ -84,11 +91,37 @@ export function SettingsPanel({
             ))}
           </div>
         </fieldset>
+
+        <fieldset className="settings-row">
+          <legend>Game Mode</legend>
+          <div className="segmented-control">
+            {([
+              { value: 'classic', label: 'Classic' },
+              { value: 'double_equality', label: 'Double =' },
+              { value: 'target', label: 'Target' },
+              { value: 'single_expr', label: 'Single' },
+            ] as const).map((mode) => (
+              <label key={mode.value}>
+                <input
+                  type="radio"
+                  name="gameMode"
+                  value={mode.value}
+                  checked={gameMode === mode.value}
+                  onChange={() => onGameModeChange(mode.value)}
+                />
+                <span>{mode.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
       </div>
 
       <nav className="settings-links" aria-label="Help and policies">
         <button className="settings-link-button" type="button" onClick={onShowHowToPlay}>
           How to Play
+        </button>
+        <button className="settings-link-button" type="button" onClick={onRestartTutorial}>
+          Restart Tutorial
         </button>
         <a href="/privacy/">Privacy</a>
         <a href="/support/">Support</a>

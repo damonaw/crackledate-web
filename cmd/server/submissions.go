@@ -26,6 +26,8 @@ type submitSolutionRequest struct {
 	Platform              string `json:"platform"`
 	AppVersion            string `json:"appVersion,omitempty"`
 	ClientRejectionReason string `json:"clientRejectionReason,omitempty"`
+	Mode                  string `json:"mode,omitempty"`
+	TargetValue           string `json:"targetValue,omitempty"`
 }
 
 type submittedSolutionRecord struct {
@@ -222,7 +224,7 @@ func submittedSolutionRecordFromRequest(payload submitSolutionRequest, now func(
 	}
 
 	puzzle := game.PuzzleForDate(date)
-	validation := game.ValidateEquation(equation, puzzle.Digits)
+	validation := game.ValidateEquation(equation, puzzle.Digits, payload.Mode, payload.TargetValue)
 	if !validation.Valid {
 		record.SubmissionStatus = rejectedSubmission
 		record.RejectionReason = validation.ErrorMessage

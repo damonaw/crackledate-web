@@ -36,6 +36,7 @@ import { savedSolutionDateSet } from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
 import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
+import { GuidedTutorial } from './GuidedTutorial';
 import './styles.css';
 
 type Puzzle = {
@@ -44,10 +45,12 @@ type Puzzle = {
   formattedDate: string;
   digits: number[];
   delimiterPositions: number[];
+  targetValue?: string;
 };
 
 type EvaluationResponse = {
   left: string;
+  middle?: string;
   right: string;
   errorMessage?: string;
 };
@@ -68,6 +71,11 @@ type SavedSolution = {
   timestamp: string;
   seconds: number;
   value: string;
+  mode?: string;
+  targetValue?: string;
+  solvedOnOtherDay?: boolean;
+  usedHint?: boolean;
+  difficulty?: 'easy' | 'hard';
 };
 
 type StoredSolutions = Record<string, SavedSolution[]>;
@@ -129,14 +137,168 @@ const keyboardInsertableOperators: Record<string, string> = {
   '(': '(',
   ')': ')',
   '|': '|',
+  '=': '=',
   s: '√',
   S: '√',
   r: '√',
   R: '√',
 };
 
+const gameModeKey = 'crackledate.web.gamemode.v1';
+const targetValueKey = 'crackledate.web.targetvalue.v1';
+
+function loadGameMode(): 'classic' | 'double_equality' | 'target' | 'single_expr' {
+  const value = localStorage.getItem(gameModeKey);
+  return value === 'classic' || value === 'double_equality' || value === 'target' || value === 'single_expr' ? value : 'classic';
+}
+
+function loadTargetValue(): string {
+  return localStorage.getItem(targetValueKey) || '10';
+}
+
+function Confetti() {
+  const particles = useMemo(() => {
+    const colors = ['#ff3b30', '#ff9500', '#34c759', '#007aff', '#af52de', '#ffcc00'];
+    return Array.from({ length: 60 }).map((_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: colors[i % colors.length],
+      size: Math.random() * 8 + 6,
+      delay: Math.random() * 1.5,
+      duration: Math.random() * 2 + 2,
+      drift: Math.random() * 40 - 20,
+    }));
+  }, []);
+
+  return (
+    <div className="confetti-container" aria-hidden="true">
+      {particles.map((p) => (
+        <div
+          key={p.id}
+          className="confetti-particle"
+          style={{
+            left: `${p.x}%`,
+            backgroundColor: p.color,
+            width: `${p.size}px`,
+            height: `${p.size}px`,
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.duration}s`,
+            '--drift': `${p.drift}px`,
+          } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" y1="2" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+function calculateStreaks(savedSolutions: StoredSolutions) {
+  const solvedDates = Object.keys(savedSolutions)
+    .filter((dateStr) => savedSolutions[dateStr] && savedSolutions[dateStr]!.length > 0)
+    .map((dateStr) => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (!y || !m || !d) return 0;
+      return Math.floor(Date.UTC(y, m - 1, d) / (24 * 60 * 60 * 1000));
+    })
+    .filter(Boolean)
+    .sort((a, b) => a - b);
+
+  if (solvedDates.length === 0) {
+    return { currentStreak: 0, maxStreak: 0 };
+  }
+
+  const today = new Date();
+  const todayNum = Math.floor(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / (24 * 60 * 60 * 1000));
+
+  let maxStreak = 0;
+  let currentStreak = 0;
+  let runningStreak = 0;
+  let prevDay = -999;
+
+  for (const day of solvedDates) {
+    if (day === prevDay + 1) {
+      runningStreak++;
+    } else if (day !== prevDay) {
+      runningStreak = 1;
+    }
+    if (runningStreak > maxStreak) {
+      maxStreak = runningStreak;
+    }
+    prevDay = day;
+  }
+
+  const lastSolvedDay = solvedDates[solvedDates.length - 1]!;
+  if (lastSolvedDay === todayNum || lastSolvedDay === todayNum - 1) {
+    currentStreak = 0;
+    let expected = lastSolvedDay;
+    for (let idx = solvedDates.length - 1; idx >= 0; idx--) {
+      const day = solvedDates[idx]!;
+      if (day === expected) {
+        currentStreak++;
+        expected--;
+      } else if (day < expected) {
+        break;
+      }
+    }
+  } else {
+    currentStreak = 0;
+  }
+
+  return { currentStreak, maxStreak };
+}
+
+function StatsDashboard({ savedSolutions }: { savedSolutions: StoredSolutions }) {
+  const { currentStreak, maxStreak } = useMemo(() => calculateStreaks(savedSolutions), [savedSolutions]);
+  const { totalSolved, avgTime } = useMemo(() => {
+    const dates = Object.keys(savedSolutions).filter((dateStr) => savedSolutions[dateStr] && savedSolutions[dateStr]!.length > 0);
+    const allSeconds = Object.values(savedSolutions)
+      .flat()
+      .map((s) => s.seconds)
+      .filter((s) => s > 0);
+    const avg = allSeconds.length > 0 ? Math.round(allSeconds.reduce((a, b) => a + b, 0) / allSeconds.length) : 0;
+    return {
+      totalSolved: dates.length,
+      avgTime: avg,
+    };
+  }, [savedSolutions]);
+
+  return (
+    <section className="stats-dashboard" aria-labelledby="dashboard-title">
+      <h2 id="dashboard-title" className="sr-only">Dashboard Stats</h2>
+      <div className="dashboard-grid">
+        <div className="dashboard-card">
+          <span className="dashboard-val">{totalSolved}</span>
+          <span className="dashboard-label">Played</span>
+        </div>
+        <div className="dashboard-card">
+          <span className="dashboard-val">{currentStreak}</span>
+          <span className="dashboard-label">Streak</span>
+        </div>
+        <div className="dashboard-card">
+          <span className="dashboard-val">{maxStreak}</span>
+          <span className="dashboard-label">Max Streak</span>
+        </div>
+        <div className="dashboard-card">
+          <span className="dashboard-val">{formatTime(avgTime)}</span>
+          <span className="dashboard-label">Avg Time</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
+const tutorialCompletedKey = 'crackledate.web.tutorial-completed.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
 const difficultyModeKey = 'crackledate.web.difficulty.v1';
 const emptyDigitIndices = new Set<number>();
@@ -154,14 +316,28 @@ function App() {
 
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
-  const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
+  const [tutorialActive, setTutorialActive] = useState(() => {
+    const completed = localStorage.getItem(tutorialCompletedKey) === 'true';
+    const playedBefore = localStorage.getItem(playStartedKey) === 'true';
+    return !(completed || playedBefore);
+  });
   const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
     'game',
   );
   const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
-  const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', right: '?', equation: '' });
+  const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', middle: '', right: '?', equation: '' });
+  const [gameMode, setGameMode] = useState<'classic' | 'double_equality' | 'target' | 'single_expr'>(loadGameMode);
+  const [targetValue, setTargetValue] = useState<string>(loadTargetValue);
+  const [shakeActive, setShakeActive] = useState(false);
+  const [confettiActive, setConfettiActive] = useState(false);
+  const [hintStep, setHintStep] = useState(0);
+  const [hintData, setHintData] = useState<{ solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string } | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [isDeadEnd, setIsDeadEnd] = useState(false);
+  const [shakeHintButton, setShakeHintButton] = useState(false);
+  const [usedHint, setUsedHint] = useState(false);
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState<FeedbackTone>('success');
   const [startTime, setStartTime] = useState<number | null>(null);
@@ -173,11 +349,59 @@ function GamePage() {
   const [showImportPrompt, setShowImportPrompt] = useState(false);
   const [pendingImportSolutions, setPendingImportSolutions] = useState<StoredSolutions>({});
   const [accountPreferencesLoaded, setAccountPreferencesLoaded] = useState(false);
+  const [unlockedFutureDates, setUnlockedFutureDates] = useState<Set<string>>(() => new Set());
+  const [unlockedAutocompleteDates, setUnlockedAutocompleteDates] = useState<Set<string>>(() => new Set());
+  const [rewardModalAction, setRewardModalAction] = useState<{
+    actionName: string;
+    onSuccess: () => void;
+  } | null>(null);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
+  const autocompleteIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [isAutocompleting, setIsAutocompleting] = useState(false);
 
   const { tokens, selection } = editorState;
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
   const usedDigitIndices = useMemo(() => digitIndicesInUse(tokens), [tokens]);
+  const unusedDigits = useMemo(() => {
+    if (!puzzle) return [];
+    return puzzle.digits.filter((_, idx) => !usedDigitIndices.has(idx));
+  }, [puzzle, usedDigitIndices]);
+  const isEquationCorrect = useMemo(() => {
+    if (!puzzle) return false;
+    const allDigitsUsed = usedDigitIndices.size === puzzle.digits.length;
+    if (!allDigitsUsed) return false;
+    if (evaluation.errorMessage) return false;
+
+    const eqParts = equation.split('=');
+    switch (gameMode) {
+      case 'double_equality':
+        return (
+          eqParts.length === 3 &&
+          evaluation.left !== '?' &&
+          evaluation.left === evaluation.middle &&
+          evaluation.middle === evaluation.right
+        );
+      case 'single_expr':
+        return (
+          eqParts.length === 1 &&
+          evaluation.left !== '?' &&
+          evaluation.left === targetValue
+        );
+      case 'target':
+        return (
+          eqParts.length === 2 &&
+          evaluation.left !== '?' &&
+          evaluation.left === targetValue &&
+          evaluation.right === targetValue
+        );
+      default: // classic
+        return (
+          eqParts.length === 2 &&
+          evaluation.left !== '?' &&
+          evaluation.left === evaluation.right
+        );
+    }
+  }, [puzzle, usedDigitIndices, evaluation, equation, gameMode, targetValue]);
   const nextDigitIndex = useMemo(
     () => (puzzle ? firstUnusedDigitIndex(tokens, puzzle.digits) : null),
     [puzzle, tokens],
@@ -187,8 +411,47 @@ function GamePage() {
   const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const isEasyMode = difficultyMode === 'easy';
+  const isLHSCompleteForHint = useMemo(() => {
+    if (!hintData || gameMode !== 'classic') return false;
+    const normalize = (str: string) => str.replace(/\s+/g, '').replace(/=+$/, '');
+    return normalize(equation).startsWith(normalize(hintData.step2));
+  }, [equation, hintData, gameMode]);
   const isVerifiedAccount = Boolean(authUser?.emailVerified);
   const accountImportKey = authUser ? `crackledate.web.import-offered.${authUser.email}` : '';
+
+  const mappedGlowKey = useMemo(() => {
+    if (hintStep === 0 || !hintData) return null;
+    if (isDeadEnd) {
+      return 'Backspace';
+    }
+
+    const normalizeEquationStr = (eq: string): string => {
+      return eq.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/\s/g, '');
+    };
+    const normEq = normalizeEquationStr(equation);
+    const normSol = normalizeEquationStr(hintData.solution);
+
+    if (normSol.startsWith(normEq)) {
+      const nextChar = normSol[normEq.length];
+      if (nextChar) {
+        const asciiToButtonVal: Record<string, string> = {
+          '+': '+',
+          '-': '-',
+          '*': '×',
+          '/': '÷',
+          '^': '^',
+          '√': '√',
+          '!': '!',
+          '|': '|',
+          '(': '(',
+          ')': ')',
+          '=': '=',
+        };
+        return asciiToButtonVal[nextChar] || nextChar;
+      }
+    }
+    return null;
+  }, [hintStep, hintData, isDeadEnd, equation]);
 
   const syncAccountData = useCallback(async (user: AuthUser, options: { promptImport?: boolean } = {}) => {
     if (!user.emailVerified) {
@@ -263,6 +526,67 @@ function GamePage() {
   }, [difficultyMode]);
 
   useEffect(() => {
+    localStorage.setItem(gameModeKey, gameMode);
+    setHintStep(0);
+    setHintData(null);
+    setUsedHint(false);
+  }, [gameMode]);
+
+  useEffect(() => {
+    localStorage.setItem(targetValueKey, targetValue);
+    setHintStep(0);
+    setHintData(null);
+    setUsedHint(false);
+  }, [targetValue]);
+
+  useEffect(() => {
+    if (isAutocompleting) return;
+    setShakeHintButton(false);
+
+    if (!puzzle) return;
+
+    const timer = setTimeout(() => {
+      setShakeHintButton(true);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [equation, puzzle, gameMode, targetValue, isAutocompleting]);
+
+  useEffect(() => {
+    if (isAutocompleting) return;
+    if (hintStep > 0 && puzzle) {
+      const controller = new AbortController();
+      const query = new URLSearchParams({
+        date: puzzle.dateIdentifier,
+        mode: gameMode,
+        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : '',
+        prefix: equation,
+      });
+
+      fetch(`/api/hint?${query.toString()}`, { signal: controller.signal })
+        .then((res) => {
+          if (res.ok) {
+            setIsDeadEnd(false);
+            return res.json();
+          }
+          throw new Error('No solution found');
+        })
+        .then((data: any) => {
+          setHintData(data);
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            setIsDeadEnd(true);
+          }
+        });
+
+      return () => controller.abort();
+    } else {
+      setIsDeadEnd(false);
+    }
+  }, [equation, hintStep, gameMode, targetValue, puzzle, isAutocompleting]);
+
+  useEffect(() => {
     if (isVerifiedAccount && accountPreferencesLoaded) {
       void saveAccountPreferences({ themePreference, difficultyMode });
     }
@@ -274,11 +598,22 @@ function GamePage() {
       .then((response) => response.json() as Promise<Puzzle>)
       .then((nextPuzzle) => {
         if (!isCurrent) return;
+        if (autocompleteIntervalRef.current) {
+          clearInterval(autocompleteIntervalRef.current);
+          autocompleteIntervalRef.current = null;
+        }
         setPuzzle(nextPuzzle);
+        if (nextPuzzle.targetValue) {
+          setTargetValue(nextPuzzle.targetValue);
+        }
         setEditorState(emptyEditorState());
-        setEvaluation({ left: '?', right: '?', equation: '' });
+        setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
         setMessage('');
         setStartTime(null);
+        setHintStep(0);
+        setHintData(null);
+        setUsedHint(false);
+        setConfettiActive(false);
       })
       .catch(() => {
         setMessageTone('error');
@@ -286,8 +621,28 @@ function GamePage() {
       });
     return () => {
       isCurrent = false;
+      if (autocompleteIntervalRef.current) {
+        clearInterval(autocompleteIntervalRef.current);
+        autocompleteIntervalRef.current = null;
+      }
     };
   }, [selectedDate]);
+
+  useEffect(() => {
+    if (isEquationCorrect) {
+      setHintStep(0);
+      setHintData(null);
+    }
+  }, [isEquationCorrect]);
+
+  useEffect(() => {
+    return () => {
+      if (autocompleteIntervalRef.current) {
+        clearInterval(autocompleteIntervalRef.current);
+        autocompleteIntervalRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -301,7 +656,7 @@ function GamePage() {
       .then((response) => setEvaluation({ ...response, equation }))
       .catch((error: Error) => {
         if (error.name !== 'AbortError') {
-          setEvaluation({ left: '?', right: '?', equation });
+          setEvaluation({ left: '?', middle: '', right: '?', equation });
         }
       });
     return () => controller.abort();
@@ -314,6 +669,11 @@ function GamePage() {
         selection: EditorSelection,
       ) => { tokens: EquationToken[]; selection: EditorSelection },
     ) => {
+      if (autocompleteIntervalRef.current) {
+        clearInterval(autocompleteIntervalRef.current);
+        autocompleteIntervalRef.current = null;
+        setIsAutocompleting(false);
+      }
       setEditorState((current) => {
         const next = edit(current.tokens, current.selection);
         return {
@@ -372,6 +732,9 @@ function GamePage() {
 
   const insertOperator = useCallback(
     (value: string) => {
+      if (value === '=' && gameMode === 'single_expr') {
+        return;
+      }
       if (value === '|') {
         insertAbsoluteDelimiter();
         return;
@@ -386,7 +749,7 @@ function GamePage() {
       }
       insertText(value);
     },
-    [insertAbsoluteDelimiter, insertClosingDelimiter, insertText],
+    [insertAbsoluteDelimiter, insertClosingDelimiter, insertText, gameMode],
   );
 
   const appendDigit = useCallback(() => {
@@ -404,8 +767,12 @@ function GamePage() {
   }, [applyEditorEdit]);
 
   const clear = useCallback(() => {
+    if (autocompleteIntervalRef.current) {
+      clearInterval(autocompleteIntervalRef.current);
+      autocompleteIntervalRef.current = null;
+    }
     setEditorState(emptyEditorState());
-    setEvaluation({ left: '?', right: '?', equation: '' });
+    setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
     setMessage('');
     setStartTime(null);
   }, []);
@@ -426,21 +793,35 @@ function GamePage() {
     const response = await fetch('/api/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: puzzle.dateIdentifier, equation: normalizedEquation }),
+      body: JSON.stringify({
+        date: puzzle.dateIdentifier,
+        equation: normalizedEquation,
+        mode: gameMode,
+        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
+      }),
     });
     const result = (await response.json()) as ValidationResponse;
     if (!result.valid) {
       setMessageTone('error');
       setMessage(result.errorMessage ?? 'That equation is not valid.');
+      setShakeActive(true);
+      setTimeout(() => setShakeActive(false), 500);
       return;
     }
 
     const seconds = startTime ? Math.max(1, Math.round((Date.now() - startTime) / 1000)) : 0;
+    const solvedTodayIdentifier = localDateIdentifier(new Date());
+    const solvedOnOtherDay = solvedTodayIdentifier !== puzzle.dateIdentifier;
     const solution: SavedSolution = {
       equation: normalizedEquation,
       timestamp: new Date().toISOString(),
       seconds,
       value: result.leftValue ?? evaluation.left,
+      mode: gameMode,
+      targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
+      difficulty: difficultyMode,
+      solvedOnOtherDay,
+      usedHint,
     };
     setSavedSolutions((current) => {
       const next = {
@@ -457,11 +838,296 @@ function GamePage() {
       difficulty: difficultyMode,
       platform: 'web',
       appVersion: webAppVersion,
+      mode: gameMode,
+      targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
     });
     clear();
     setMessageTone('success');
-    setMessage(`Solved. Both sides equal ${solution.value}.`);
-  }, [clear, difficultyMode, equation, evaluation.left, puzzle, startTime, todaySolutions]);
+    if (gameMode === 'double_equality') {
+      setMessage(`Solved. All sides equal ${solution.value}.`);
+    } else if (gameMode === 'single_expr') {
+      setMessage(`Solved. Expression equals ${solution.value}.`);
+    } else {
+      setMessage(`Solved. Both sides equal ${solution.value}.`);
+    }
+    setConfettiActive(true);
+    setTimeout(() => setConfettiActive(false), 4000);
+  }, [clear, difficultyMode, equation, evaluation.left, puzzle, startTime, todaySolutions, gameMode, targetValue]);
+
+  const applyHintStep = useCallback(
+    (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
+      if (!puzzle) return;
+
+      if (step === 1) {
+        const hasEquals = tokens.some((t) => t.value === '=');
+        if (!hasEquals && gameMode !== 'single_expr' && tokens.length > 0) {
+          const expectedCount = gameMode === 'double_equality' ? 2 : 1;
+          applyEditorEdit((currentTokens, currentSelection) => {
+            let updatedTokens = [...currentTokens];
+            let updatedSelection = { ...currentSelection };
+            for (let i = 0; i < expectedCount; i++) {
+              const edit = insertTokensAtSelection(updatedTokens, updatedSelection, [createOperatorToken('=')]);
+              updatedTokens = edit.tokens;
+              updatedSelection = edit.selection;
+            }
+            return { tokens: updatedTokens, selection: updatedSelection };
+          });
+        }
+      } else if (step === 2) {
+        const insertStr = gameMode === 'single_expr' ? data.step1 : data.step2;
+        const hintTokens = stringToEquationTokens(insertStr, puzzle.digits);
+        applyEditorEdit((currentTokens, currentSelection) => {
+          let updatedTokens = [...currentTokens];
+          let updatedSelection = { ...currentSelection };
+          const hasEqualsInEditor = updatedTokens.some((t) => t.value === '=');
+
+          if (gameMode === 'classic' || gameMode === 'double_equality') {
+            if (hasEqualsInEditor) {
+              return { tokens: currentTokens, selection: currentSelection };
+            }
+            // Avoid duplicate LHS entry by checking if currentTokens already match the hintTokens.
+            // If they do, insert '=' instead.
+            const normEquation = currentTokens.map(t => t.value).join('').replace(/\s+/g, '');
+            const normHint = insertStr.replace(/\s+/g, '');
+            if (normEquation !== '' && (normEquation.startsWith(normHint) || normHint.startsWith(normEquation))) {
+              return insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken('=')]);
+            }
+            return insertTokensAtSelection(currentTokens, currentSelection, hintTokens);
+          }
+
+          if (gameMode === 'target') {
+            if (!hasEqualsInEditor) {
+              const edit = insertTokensAtSelection(updatedTokens, updatedSelection, [createOperatorToken('=')]);
+              updatedTokens = edit.tokens;
+              updatedSelection = edit.selection;
+            }
+            return insertTokensAtSelection(updatedTokens, updatedSelection, hintTokens);
+          }
+
+          return insertTokensAtSelection(currentTokens, currentSelection, hintTokens);
+        });
+      } else if (step === 3) {
+        if (autocompleteIntervalRef.current) {
+          clearInterval(autocompleteIntervalRef.current);
+        }
+        setIsAutocompleting(true);
+        const targetTokens = stringToEquationTokens(data.solution, puzzle.digits);
+        const currentLength = tokens.length;
+        
+        let isMatchingPrefix = true;
+        for (let i = 0; i < currentLength; i++) {
+          if (!targetTokens[i] || targetTokens[i].value !== tokens[i].value) {
+            isMatchingPrefix = false;
+            break;
+          }
+        }
+
+        const startIdx = isMatchingPrefix ? currentLength : 0;
+        let index = startIdx;
+        const initialTokens = isMatchingPrefix ? [...tokens] : [];
+
+        setEditorState({
+          tokens: initialTokens,
+          selection: { kind: 'slot', index: initialTokens.length },
+        });
+
+        autocompleteIntervalRef.current = setInterval(() => {
+          if (index >= targetTokens.length) {
+            if (autocompleteIntervalRef.current) {
+              clearInterval(autocompleteIntervalRef.current);
+              autocompleteIntervalRef.current = null;
+            }
+            setIsAutocompleting(false);
+            setHintStep(0);
+            setHintData(null);
+            return;
+          }
+
+          const tokenToAdd = targetTokens[index];
+          if (tokenToAdd) {
+            setEditorState((prev) => {
+              const nextTokens = [...prev.tokens, tokenToAdd];
+              return {
+                tokens: nextTokens,
+                selection: { kind: 'slot', index: nextTokens.length },
+              };
+            });
+          }
+          index++;
+        }, 300);
+      }
+    },
+    [puzzle, tokens, gameMode, applyEditorEdit],
+  );
+
+  const getNextUsefulHintStep = useCallback((
+    currentStep: number,
+    data: { step1: string; step2: string; solution: string; balancingHint?: string; mathTip?: string }
+  ): number => {
+    const normalize = (str: string) => str.replace(/\s+/g, '').replace(/=+$/, '');
+    const normEquation = normalize(equation);
+
+    let step = currentStep;
+
+    // If step is 1, check if we should skip to 2
+    if (step === 1) {
+      if (gameMode === 'classic' || gameMode === 'double_equality') {
+        const isLHSComplete = (() => {
+          const normStep2 = normalize(data.step2);
+          return normEquation.startsWith(normStep2);
+        })();
+
+        if (isLHSComplete && Boolean(data.balancingHint)) {
+          // Do not skip! Step 1 will display the balancing hint.
+        } else {
+          // In classic/double equality, step 1 is the target value.
+          // If the user has already entered an equals sign, or is in Easy Mode and the LHS is evaluated,
+          // the target value is already known, so step 1 is redundant.
+          if (equation.includes('=') || (isEasyMode && evaluation.left !== '?')) {
+            step = 2;
+          }
+        }
+      } else if (gameMode === 'target' && equation.includes('=')) {
+        step = 2;
+      }
+    }
+
+    // If step is 2, check if we should skip to 3
+    if (step === 2) {
+      if (gameMode === 'classic' || gameMode === 'double_equality' || gameMode === 'single_expr') {
+        const normStep2 = normalize(data.step2);
+        if (normEquation.startsWith(normStep2)) {
+          const canShowClue = gameMode === 'classic' && Boolean(data.balancingHint);
+          if (!canShowClue) {
+            step = 3;
+          }
+        }
+      }
+    }
+
+    return step;
+  }, [equation, gameMode, isEasyMode, evaluation]);
+
+  const fetchHint = useCallback(async () => {
+    if (!puzzle) return;
+    setHintLoading(true);
+    try {
+      const query = new URLSearchParams({
+        date: puzzle.dateIdentifier,
+        mode: gameMode,
+        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : '',
+        prefix: equation,
+      });
+      const response = await fetch(`/api/hint?${query.toString()}`);
+      if (!response.ok) {
+        throw new Error('No solution found');
+      }
+      const data = (await response.json()) as { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string };
+      setHintData(data);
+      const hasEquals = equation.includes('=');
+      const startStep = (gameMode === 'target' && hasEquals) ? 2 : 1;
+      const initialStep = getNextUsefulHintStep(startStep, data);
+      
+      if (initialStep === 3 && !unlockedAutocompleteDates.has(puzzle.dateIdentifier)) {
+        setRewardModalAction({
+          actionName: 'reveal a full solution',
+          onSuccess: () => {
+            setUnlockedAutocompleteDates((prev) => {
+              const next = new Set(prev);
+              next.add(puzzle.dateIdentifier);
+              return next;
+            });
+            setHintStep(3);
+            applyHintStep(3, data);
+          },
+        });
+        setIsDeadEnd(false);
+        setUsedHint(true);
+      } else {
+        setHintStep(initialStep);
+        setIsDeadEnd(false);
+        setUsedHint(true);
+        applyHintStep(initialStep, data);
+      }
+    } catch {
+      setMessageTone('error');
+      if (equation.trim().length > 0) {
+        const errMsg = gameMode === 'single_expr'
+          ? 'Could not quickly find a solution with what is currently entered.'
+          : 'Could not quickly find a solution to balance the sides with what is currently entered.';
+        setMessage(errMsg);
+        setIsDeadEnd(true);
+      } else {
+        setMessage('Could not find any solutions for this puzzle.');
+      }
+    } finally {
+      setHintLoading(false);
+    }
+  }, [puzzle, gameMode, targetValue, equation, applyHintStep, getNextUsefulHintStep, unlockedAutocompleteDates]);
+
+  const handleHintClick = useCallback(() => {
+    if (hintStep === 0) {
+      void fetchHint();
+    } else {
+      let nextStep = Math.min(hintStep + 1, 3);
+      if (hintData) {
+        nextStep = getNextUsefulHintStep(nextStep, hintData);
+      }
+
+      if (nextStep === 3) {
+        if (isDeadEnd || !hintData || !hintData.solution) {
+          return;
+        }
+        if (puzzle && !unlockedAutocompleteDates.has(puzzle.dateIdentifier)) {
+          setRewardModalAction({
+            actionName: 'reveal a full solution',
+            onSuccess: () => {
+              setUnlockedAutocompleteDates((prev) => {
+                const next = new Set(prev);
+                next.add(puzzle.dateIdentifier);
+                return next;
+              });
+              setHintStep(3);
+              if (hintData) {
+                applyHintStep(3, hintData);
+              }
+            },
+          });
+        } else {
+          setHintStep(3);
+          if (hintData) {
+            applyHintStep(3, hintData);
+          }
+        }
+      } else {
+        setHintStep(nextStep);
+        if (hintData) {
+          applyHintStep(nextStep, hintData);
+        }
+      }
+    }
+  }, [hintStep, fetchHint, hintData, applyHintStep, puzzle, unlockedAutocompleteDates, isDeadEnd, getNextUsefulHintStep]);
+
+  const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
+    const solutionMode = sol.mode ?? gameMode;
+    const solutionTargetValue = sol.targetValue ?? targetValue;
+    const modeLabel =
+      solutionMode === 'classic'
+        ? 'Classic'
+        : solutionMode === 'double_equality'
+        ? 'Double Equality'
+        : solutionMode === 'target'
+        ? `Target (${solutionTargetValue})`
+        : `Single Expression (${solutionTargetValue})`;
+
+    const archiveNote = sol.solvedOnOtherDay ? ' (Archive)' : '';
+    const hintNote = sol.usedHint ? ' (with hints)' : '';
+    const difficultyLabel = sol.difficulty ? (sol.difficulty === 'hard' ? 'Hard' : 'Easy') : (difficultyMode === 'hard' ? 'Hard' : 'Easy');
+    const text = `Crackle Date 🧩 ${dateId}${archiveNote}\nMode: ${modeLabel}${hintNote}\nDifficulty: ${difficultyLabel}\nTime: ${formatTime(sol.seconds)}\nValue: ${sol.value}\nhttps://crackledate.com`;
+    void navigator.clipboard.writeText(text);
+    setMessageTone('success');
+    setMessage('Stats copied to clipboard!');
+  }, [gameMode, targetValue, difficultyMode]);
 
   const dateInputLabel = useMemo(() => {
     if (!puzzle) return 'Puzzle date';
@@ -473,35 +1139,36 @@ function GamePage() {
   }, []);
 
   const playPuzzle = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('game');
   }, []);
 
   const showSolutions = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('solutions');
   }, []);
 
   const showSettingsPage = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('settings');
   }, []);
 
   const showHowToPlay = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setShowHowToPlayDetailFirst(false);
     setActiveView('howToPlay');
   }, []);
 
   const showDetailedHowToPlay = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setShowHowToPlayDetailFirst(true);
     setActiveView('howToPlay');
+  }, []);
+
+  const closeTutorial = useCallback(() => {
+    localStorage.setItem(tutorialCompletedKey, 'true');
+    setTutorialActive(false);
+  }, []);
+
+  const restartTutorial = useCallback(() => {
+    localStorage.removeItem(tutorialCompletedKey);
+    setTutorialActive(true);
+    setActiveView('game');
   }, []);
 
   const clearBrowserData = useCallback(() => {
@@ -510,6 +1177,7 @@ function GamePage() {
 
     localStorage.removeItem(storageKey);
     localStorage.removeItem(playStartedKey);
+    localStorage.removeItem(tutorialCompletedKey);
     localStorage.removeItem(themePreferenceKey);
     localStorage.removeItem(difficultyModeKey);
     setSavedSolutions({});
@@ -518,15 +1186,13 @@ function GamePage() {
     setEditorState(emptyEditorState());
     setEvaluation({ left: '?', right: '?', equation: '' });
     setStartTime(null);
-    setIsPlaying(false);
+    setTutorialActive(true);
     setActiveView('game');
     setMessageTone('success');
     setMessage('Local data cleared.');
   }, []);
 
   const showCalendar = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('calendar');
   }, []);
 
@@ -536,12 +1202,30 @@ function GamePage() {
 
   const chooseCalendarDate = useCallback((dateIdentifier: string) => {
     setSelectedDate(dateIdentifier);
-    setActiveView('game');
   }, []);
 
+  const playCalendarDate = useCallback(() => {
+    const todayId = localDateIdentifier(new Date());
+    if (selectedDate > todayId && !unlockedFutureDates.has(selectedDate)) {
+      setRewardModalAction({
+        actionName: `play a puzzle in the future (${selectedDate})`,
+        onSuccess: () => {
+          setUnlockedFutureDates((prev) => {
+            const next = new Set(prev);
+            next.add(selectedDate);
+            return next;
+          });
+          setActiveView('game');
+        },
+      });
+    } else {
+      setActiveView('game');
+    }
+  }, [selectedDate, unlockedFutureDates]);
+
   const chooseToday = useCallback(() => {
-    chooseCalendarDate(localDateIdentifier(new Date()));
-  }, [chooseCalendarDate]);
+    setSelectedDate(localDateIdentifier(new Date()));
+  }, []);
 
   const openLogin = useCallback(() => {
     setAuthModalMode(authUser ? 'account' : 'login');
@@ -599,8 +1283,8 @@ function GamePage() {
 
   return (
     <main
-      className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'} ${
-        isPlaying && activeView === 'game' ? 'game-shell' : ''
+      className={`app-shell play-shell ${
+        activeView === 'game' ? 'game-shell' : ''
       } ${activeView === 'calendar' ? 'calendar-shell detail-shell' : ''} ${
         activeView === 'solutions' ? 'solutions-shell detail-shell' : ''
       } ${
@@ -609,54 +1293,56 @@ function GamePage() {
         activeView === 'howToPlay' ? 'how-to-play-shell detail-shell' : ''
       }`}
     >
-      {isPlaying && (
-        <header className="top-bar game-top-bar">
-          <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
-            <img src="/app-icon.png" alt="" />
-          </button>
-          <nav className="site-nav" aria-label="Site">
+      <header className="top-bar game-top-bar">
+        <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
+          <img src="/app-icon.png" alt="" />
+        </button>
+        <nav className="site-nav" aria-label="Site">
+          {activeView === 'game' && !isEquationCorrect && (
             <ToolbarButton
-              label={puzzle?.displayDate ?? 'Calendar'}
-              icon={<CalendarIcon />}
-              isExpanded={activeView === 'calendar'}
-              onClick={activeView === 'calendar' ? showGame : showCalendar}
-              ariaLabel={dateInputLabel}
+              label="Hint"
+              icon={<HintIcon />}
+              className={`toolbar-hint-button${shakeHintButton ? ' shake' : ''}`}
+              isExpanded={true}
+              onClick={handleHintClick}
+              disabled={hintLoading}
             />
-            <ToolbarButton
-              label="Stats"
-              icon={<StatsIcon />}
-              isExpanded={activeView === 'solutions'}
-              onClick={activeView === 'solutions' ? showGame : showSolutions}
-            />
-            <ToolbarButton
-              label="Settings"
-              icon={<SettingsIcon />}
-              isExpanded={activeView === 'settings'}
-              onClick={activeView === 'settings' ? showGame : showSettingsPage}
-            />
-            <ToolbarButton
-              label={themePreference === 'dark' ? 'Light' : 'Dark'}
-              icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
-              className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
-              isExpanded={false}
-              onClick={toggleThemePreference}
-              ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
-            />
-          </nav>
-        </header>
-      )}
+          )}
+          <ToolbarButton
+            label={puzzle?.displayDate ?? 'Calendar'}
+            icon={<CalendarIcon />}
+            isExpanded={activeView === 'calendar'}
+            onClick={activeView === 'calendar' ? showGame : showCalendar}
+            ariaLabel={dateInputLabel}
+          />
+          <ToolbarButton
+            label="Stats"
+            icon={<StatsIcon />}
+            isExpanded={activeView === 'solutions'}
+            onClick={activeView === 'solutions' ? showGame : showSolutions}
+          />
+          <ToolbarButton
+            label="Settings"
+            icon={<SettingsIcon />}
+            isExpanded={activeView === 'settings'}
+            onClick={activeView === 'settings' ? showGame : showSettingsPage}
+          />
+          <ToolbarButton
+            label={themePreference === 'dark' ? 'Light' : 'Dark'}
+            icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
+            className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
+            isExpanded={false}
+            onClick={toggleThemePreference}
+            ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
+          />
+        </nav>
+      </header>
 
-      {!isPlaying && (
-        <StartPage
-          onPlay={playPuzzle}
-          onLogin={openLogin}
-          authUser={authUser}
-        />
-      )}
+      {confettiActive && <Confetti />}
 
-      {isPlaying && activeView === 'game' && (
+      {activeView === 'game' && (
         <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
-          <div className="expression-area">
+          <div className={`expression-area ${shakeActive ? 'shake' : ''}`}>
             <EquationEditor
               tokens={tokens}
               selection={selection}
@@ -670,17 +1356,98 @@ function GamePage() {
               onInsertValue={insertOperator}
               onShowDetailedInstructions={showDetailedHowToPlay}
               selectorMoveRef={selectorMoveRef}
+              nextDigit={nextDigit}
+              onAppendDigit={appendDigit}
+              isAutocompleting={isAutocompleting}
             />
 
             <EquationHelperRow
               showHelperValues={isEasyMode}
               leftValue={<RepeatingDecimalValue value={evaluation.left || '?'} />}
+              middleValue={<RepeatingDecimalValue value={evaluation.middle || '?'} />}
               rightValue={<RepeatingDecimalValue value={evaluation.right || '?'} />}
               onMove={moveSelectorFromControls}
+              gameMode={gameMode}
+              targetValue={(gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined}
             />
           </div>
 
           <div className="control-area">
+
+            {hintStep > 0 && hintData && (
+              <div className="hint-panel" aria-live="polite">
+                <div className="hint-header">
+                  <strong>Hint (Step {hintStep}/3)</strong>
+                  <button
+                    type="button"
+                    className="close-hint"
+                    onClick={() => {
+                      setHintStep(0);
+                      setHintData(null);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="hint-body">
+                  {isDeadEnd ? (
+                    isEquationCorrect ? (
+                      <p className="dead-end-message success-message">
+                        🎉 Equation is correct! Click Submit to save your solution.
+                      </p>
+                    ) : (
+                      <p className="dead-end-message">
+                        ⚠️ {gameMode === 'single_expr' ? (
+                          <>Could not quickly find a solution with what is currently entered. Try backspacing or clearing.</>
+                        ) : (
+                          <>Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.</>
+                        )}
+                      </p>
+                    )
+                  ) : (
+                    <>
+                      {hintStep === 1 && (
+                        <p>
+                          {gameMode === 'target' || gameMode === 'single_expr' ? (
+                            <>Left side could start with: <code>{hintData.step1}</code></>
+                          ) : isLHSCompleteForHint && hintData.balancingHint ? (
+                            <>{hintData.balancingHint}</>
+                          ) : (
+                            <>Target value of all parts is: <strong>{hintData.step1}</strong></>
+                          )}
+                        </p>
+                      )}
+                      {hintStep === 2 && (
+                        <p>
+                          {gameMode === 'single_expr' ? (
+                            <>Expression is almost complete: <code>{hintData.step2}</code></>
+                          ) : gameMode === 'target' ? (
+                            <>Right side could start with: <code>{hintData.step2}</code></>
+                          ) : gameMode === 'double_equality' ? (
+                            <>First two parts could be: <code>{hintData.step2}</code></>
+                          ) : isLHSCompleteForHint && hintData.balancingHint ? (
+                            <>{hintData.mathTip || "Tip: remember that x^0 = 1"}</>
+                          ) : (
+                            <>Left side could be: <code>{hintData.step2}</code></>
+                          )}
+                        </p>
+                      )}
+                      {hintStep === 3 && (
+                        <p>
+                          A possible solution: <code>{hintData.step3}</code>
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                {hintStep < 3 && !isDeadEnd && (
+                  <button type="button" className="next-hint-button" onClick={handleHintClick}>
+                    Next Hint
+                  </button>
+                )}
+              </div>
+            )}
+
             {puzzle && (
               <DigitRail
                 digits={puzzle.digits}
@@ -688,6 +1455,7 @@ function GamePage() {
                 usedDigitIndices={usedDigitIndices}
                 activeIndex={nextDigitIndex}
                 onActiveDigitClick={nextDigit !== null ? appendDigit : undefined}
+                glowActiveDigit={mappedGlowKey !== null && /[0-9]/.test(mappedGlowKey)}
               />
             )}
 
@@ -698,6 +1466,7 @@ function GamePage() {
                   type="button"
                   onClick={() => insertOperator(value)}
                   data-operator-value={value}
+                  className={mappedGlowKey === value ? 'glow' : ''}
                 >
                   {label}
                 </button>
@@ -705,13 +1474,15 @@ function GamePage() {
               <button className="danger" type="button" onClick={clear}>
                 C
               </button>
-              <button className="warning" type="button" onClick={backspace} aria-label="Backspace">
+              <button className={`warning ${mappedGlowKey === 'Backspace' ? 'glow' : ''}`.trim()} type="button" onClick={backspace} aria-label="Backspace">
                 ⌫
               </button>
-              <button className="wide" type="button" onClick={() => insertText('=')}>
-                =
-              </button>
-              <button className="submit" type="button" onClick={submit}>
+              {gameMode !== 'single_expr' && (
+                <button className={`wide ${mappedGlowKey === '=' ? 'glow' : ''}`.trim()} type="button" onClick={() => insertText('=')}>
+                  =
+                </button>
+              )}
+              <button className={gameMode === 'single_expr' ? 'wide submit' : 'submit'} type="button" onClick={submit}>
                 Submit
               </button>
             </div>
@@ -721,42 +1492,51 @@ function GamePage() {
 
       <StatusToast message={feedbackMessage} tone={feedbackTone} />
 
-      {isPlaying && activeView === 'calendar' && (
+      {activeView === 'calendar' && (
         <CalendarPage
           selectedDate={selectedDate}
           savedSolutionDates={savedSolutionDates}
           onSelectedDateChange={chooseCalendarDate}
           onToday={chooseToday}
+          savedSolutions={savedSolutions}
+          onShare={shareSolution}
+          onPlay={playCalendarDate}
         />
       )}
 
-      {isPlaying && activeView === 'solutions' && (
+      {activeView === 'solutions' && (
         <SolutionsPage
-          displayDate={puzzle?.displayDate ?? 'Selected date'}
-          solutions={todaySolutions}
           badges={badges}
+          savedSolutions={savedSolutions}
         />
       )}
 
-      {isPlaying && activeView === 'settings' && (
+      {activeView === 'settings' && (
         <SettingsPanel
           themePreference={themePreference}
           difficultyMode={difficultyMode}
+          gameMode={gameMode}
           authUser={authUser}
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
+          onGameModeChange={setGameMode}
           onLogin={openLogin}
           onLogout={handleLogout}
           onClearData={clearBrowserData}
           onShowHowToPlay={showHowToPlay}
+          onRestartTutorial={restartTutorial}
         />
       )}
 
-      {isPlaying && activeView === 'howToPlay' && (
-        <HowToPlayStartView
+      {activeView === 'howToPlay' && (
+        <HowToPlayView
           initiallyShowDetail={showHowToPlayDetailFirst}
           onPlay={playPuzzle}
         />
+      )}
+
+      {tutorialActive && activeView === 'game' && (
+        <GuidedTutorial onClose={closeTutorial} />
       )}
 
       {authModalMode && (
@@ -769,6 +1549,17 @@ function GamePage() {
           onAuthenticated={handleAuthenticated}
           onLogout={handleLogout}
           onClose={() => setAuthModalMode(null)}
+        />
+      )}
+
+      {rewardModalAction && (
+        <RewardModal
+          actionName={rewardModalAction.actionName}
+          onSuccess={() => {
+            rewardModalAction.onSuccess();
+            setRewardModalAction(null);
+          }}
+          onClose={() => setRewardModalAction(null)}
         />
       )}
 
@@ -1008,6 +1799,105 @@ function AuthModal({
   );
 }
 
+function RewardModal({
+  actionName,
+  onSuccess,
+  onClose,
+}: {
+  actionName: string;
+  onSuccess: () => void;
+  onClose: () => void;
+}) {
+  const [status, setStatus] = useState<'ready' | 'playing' | 'completed'>('ready');
+  const [timeLeft, setTimeLeft] = useState(5);
+
+  useEffect(() => {
+    if (status !== 'playing') return;
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setStatus('completed');
+          setTimeout(() => {
+            onSuccess();
+          }, 800);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [status, onSuccess]);
+
+  const startAd = () => {
+    setStatus('playing');
+    setTimeLeft(5);
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="auth-modal reward-modal" role="dialog" aria-modal="true" aria-labelledby="reward-title">
+        <button
+          className="modal-close"
+          type="button"
+          aria-label="Close"
+          onClick={onClose}
+          disabled={status === 'playing'}
+        >
+          x
+        </button>
+
+        <h2 id="reward-title">Unlock Feature</h2>
+        <p className="reward-description">
+          To {actionName}, please support Crackle Date by watching a short 5-second sponsor video.
+        </p>
+
+        {status === 'ready' && (
+          <div className="reward-actions-row">
+            <button className="auth-primary reward-start-btn" type="button" onClick={startAd}>
+              Watch Video (5s)
+            </button>
+            <button className="auth-secondary reward-cancel-btn" type="button" onClick={onClose}>
+              No thanks
+            </button>
+          </div>
+        )}
+
+        {status === 'playing' && (
+          <div className="mock-ad-container">
+            <div className="mock-ad-player">
+              <div className="mock-ad-gradient-bg"></div>
+              <div className="mock-ad-brand">
+                <span className="mock-ad-badge">Sponsor</span>
+                <h3>Glow Puzzle Pro</h3>
+                <p>The ultimate color matching challenge!</p>
+              </div>
+              <div className="mock-ad-visual">
+                <div className="mock-ad-spinner"></div>
+              </div>
+              <div className="mock-ad-timer">
+                Unlocking in {timeLeft}s...
+              </div>
+            </div>
+            <div className="mock-ad-progress-bar">
+              <div className="mock-ad-progress" style={{ width: `${(5 - timeLeft) * 20}%` }}></div>
+            </div>
+          </div>
+        )}
+
+        {status === 'completed' && (
+          <div className="reward-success-state">
+            <span className="reward-success-icon">✓</span>
+            <p>Reward Granted! Unlocking...</p>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
 function ImportPrompt({
   count,
   onImport,
@@ -1059,24 +1949,21 @@ function StatsIcon() {
 }
 
 function SolutionsPage({
-  displayDate,
-  solutions,
   badges,
+  savedSolutions,
 }: {
-  displayDate: string;
-  solutions: SavedSolution[];
   badges: SolutionBadge[];
+  savedSolutions: StoredSolutions;
 }) {
   return (
     <section className="solutions-page" aria-labelledby="solutions-page-title">
       <div className="solutions-page-header">
         <div>
-          <h1 id="solutions-page-title">Saved Solutions</h1>
-          <p>{displayDate}</p>
+          <h1 id="solutions-page-title">Stats</h1>
         </div>
       </div>
+      <StatsDashboard savedSolutions={savedSolutions} />
       <BadgesSection badges={badges} />
-      <SolutionsList solutions={solutions} />
     </section>
   );
 }
@@ -1120,23 +2007,53 @@ function formatBadgeEarnedDate(dateIdentifier: string | undefined): string {
   return fullDateFormatter.format(new Date(year, month - 1, day));
 }
 
-function SolutionsList({ solutions }: { solutions: SavedSolution[] }) {
+function SolutionsList({ solutions, onShare }: { solutions: SavedSolution[]; onShare?: (sol: SavedSolution) => void }) {
   if (solutions.length === 0) {
     return <p>No solutions saved for this date yet.</p>;
   }
 
   return (
-    <ol>
-      {solutions.map((solution) => (
-        <li key={`${solution.equation}-${solution.timestamp}`}>
-          <strong>
-            <MathEquation equation={solution.equation} className="solution-equation" />
-          </strong>
-          <span>
-            {formatTime(solution.seconds)} · value <RepeatingDecimalValue value={solution.value} />
-          </span>
-        </li>
-      ))}
+    <ol className="solutions-list">
+      {solutions.map((solution) => {
+        const solutionMode = solution.mode ?? 'classic';
+        const modeLabel =
+          solutionMode === 'classic'
+            ? 'Classic'
+            : solutionMode === 'double_equality'
+            ? 'Double Equality'
+            : solutionMode === 'target'
+            ? `Target (${solution.targetValue ?? '?'})`
+            : `Single Expr (${solution.targetValue ?? '?'})`;
+
+        return (
+          <li key={`${solution.equation}-${solution.timestamp}`}>
+            <div className="solution-row-content">
+              <strong>
+                <MathEquation equation={solution.equation} className="solution-equation" />
+              </strong>
+              <span className="solution-meta-row">
+                <span className="solution-mode">{modeLabel}</span>
+                <span className="solution-divider">·</span>
+                <span>{formatTime(solution.seconds)}</span>
+                <span className="solution-divider">·</span>
+                <span className="solution-value-label">value <RepeatingDecimalValue value={solution.value} /></span>
+                {solution.solvedOnOtherDay && <span className="solution-badge archive-badge">Archive</span>}
+                {solution.usedHint && <span className="solution-badge hint-badge">Used Hint</span>}
+                {solution.difficulty && (
+                  <span className={`solution-badge difficulty-${solution.difficulty}`}>
+                    {solution.difficulty}
+                  </span>
+                )}
+              </span>
+            </div>
+            {onShare && (
+              <button className="share-row-button" type="button" onClick={() => onShare(solution)} aria-label="Share solution">
+                <ShareIcon />
+              </button>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -1212,6 +2129,7 @@ function ToolbarButton({
   onClick,
   ariaLabel = label,
   className = '',
+  disabled = false,
 }: {
   label: string;
   icon: React.ReactNode;
@@ -1219,6 +2137,7 @@ function ToolbarButton({
   onClick: () => void;
   ariaLabel?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -1228,10 +2147,21 @@ function ToolbarButton({
       aria-pressed={isExpanded}
       data-expanded={isExpanded}
       onClick={onClick}
+      disabled={disabled}
     >
       {icon}
       <span>{label}</span>
     </button>
+  );
+}
+
+function HintIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5.5 5.5 0 0 0 7 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5" />
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+    </svg>
   );
 }
 
@@ -1303,66 +2233,12 @@ function appendValueSegment(segments: ValueSegment[], text: string, isRepeating:
   segments.push({ text, isRepeating });
 }
 
-function StartPage({
-  onPlay,
-  onLogin,
-  authUser,
-}: {
-  onPlay: () => void;
-  onLogin: () => void;
-  authUser: AuthUser | null;
-}) {
-  const [showInstructions, setShowInstructions] = useState(false);
-
-  if (showInstructions) {
-    return (
-      <HowToPlayStartView
-        onPlay={onPlay}
-      />
-    );
-  }
-
-  return (
-    <section className="start-panel" aria-labelledby="start-title">
-      <div className="start-card">
-        <div className="start-copy">
-          <img className="start-icon" src="/app-icon.png" alt="" />
-          <h1 id="start-title">Crackle Date</h1>
-          <p className="start-tagline">
-            Crack the date into equal values{' '}
-            <br />
-            with Math!
-          </p>
-        </div>
-
-        <div className="start-actions" aria-label="Start actions">
-          <button
-            className="start-action-button"
-            type="button"
-            onClick={() => setShowInstructions(true)}
-          >
-            How to Play
-          </button>
-          <button className="start-action-button" type="button" onClick={onLogin}>
-            {authUser ? 'Account' : 'Log in'}
-          </button>
-          <button className="start-action-button play-button" type="button" onClick={onPlay}>
-            Play
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function HowToPlayStartView({
-  initiallyShowDetail = false,
+function HowToPlayView({
   onPlay,
 }: {
   initiallyShowDetail?: boolean;
   onPlay: () => void;
 }) {
-  const [showDetail, setShowDetail] = useState(initiallyShowDetail);
   const [detailIndex, setDetailIndex] = useState(0);
   const detailCard = HOW_TO_PLAY_DETAIL_CARDS[detailIndex];
 
@@ -1376,98 +2252,56 @@ function HowToPlayStartView({
     setDetailIndex((current) => (current + 1) % HOW_TO_PLAY_DETAIL_CARDS.length);
   }, []);
 
-  if (showDetail && detailCard) {
-    return (
-      <section className="start-panel" aria-labelledby="how-to-play-detail-title">
-        <div className="how-to-play-card detailed-how-to-play-card">
-          <div className="how-to-play-header">
-            <img className="start-icon" src="/app-icon.png" alt="" />
-            <div>
-              <p className="document-kicker">Crackle Date</p>
-              <h1 id="how-to-play-detail-title">Cracked Instructions</h1>
-            </div>
-          </div>
-
-          <div className="how-to-play-actions">
-            <button
-              className="start-action-button secondary-button"
-              type="button"
-              onClick={() => setShowDetail(false)}
-            >
-              Quick Guide
-            </button>
-            <button className="start-action-button play-button" type="button" onClick={onPlay}>
-              Play
-            </button>
-          </div>
-
-          <article className="how-to-play-detail-card" aria-live="polite">
-            <img src={detailCard.imageSrc} alt={detailCard.imageAlt} />
-            <div className="how-to-play-detail-note">
-              <p className="how-to-play-detail-count">
-                {detailIndex + 1} of {HOW_TO_PLAY_DETAIL_CARDS.length}
-              </p>
-              <h2>{detailCard.title}</h2>
-              <p>{detailCard.note}</p>
-            </div>
-          </article>
-
-          <div className="how-to-play-detail-controls" aria-label="Detailed instruction controls">
-            <button
-              className="selector-arrow-button"
-              type="button"
-              onClick={goToPreviousDetail}
-              aria-label="Previous instruction card"
-            >
-              ←
-            </button>
-            <button
-              className="selector-arrow-button"
-              type="button"
-              onClick={goToNextDetail}
-              aria-label="Next instruction card"
-            >
-              →
-            </button>
-          </div>
-
-        </div>
-      </section>
-    );
+  if (!detailCard) {
+    return null;
   }
 
   return (
-    <section className="start-panel" aria-labelledby="how-to-play-title">
-      <div className="how-to-play-card">
+    <section className="start-panel" aria-labelledby="how-to-play-detail-title">
+      <div className="how-to-play-card detailed-how-to-play-card">
         <div className="how-to-play-header">
           <img className="start-icon" src="/app-icon.png" alt="" />
           <div>
             <p className="document-kicker">Crackle Date</p>
-            <h1 id="how-to-play-title">How to Play</h1>
+            <h1 id="how-to-play-detail-title">Cracked Instructions</h1>
           </div>
         </div>
 
         <div className="how-to-play-actions">
-          <button className="start-action-button secondary-button" type="button" onClick={() => setShowDetail(true)}>
-            Cracked Instructions
-          </button>
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
-            Play
+            Back to Game
           </button>
         </div>
 
-        <ol className="how-to-play-list">
-          {HOW_TO_PLAY_SECTIONS.map((section) => (
-            <li className="how-to-play-step" key={section.title}>
-              <strong>{section.title}</strong>
-              <ul>
-                {section.items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </li>
-          ))}
-        </ol>
+        <article className="how-to-play-detail-card" aria-live="polite">
+          <img src={detailCard.imageSrc} alt={detailCard.imageAlt} />
+          <div className="how-to-play-detail-note">
+            <p className="how-to-play-detail-count">
+              {detailIndex + 1} of {HOW_TO_PLAY_DETAIL_CARDS.length}
+            </p>
+            <h2>{detailCard.title}</h2>
+            <p>{detailCard.note}</p>
+          </div>
+        </article>
+
+        <div className="how-to-play-detail-controls" aria-label="Detailed instruction controls">
+          <button
+            className="selector-arrow-button"
+            type="button"
+            onClick={goToPreviousDetail}
+            aria-label="Previous instruction card"
+          >
+            ←
+          </button>
+          <button
+            className="selector-arrow-button"
+            type="button"
+            onClick={goToNextDetail}
+            aria-label="Next instruction card"
+          >
+            →
+          </button>
+        </div>
 
       </div>
     </section>
@@ -1479,11 +2313,17 @@ function CalendarPage({
   savedSolutionDates,
   onSelectedDateChange,
   onToday,
+  savedSolutions,
+  onShare,
+  onPlay,
 }: {
   selectedDate: string;
   savedSolutionDates: ReadonlySet<string>;
   onSelectedDateChange: (date: string) => void;
   onToday: () => void;
+  savedSolutions: StoredSolutions;
+  onShare: (sol: SavedSolution, dateId: string) => void;
+  onPlay: () => void;
 }) {
   const selectedDateObject = useMemo(() => dateFromIdentifier(selectedDate), [selectedDate]);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(selectedDateObject));
@@ -1525,6 +2365,16 @@ function CalendarPage({
           savedSolutionDates={savedSolutionDates}
           onSelectedDateChange={onSelectedDateChange}
         />
+      </div>
+
+      <div className="calendar-equations-section">
+        <div className="calendar-equations-header">
+          <h2>Equations for {formatBadgeEarnedDate(selectedDate)}</h2>
+          <button className="play-date-button" type="button" onClick={onPlay}>
+            Play this Date
+          </button>
+        </div>
+        <SolutionsList solutions={savedSolutions[selectedDate] ?? []} onShare={(sol) => onShare(sol, selectedDate)} />
       </div>
     </section>
   );
@@ -1582,12 +2432,14 @@ function DigitRail({
   usedDigitIndices = emptyDigitIndices,
   activeIndex = null,
   onActiveDigitClick,
+  glowActiveDigit = false,
 }: {
   digits: number[];
   delimiterPositions: number[];
   usedDigitIndices?: ReadonlySet<number>;
   activeIndex?: number | null;
   onActiveDigitClick?: () => void;
+  glowActiveDigit?: boolean;
 }) {
   const delimiters = new Set(delimiterPositions);
   return (
@@ -1596,7 +2448,7 @@ function DigitRail({
         <React.Fragment key={`${digit}-${index}`}>
           {index === activeIndex && onActiveDigitClick ? (
             <button
-              className={digitClassName(index, usedDigitIndices, activeIndex)}
+              className={`${digitClassName(index, usedDigitIndices, activeIndex)} ${glowActiveDigit ? 'glow' : ''}`.trim()}
               type="button"
               onClick={onActiveDigitClick}
               aria-label={`Use current digit ${digit}`}
@@ -1622,6 +2474,9 @@ function EquationEditor({
   onInsertValue,
   onShowDetailedInstructions,
   selectorMoveRef,
+  nextDigit,
+  onAppendDigit,
+  isAutocompleting = false,
 }: {
   tokens: EquationToken[];
   selection: EditorSelection;
@@ -1630,6 +2485,9 @@ function EquationEditor({
   onInsertValue: (value: string) => void;
   onShowDetailedInstructions: () => void;
   selectorMoveRef?: React.MutableRefObject<SelectorMoveHandler | null>;
+  nextDigit?: number | null;
+  onAppendDigit?: () => void;
+  isAutocompleting?: boolean;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const normalizedSelection = normalizeEditorSelection(selection, tokens.length);
@@ -1726,6 +2584,11 @@ function EquationEditor({
           onInsertValue(value);
           return;
         }
+        if (nextDigit !== undefined && nextDigit !== null && onAppendDigit && event.key === String(nextDigit)) {
+          event.preventDefault();
+          onAppendDigit();
+          return;
+        }
       }
 
       if (event.key !== 'Backspace') return;
@@ -1736,6 +2599,8 @@ function EquationEditor({
       onBackspace,
       onInsertValue,
       moveSelector,
+      nextDigit,
+      onAppendDigit,
     ],
   );
 
@@ -1753,7 +2618,14 @@ function EquationEditor({
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Backspace' && keyboardInsertableOperators[event.key] === undefined) {
+      const isDigitMatch = nextDigit !== undefined && nextDigit !== null && event.key === String(nextDigit);
+      if (
+        event.key !== 'ArrowLeft' &&
+        event.key !== 'ArrowRight' &&
+        event.key !== 'Backspace' &&
+        keyboardInsertableOperators[event.key] === undefined &&
+        !isDigitMatch
+      ) {
         return;
       }
 
@@ -1773,13 +2645,13 @@ function EquationEditor({
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
-  }, [handleEditorKey, isEditableTarget]);
+  }, [handleEditorKey, isEditableTarget, nextDigit]);
 
   if (tokens.length === 0) {
     return (
       <div
         ref={editorRef}
-        className="equation-box empty"
+        className={`equation-box empty ${isAutocompleting ? 'autocompleting' : ''}`}
         aria-label="Equation input"
         data-testid="equation-editor"
         tabIndex={0}
@@ -1798,7 +2670,7 @@ function EquationEditor({
   return (
     <div
       ref={editorRef}
-      className="equation-box"
+      className={`equation-box ${isAutocompleting ? 'autocompleting' : ''}`}
       aria-label="Equation input"
       data-testid="equation-editor"
       tabIndex={0}
@@ -2269,6 +3141,64 @@ function createOperatorToken(value: string, role?: EquationToken['role']): Equat
 
 function createDigitToken(value: number, digitIndex: number): EquationToken {
   return { id: createTokenId(), value: String(value), digitIndex };
+}
+
+function stringToEquationTokens(s: string, digits: number[]): EquationToken[] {
+  const tokens: EquationToken[] = [];
+  const usedIndices = new Set<number>();
+  
+  const operatorMap: Record<string, string> = {
+    '+': '+',
+    '-': '-',
+    '*': '×',
+    '×': '×',
+    '/': '÷',
+    '÷': '÷',
+    '^': '^',
+    '√': '√',
+    '!': '!',
+    '|': '|',
+    '(': '(',
+    ')': ')',
+    '=': '=',
+  };
+
+  for (let i = 0; i < s.length; i++) {
+    const char = s[i];
+    if (/[0-9]/.test(char)) {
+      const val = Number(char);
+      let foundIndex = -1;
+      for (let d = 0; d < digits.length; d++) {
+        if (digits[d] === val && !usedIndices.has(d)) {
+          foundIndex = d;
+          break;
+        }
+      }
+      if (foundIndex !== -1) {
+        usedIndices.add(foundIndex);
+        tokens.push({
+          id: createTokenId(),
+          value: char,
+          digitIndex: foundIndex,
+        });
+      } else {
+        tokens.push({
+          id: createTokenId(),
+          value: char,
+        });
+      }
+    } else if (operatorMap[char] !== undefined) {
+      const isPipe = char === '|';
+      const pipeCount = tokens.filter((t) => t.value === '|').length;
+      tokens.push({
+        id: createTokenId(),
+        value: operatorMap[char],
+        role: isPipe ? (pipeCount % 2 === 0 ? 'absoluteOpen' : 'absoluteClose') : undefined,
+      });
+    }
+  }
+
+  return tokens;
 }
 
 function tokensToEquation(tokens: EquationToken[]): string {

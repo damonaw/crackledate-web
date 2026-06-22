@@ -356,7 +356,7 @@ function GamePage() {
     onSuccess: () => void;
   } | null>(null);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
-  const autocompleteIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const autocompleteIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isAutocompleting, setIsAutocompleting] = useState(false);
 
   const { tokens, selection } = editorState;

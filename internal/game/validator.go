@@ -267,10 +267,10 @@ func readableError(err error) string {
 	switch {
 	case strings.Contains(message, errNumberLarge.Error()):
 		return "Calculated number is too large"
+	case strings.Contains(message, errNonRealResult.Error()):
+		return "Operation is outside supported real-number math"
 	case strings.Contains(strings.ToLower(message), "invalid number"):
 		return "Numbers cannot start with zero"
-	case strings.Contains(strings.ToLower(message), "imaginary"):
-		return "Result is an imaginary number"
 	case strings.Contains(strings.ToLower(message), "division by zero"):
 		return "Cannot divide by zero"
 	default:

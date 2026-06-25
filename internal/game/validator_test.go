@@ -203,6 +203,24 @@ func TestRunningValuesStillRejectsExtremelyLargeExponent(t *testing.T) {
 	}
 }
 
+func TestValidateEquationRejectsNonRealMathWithGenericUnsupportedResultCopy(t *testing.T) {
+	values := RunningValues("√(-1)=")
+	response := ValidateEquation("√(-1)=1", []int{1, 1}, "", "")
+
+	if values.Left != "?" {
+		t.Fatalf("values.Left = %q", values.Left)
+	}
+	if values.ErrorMessage != "Operation is outside supported real-number math" {
+		t.Fatalf("values.ErrorMessage = %q", values.ErrorMessage)
+	}
+	if response.Valid {
+		t.Fatal("expected invalid equation")
+	}
+	if response.ErrorMessage != "Operation is outside supported real-number math" {
+		t.Fatalf("response.ErrorMessage = %q", response.ErrorMessage)
+	}
+}
+
 func TestValidateDoubleEquality(t *testing.T) {
 	response := ValidateEquation("6/(2+0!)=2-0=√(|2-6|)", []int{6, 2, 0, 2, 0, 2, 6}, "double_equality", "")
 	if !response.Valid {

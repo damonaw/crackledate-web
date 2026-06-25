@@ -19,6 +19,7 @@ export function SettingsPanel({
   onClearData,
   onShowHowToPlay,
   onPractice = () => undefined,
+  onShowRules = () => undefined,
   onRestartTutorial = () => undefined,
 }: {
   themePreference: ThemePreference;
@@ -33,6 +34,7 @@ export function SettingsPanel({
   onClearData: () => void;
   onShowHowToPlay: () => void;
   onPractice?: () => void;
+  onShowRules?: () => void;
   onRestartTutorial?: () => void;
 }) {
   return (
@@ -124,6 +126,9 @@ export function SettingsPanel({
         </button>
         <button className="settings-link-button" type="button" onClick={onPractice}>
           Practice
+        </button>
+        <button className="settings-link-button" type="button" onClick={onShowRules}>
+          Rules
         </button>
         <button className="settings-link-button" type="button" onClick={onRestartTutorial}>
           Restart Tutorial

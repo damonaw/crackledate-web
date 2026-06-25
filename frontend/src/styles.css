@@ -826,6 +826,53 @@ a {
   gap: 8px;
 }
 
+.written-rules-card {
+  width: min(560px, 100%);
+}
+
+.written-rules-intro {
+  margin: 0;
+  color: var(--ios-secondary-label);
+  font-size: 0.94rem;
+  line-height: 1.4;
+}
+
+.written-rules-list {
+  display: grid;
+  gap: 10px;
+}
+
+.written-rule-section {
+  border: 1px solid var(--ios-separator);
+  border-radius: 14px;
+  background: var(--ios-secondary-background);
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+}
+
+.written-rule-section h2 {
+  margin: 0;
+  color: var(--ios-label);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.written-rule-section ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.written-rule-section li {
+  color: var(--ios-secondary-label);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.written-rule-section li + li {
+  margin-top: 5px;
+}
+
 .how-to-play-detail-card {
   border: 1px solid var(--ios-separator);
   border-radius: 14px;
@@ -3386,4 +3433,3 @@ a {
     transform: scale(1.05) rotate(0deg);
   }
 }
-

@@ -33,6 +33,7 @@ import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayConte
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
 import { practiceRound, practiceSuccessMessage } from './practiceRound';
+import { RULES_SECTIONS } from './rulesContent';
 import { savedSolutionDateSet } from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
 import { solutionBadges, type SolutionBadge } from './solutionBadges';
@@ -325,7 +326,7 @@ function GamePage() {
     const playedBefore = localStorage.getItem(playStartedKey) === 'true';
     return !(completed || playedBefore);
   });
-  const [activeView, setActiveView] = useState<'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
+  const [activeView, setActiveView] = useState<'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules'>(
     'game',
   );
   const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
@@ -1247,6 +1248,10 @@ function GamePage() {
     setActiveView('practice');
   }, [clear]);
 
+  const showRules = useCallback(() => {
+    setActiveView('rules');
+  }, []);
+
   const showSolutions = useCallback(() => {
     setActiveView('solutions');
   }, []);
@@ -1398,6 +1403,8 @@ function GamePage() {
         activeView === 'settings' ? 'settings-shell detail-shell' : ''
       } ${
         activeView === 'howToPlay' ? 'how-to-play-shell detail-shell' : ''
+      } ${
+        activeView === 'rules' ? 'how-to-play-shell detail-shell' : ''
       }`}
     >
       <header className="top-bar game-top-bar">
@@ -1659,6 +1666,7 @@ function GamePage() {
           onClearData={clearBrowserData}
           onShowHowToPlay={showHowToPlay}
           onPractice={showPractice}
+          onShowRules={showRules}
           onRestartTutorial={restartTutorial}
         />
       )}
@@ -1667,6 +1675,13 @@ function GamePage() {
         <HowToPlayView
           initiallyShowDetail={showHowToPlayDetailFirst}
           onPlay={playPuzzle}
+        />
+      )}
+
+      {activeView === 'rules' && (
+        <WrittenRulesView
+          onPlay={playPuzzle}
+          onHowToPlay={showHowToPlay}
         />
       )}
 
@@ -2781,6 +2796,54 @@ function HowToPlayView({
           </button>
         </div>
 
+      </div>
+    </section>
+  );
+}
+
+function WrittenRulesView({
+  onPlay,
+  onHowToPlay,
+}: {
+  onPlay: () => void;
+  onHowToPlay: () => void;
+}) {
+  return (
+    <section className="start-panel" aria-labelledby="written-rules-title">
+      <div className="how-to-play-card written-rules-card">
+        <div className="how-to-play-header">
+          <img className="start-icon" src="/app-icon.png" alt="" />
+          <div>
+            <p className="document-kicker">Crackle Date</p>
+            <h1 id="written-rules-title">Rules</h1>
+          </div>
+        </div>
+
+        <p className="written-rules-intro">
+          Use the date digits to make both sides equal. Practice is separate from your daily progress.
+        </p>
+
+        <div className="how-to-play-actions">
+          <button className="start-action-button play-button" type="button" onClick={onPlay}>
+            Back to Game
+          </button>
+          <button className="start-action-button secondary" type="button" onClick={onHowToPlay}>
+            Cracked Instructions
+          </button>
+        </div>
+
+        <div className="written-rules-list">
+          {RULES_SECTIONS.map((section) => (
+            <section className="written-rule-section" key={section.title} aria-labelledby={`rules-${section.title.toLowerCase().replaceAll(' ', '-')}`}>
+              <h2 id={`rules-${section.title.toLowerCase().replaceAll(' ', '-')}`}>{section.title}</h2>
+              <ul>
+                {section.rows.map((row) => (
+                  <li key={row}>{row}</li>
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
       </div>
     </section>
   );

@@ -37,7 +37,15 @@ import { RULES_SECTIONS } from './rulesContent';
 import { savedSolutionDateSet } from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
 import {
-  dailyShareSummaryFromSolutions,
+  dailyDashboardSummaryFromSolutions,
+  monthProgressText,
+  solutionCountText,
+  streakDescription,
+  streakValue,
+  successMessage,
+  type DailyDashboardSummary,
+} from './dailyDashboard';
+import {
   savedSolutionSharePayload,
   spoilerFreeDailySharePayload,
 } from './sharePayloads';
@@ -431,6 +439,15 @@ function GamePage() {
   const todaySolutions = puzzle && !isPracticeMode ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
   const savedSolutionDates = useMemo(() => savedSolutionDateSet(savedSolutions), [savedSolutions]);
   const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
+  const dailyDashboardSummary = useMemo(() => {
+    if (!puzzle || isPracticeMode) return null;
+    return dailyDashboardSummaryFromSolutions({
+      dateIdentifier: puzzle.dateIdentifier,
+      displayDate: puzzle.displayDate,
+      todayIdentifier: todayId,
+      savedSolutions,
+    });
+  }, [isPracticeMode, puzzle, savedSolutions, todayId]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const gameAdBannerReason =
     isPracticeMode
@@ -694,15 +711,8 @@ function GamePage() {
   }, [puzzle, selectedDate]);
 
   const shareDailyResults = useCallback(() => {
-    if (!puzzle) return;
-    const summary = dailyShareSummaryFromSolutions({
-      dateIdentifier: puzzle.dateIdentifier,
-      displayDate: puzzle.displayDate,
-      todayIdentifier: todayId,
-      savedSolutions,
-    });
-    if (!summary) return;
-    const text = spoilerFreeDailySharePayload(summary);
+    if (!dailyDashboardSummary) return;
+    const text = spoilerFreeDailySharePayload(dailyDashboardSummary);
 
     void navigator.clipboard
       .writeText(text)
@@ -714,7 +724,7 @@ function GamePage() {
         setMessageTone('error');
         setMessage('Failed to copy to clipboard.');
       });
-  }, [puzzle, savedSolutions, todayId]);
+  }, [dailyDashboardSummary]);
 
   const handleUnlockTomorrow = useCallback(() => {
     if (unlockedFutureDates.has(tomorrowId)) {
@@ -1454,6 +1464,7 @@ function GamePage() {
           {todaySolutions.length > 0 && !isSearchingAnother ? (
             <VictoryPanel
               displayDate={puzzle?.displayDate ?? selectedDate}
+              summary={dailyDashboardSummary}
               solutions={todaySolutions}
               savedSolutions={savedSolutions}
               badges={badges}
@@ -1464,6 +1475,8 @@ function GamePage() {
               onUnlockTomorrow={handleUnlockTomorrow}
               onShare={shareDailyResults}
               onShareIndividual={shareSolutionText}
+              onShowSavedSolutions={showSolutions}
+              onShowCalendar={showCalendar}
               isFutureUnlocked={unlockedFutureDates.has(tomorrowId)}
               hasTomorrow={selectedDate === todayId}
               isArchived={selectedDate < todayId}
@@ -2267,6 +2280,7 @@ function RewardModal({
 
 function VictoryPanel({
   displayDate,
+  summary,
   solutions,
   savedSolutions,
   badges,
@@ -2274,12 +2288,15 @@ function VictoryPanel({
   onUnlockTomorrow,
   onShare,
   onShareIndividual,
+  onShowSavedSolutions,
+  onShowCalendar,
   isFutureUnlocked,
   hasTomorrow,
   isArchived,
   onGoToToday,
 }: {
   displayDate: string;
+  summary: DailyDashboardSummary | null;
   solutions: SavedSolution[];
   savedSolutions: StoredSolutions;
   badges: SolutionBadge[];
@@ -2287,12 +2304,19 @@ function VictoryPanel({
   onUnlockTomorrow?: () => void;
   onShare: () => void;
   onShareIndividual: (sol: SavedSolution) => void;
+  onShowSavedSolutions: () => void;
+  onShowCalendar: () => void;
   isFutureUnlocked: boolean;
   hasTomorrow: boolean;
   isArchived: boolean;
   onGoToToday: () => void;
 }) {
   const nextBadgeTarget = nextBadgeTargetFromBadges(badges);
+  const victoryMessage = summary
+    ? successMessage(summary.latestValue)
+    : solutions.length === 1
+      ? "You solved today's puzzle. Awesome work!"
+      : `You found ${solutions.length} solutions for this date!`;
 
   return (
     <div className="victory-panel-card">
@@ -2300,15 +2324,18 @@ function VictoryPanel({
         <span className="victory-badge-pill">🎉 Puzzle Cracked!</span>
       </div>
       <h2 className="victory-date-title">{displayDate}</h2>
-      <p className="victory-subtext">
-        {solutions.length === 1
-          ? "You solved today's puzzle. Awesome work!"
-          : `You found ${solutions.length} solutions for this date!`}
-      </p>
+      <p className="victory-subtext">{victoryMessage}</p>
 
-      {/* Mini Streak/Stats dashboard */}
+      {summary && (
+        <section className="daily-dashboard-crackle" aria-label="Latest cracked solution">
+          <span>CRACKED</span>
+          <MathEquation equation={summary.latestEquation} className="daily-dashboard-equation" />
+          <strong>{solutionCountText(summary.solvedCountForDate)}</strong>
+        </section>
+      )}
+
       <div className="victory-stats-box">
-        <StatsDashboard savedSolutions={savedSolutions} />
+        {summary ? <DailyDashboardStats summary={summary} /> : <StatsDashboard savedSolutions={savedSolutions} />}
       </div>
 
       {nextBadgeTarget && (
@@ -2368,12 +2395,20 @@ function VictoryPanel({
           <span className="share-icon-inline">
             <ShareIcon />
           </span>
-          Share Daily Summary
+          Share Daily
         </button>
 
         <div className="victory-secondary-row">
           <button className="auth-secondary" type="button" onClick={onPlayAnother}>
-            Find Another Solution
+            Keep Playing
+          </button>
+
+          <button className="auth-secondary" type="button" onClick={onShowSavedSolutions}>
+            Saved Solutions
+          </button>
+
+          <button className="auth-secondary" type="button" onClick={onShowCalendar}>
+            Calendar
           </button>
 
           {isArchived && (
@@ -2390,6 +2425,25 @@ function VictoryPanel({
         </div>
       </div>
     </div>
+  );
+}
+
+function DailyDashboardStats({ summary }: { summary: DailyDashboardSummary }) {
+  return (
+    <section className="daily-dashboard-stats" aria-labelledby="daily-dashboard-stats-title">
+      <h3 id="daily-dashboard-stats-title" className="sr-only">Daily Dashboard Stats</h3>
+      <article className="daily-dashboard-stat-card" aria-label={`Streak, ${streakDescription(summary.streakCount)}`}>
+        <span>Streak</span>
+        <strong>{streakValue(summary.streakCount)}</strong>
+      </article>
+      <article
+        className="daily-dashboard-stat-card"
+        aria-label={`Month, ${monthProgressText(summary.monthSolvedCount, summary.monthAvailableCount)}`}
+      >
+        <span>Month</span>
+        <strong>{monthProgressText(summary.monthSolvedCount, summary.monthAvailableCount)}</strong>
+      </article>
+    </section>
   );
 }
 

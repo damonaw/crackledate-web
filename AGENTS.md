@@ -12,7 +12,7 @@ Guidance for Codex and other coding agents working in this repository.
 - Practice is shared with Android and iOS: use the June 19, 2026 sample round and never save, sync, or submit practice attempts.
 - Rules is a written Settings destination shared with Android and iOS; keep it separate from visual Cracked Instructions.
 - Share payloads are shared with Android and iOS: daily shares are spoiler-free, while saved-solution shares include the equation, value, and solve time.
-- Daily Dashboard work should surface Android's next badge target: the first unearned badge plus compact action copy.
+- Daily Dashboard work should match Android's selected-date summary: cracked moment, streak/month cards, next badge target, spoiler-free daily share, keep-playing, saved-solutions, and calendar actions.
 
 ## Local Development
 

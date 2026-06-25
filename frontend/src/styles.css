@@ -3232,7 +3232,40 @@ a {
 .victory-subtext {
   font-size: 0.9rem;
   color: var(--ios-secondary-label);
-  margin: 0 0 20px;
+  margin: 0 0 14px;
+}
+
+.daily-dashboard-crackle {
+  width: 100%;
+  border: 1px solid var(--ios-green);
+  border-radius: 14px;
+  background: var(--ios-secondary-background);
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 14px;
+  text-align: left;
+}
+
+.daily-dashboard-crackle > span {
+  color: var(--ios-green);
+  font-size: 0.74rem;
+  font-weight: 850;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.daily-dashboard-crackle > strong {
+  color: var(--ios-secondary-label);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.daily-dashboard-equation {
+  color: var(--ios-label);
+  font-size: 1rem;
+  max-width: 100%;
+  overflow-x: auto;
 }
 
 .victory-stats-box {
@@ -3257,6 +3290,42 @@ a {
   background: transparent !important;
   border: none !important;
   box-shadow: none !important;
+}
+
+.daily-dashboard-stats {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.daily-dashboard-stat-card {
+  min-height: 86px;
+  border: 1px solid var(--ios-separator);
+  border-radius: 12px;
+  background: var(--ios-tertiary-background);
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  text-align: left;
+}
+
+.daily-dashboard-stat-card span {
+  color: var(--ios-secondary-label);
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.daily-dashboard-stat-card strong {
+  color: var(--ios-label);
+  font-size: 0.95rem;
+  line-height: 1.25;
+}
+
+@media (max-width: 380px) {
+  .daily-dashboard-stats {
+    grid-template-columns: 1fr;
+  }
 }
 
 .victory-solutions-section {

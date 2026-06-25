@@ -77,6 +77,41 @@ func TestValidateEquationAcceptsLargeFinitePower(t *testing.T) {
 	}
 }
 
+func TestValidateEquationRejectsLeadingZeroNumberGroups(t *testing.T) {
+	leadingZeroValues := RunningValues("2*026=")
+	leadingZeroResult := ValidateEquation("61-9=2*026", []int{6, 1, 9, 2, 0, 2, 6}, "", "")
+	separatedZeroValues := RunningValues("0+26=")
+	separatedZeroResult := ValidateEquation("0+26=26", []int{0, 2, 6, 2, 6}, "", "")
+
+	if leadingZeroValues.Left != "?" {
+		t.Fatalf("leadingZeroValues.Left = %q", leadingZeroValues.Left)
+	}
+	if leadingZeroValues.ErrorMessage != "Numbers cannot start with zero" {
+		t.Fatalf("leadingZeroValues.ErrorMessage = %q", leadingZeroValues.ErrorMessage)
+	}
+	if leadingZeroResult.Valid {
+		t.Fatal("expected leading zero validation to fail")
+	}
+	if leadingZeroResult.ErrorMessage != "Numbers cannot start with zero" {
+		t.Fatalf("leadingZeroResult.ErrorMessage = %q", leadingZeroResult.ErrorMessage)
+	}
+	if separatedZeroValues.Left != "26" {
+		t.Fatalf("separatedZeroValues.Left = %q", separatedZeroValues.Left)
+	}
+	if separatedZeroValues.ErrorMessage != "" {
+		t.Fatalf("separatedZeroValues.ErrorMessage = %q", separatedZeroValues.ErrorMessage)
+	}
+	if !separatedZeroResult.Valid {
+		t.Fatalf("expected separated zero validation to pass, got %q", separatedZeroResult.ErrorMessage)
+	}
+	if separatedZeroResult.LeftValue == nil || *separatedZeroResult.LeftValue != "26" {
+		t.Fatalf("separatedZeroResult.LeftValue = %#v", separatedZeroResult.LeftValue)
+	}
+	if separatedZeroResult.RightValue == nil || *separatedZeroResult.RightValue != "26" {
+		t.Fatalf("separatedZeroResult.RightValue = %#v", separatedZeroResult.RightValue)
+	}
+}
+
 func TestValidateEquationUsesExactRationalEquality(t *testing.T) {
 	response := ValidateEquation("1/3+1/3=2/3", []int{1, 3, 1, 3, 2, 3}, "", "")
 
@@ -255,5 +290,3 @@ func TestSolvePuzzleWithExponentiation(t *testing.T) {
 		t.Fatalf("expected solution to contain '^', got %q", sol)
 	}
 }
-
-

@@ -8,6 +8,7 @@ export const RULES_SECTIONS: RuleSection[] = [
     title: 'Daily Puzzle',
     rows: [
       'Use every digit in order.',
+      'Use 0+26 rather than 026.',
       'Add exactly one equals sign.',
       'Both sides must evaluate to the same value.',
     ],

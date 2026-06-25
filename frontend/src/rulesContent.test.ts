@@ -11,6 +11,7 @@ describe('rulesContent', () => {
 
     const text = rulesSearchableText();
     expect(text).toContain('Use every digit in order.');
+    expect(text).toContain('Use 0+26 rather than 026.');
     expect(text).toContain('Add exactly one equals sign.');
     expect(text).toContain('Practice does not save progress.');
     expect(text).toContain('Past dates can show a banner ad.');

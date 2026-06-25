@@ -52,6 +52,12 @@ import {
 import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
+import {
+  GuidedFirstWinRoute,
+  guidedFirstWinCoachMessageFor,
+  guidedFirstWinStorageKey,
+  routeForGuidedFirstWin,
+} from './guidedFirstWinPolicy';
 import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
 import {
   FUTURE_DATE_AD_DURATION_SECONDS,
@@ -322,7 +328,6 @@ function StatsDashboard({ savedSolutions }: { savedSolutions: StoredSolutions })
 
 const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
-const tutorialCompletedKey = 'crackledate.web.tutorial-completed.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
 const difficultyModeKey = 'crackledate.web.difficulty.v1';
 const emptyDigitIndices = new Set<number>();
@@ -340,11 +345,11 @@ function App() {
 
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
-  const [tutorialActive, setTutorialActive] = useState(() => {
-    const completed = localStorage.getItem(tutorialCompletedKey) === 'true';
-    const playedBefore = localStorage.getItem(playStartedKey) === 'true';
-    return !(completed || playedBefore);
-  });
+  const [playStarted, setPlayStarted] = useState(() => localStorage.getItem(playStartedKey) === 'true');
+  const [guidedFirstWinCompleted, setGuidedFirstWinCompleted] = useState(
+    () => localStorage.getItem(guidedFirstWinStorageKey) === 'true',
+  );
+  const [guidedFirstWinActive, setGuidedFirstWinActive] = useState(false);
   const [activeView, setActiveView] = useState<'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules'>(
     'game',
   );
@@ -442,6 +447,18 @@ function GamePage() {
     () => (puzzle ? firstUnusedDigitIndex(tokens, puzzle.digits) : null),
     [puzzle, tokens],
   );
+  const guidedFirstWinRoute = useMemo(
+    () => routeForGuidedFirstWin({ playStarted, guidedFirstWinCompleted }),
+    [guidedFirstWinCompleted, playStarted],
+  );
+  const guidedFirstWinCoachMessage = useMemo(() => {
+    if (!guidedFirstWinActive || !puzzle || isPracticeMode) return null;
+    return guidedFirstWinCoachMessageFor({
+      tokens,
+      puzzleDigits: puzzle.digits,
+      nextRequiredDigitIndex: nextDigitIndex,
+    });
+  }, [guidedFirstWinActive, isPracticeMode, nextDigitIndex, puzzle, tokens]);
   const todaySolutions = puzzle && !isPracticeMode ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
   const savedSolutionDates = useMemo(() => savedSolutionDateSet(savedSolutions), [savedSolutions]);
   const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
@@ -959,6 +976,11 @@ function GamePage() {
       mode: gameMode,
       targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
     });
+    if (guidedFirstWinActive) {
+      localStorage.setItem(guidedFirstWinStorageKey, 'true');
+      setGuidedFirstWinCompleted(true);
+      setGuidedFirstWinActive(false);
+    }
     setIsSearchingAnother(false);
     setMessageTone('success');
     if (gameMode === 'double_equality') {
@@ -970,7 +992,7 @@ function GamePage() {
     }
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, puzzle, startTime, todaySolutions, gameMode, targetValue]);
+  }, [clear, difficultyMode, equation, evaluation.left, guidedFirstWinActive, isPracticeMode, puzzle, startTime, todaySolutions, gameMode, targetValue]);
 
   const applyHintStep = useCallback(
     (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
@@ -1277,14 +1299,20 @@ function GamePage() {
     setActiveView('howToPlay');
   }, []);
 
-  const closeTutorial = useCallback(() => {
-    localStorage.setItem(tutorialCompletedKey, 'true');
-    setTutorialActive(false);
+  const startGuidedFirstWin = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setPlayStarted(true);
+    setGuidedFirstWinActive(true);
+    setActiveView('game');
+    setMessage('');
   }, []);
 
   const restartTutorial = useCallback(() => {
-    localStorage.removeItem(tutorialCompletedKey);
-    setTutorialActive(true);
+    localStorage.removeItem(playStartedKey);
+    localStorage.removeItem(guidedFirstWinStorageKey);
+    setPlayStarted(false);
+    setGuidedFirstWinCompleted(false);
+    setGuidedFirstWinActive(false);
     setActiveView('game');
   }, []);
 
@@ -1294,16 +1322,18 @@ function GamePage() {
 
     localStorage.removeItem(storageKey);
     localStorage.removeItem(playStartedKey);
-    localStorage.removeItem(tutorialCompletedKey);
+    localStorage.removeItem(guidedFirstWinStorageKey);
     localStorage.removeItem(themePreferenceKey);
     localStorage.removeItem(difficultyModeKey);
     setSavedSolutions({});
+    setPlayStarted(false);
+    setGuidedFirstWinCompleted(false);
+    setGuidedFirstWinActive(false);
     setThemePreference('light');
     setDifficultyMode('easy');
     setEditorState(emptyEditorState());
     setEvaluation({ left: '?', right: '?', equation: '' });
     setStartTime(null);
-    setTutorialActive(true);
     setActiveView('game');
     setMessageTone('success');
     setMessage('Local data cleared.');
@@ -1607,6 +1637,13 @@ function GamePage() {
                   </div>
                 )}
 
+                {guidedFirstWinCoachMessage && (
+                  <div className="practice-coach guided-first-win-coach" role="note">
+                    <strong>Guided First Crack</strong>
+                    <span>{guidedFirstWinCoachMessage}</span>
+                  </div>
+                )}
+
                 {puzzle && (
                   <DigitRail
                     digits={puzzle.digits}
@@ -1705,8 +1742,11 @@ function GamePage() {
         />
       )}
 
-      {tutorialActive && activeView === 'game' && (
-        <GuidedTutorial onClose={closeTutorial} />
+      {guidedFirstWinRoute === GuidedFirstWinRoute.GuidedFirstWin && activeView === 'game' && (
+        <GuidedTutorial
+          onStartGuidedCrack={startGuidedFirstWin}
+          onReadRules={showRules}
+        />
       )}
 
       {authModalMode && (

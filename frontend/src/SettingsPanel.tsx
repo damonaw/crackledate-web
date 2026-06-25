@@ -131,7 +131,7 @@ export function SettingsPanel({
           Rules
         </button>
         <button className="settings-link-button" type="button" onClick={onRestartTutorial}>
-          Restart Tutorial
+          Restart Guided First Crack
         </button>
         <a href="/privacy/">Privacy</a>
         <a href="/support/">Support</a>

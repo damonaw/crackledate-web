@@ -32,6 +32,7 @@ import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
+import { practiceRound, practiceSuccessMessage } from './practiceRound';
 import { savedSolutionDateSet } from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
 import { solutionBadges, type SolutionBadge } from './solutionBadges';
@@ -324,7 +325,7 @@ function GamePage() {
     const playedBefore = localStorage.getItem(playStartedKey) === 'true';
     return !(completed || playedBefore);
   });
-  const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
+  const [activeView, setActiveView] = useState<'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
     'game',
   );
   const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
@@ -370,6 +371,8 @@ function GamePage() {
     tomorrow.setDate(tomorrow.getDate() + 1);
     return localDateIdentifier(tomorrow);
   }, []);
+  const isPracticeMode = activeView === 'practice';
+  const puzzleDateIdentifier = isPracticeMode ? practiceRound.dateIdentifier : selectedDate;
 
   const { tokens, selection } = editorState;
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
@@ -418,12 +421,14 @@ function GamePage() {
     () => (puzzle ? firstUnusedDigitIndex(tokens, puzzle.digits) : null),
     [puzzle, tokens],
   );
-  const todaySolutions = puzzle ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
+  const todaySolutions = puzzle && !isPracticeMode ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
   const savedSolutionDates = useMemo(() => savedSolutionDateSet(savedSolutions), [savedSolutions]);
   const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const gameAdBannerReason =
-    selectedDate < todayId
+    isPracticeMode
+      ? null
+      : selectedDate < todayId
       ? 'past'
       : selectedDate === todayId && todaySolutions.length >= 1
         ? 'current_solution'
@@ -612,7 +617,7 @@ function GamePage() {
 
   useEffect(() => {
     let isCurrent = true;
-    fetch(`/api/puzzle?date=${selectedDate}`)
+    fetch(`/api/puzzle?date=${puzzleDateIdentifier}`)
       .then((response) => response.json() as Promise<Puzzle>)
       .then((nextPuzzle) => {
         if (!isCurrent) return;
@@ -644,7 +649,7 @@ function GamePage() {
         autocompleteIntervalRef.current = null;
       }
     };
-  }, [selectedDate]);
+  }, [puzzleDateIdentifier]);
 
   useEffect(() => {
     if (isEquationCorrect) {
@@ -733,7 +738,7 @@ function GamePage() {
     fetch('/api/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: selectedDate, equation }),
+      body: JSON.stringify({ date: puzzleDateIdentifier, equation }),
       signal: controller.signal,
     })
       .then((response) => response.json() as Promise<EvaluationResponse>)
@@ -744,7 +749,7 @@ function GamePage() {
         }
       });
     return () => controller.abort();
-  }, [equation, selectedDate]);
+  }, [equation, puzzleDateIdentifier]);
 
   const applyEditorEdit = useCallback(
     (
@@ -868,7 +873,7 @@ function GamePage() {
   const submit = useCallback(async () => {
     if (!puzzle) return;
     const normalizedEquation = equation.trim();
-    if (todaySolutions.some((solution) => solution.equation === normalizedEquation)) {
+    if (!isPracticeMode && todaySolutions.some((solution) => solution.equation === normalizedEquation)) {
       setMessageTone('error');
       setMessage('Solution already saved for this date.');
       return;
@@ -890,6 +895,13 @@ function GamePage() {
       setMessage(result.errorMessage ?? 'That equation is not valid.');
       setShakeActive(true);
       setTimeout(() => setShakeActive(false), 500);
+      return;
+    }
+
+    if (isPracticeMode) {
+      clear();
+      setMessageTone('success');
+      setMessage(practiceSuccessMessage(result.leftValue ?? evaluation.left));
       return;
     }
 
@@ -936,7 +948,7 @@ function GamePage() {
     }
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, puzzle, startTime, todaySolutions, gameMode, targetValue]);
+  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, puzzle, startTime, todaySolutions, gameMode, targetValue]);
 
   const applyHintStep = useCallback(
     (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
@@ -1230,6 +1242,11 @@ function GamePage() {
     setActiveView('game');
   }, []);
 
+  const showPractice = useCallback(() => {
+    clear();
+    setActiveView('practice');
+  }, [clear]);
+
   const showSolutions = useCallback(() => {
     setActiveView('solutions');
   }, []);
@@ -1374,7 +1391,7 @@ function GamePage() {
   return (
     <main
       className={`app-shell play-shell ${
-        activeView === 'game' ? 'game-shell' : ''
+        activeView === 'game' || activeView === 'practice' ? 'game-shell' : ''
       } ${activeView === 'calendar' ? 'calendar-shell detail-shell' : ''} ${
         activeView === 'solutions' ? 'solutions-shell detail-shell' : ''
       } ${
@@ -1430,8 +1447,14 @@ function GamePage() {
 
       {confettiActive && <Confetti />}
 
-      {activeView === 'game' && (
+      {(activeView === 'game' || activeView === 'practice') && (
         <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
+          {isPracticeMode && (
+            <div className="practice-coach" role="note">
+              <strong>{practiceRound.title}: {practiceRound.displayDate}</strong>
+              <span>{practiceRound.coach}</span>
+            </div>
+          )}
           {gameAdBannerReason && <GameAdBanner reason={gameAdBannerReason} />}
           {todaySolutions.length > 0 && !isSearchingAnother ? (
             <VictoryPanel
@@ -1635,6 +1658,7 @@ function GamePage() {
           onLogout={handleLogout}
           onClearData={clearBrowserData}
           onShowHowToPlay={showHowToPlay}
+          onPractice={showPractice}
           onRestartTutorial={restartTutorial}
         />
       )}

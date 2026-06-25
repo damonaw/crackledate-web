@@ -18,6 +18,7 @@ export function SettingsPanel({
   onLogout = () => undefined,
   onClearData,
   onShowHowToPlay,
+  onPractice = () => undefined,
   onRestartTutorial = () => undefined,
 }: {
   themePreference: ThemePreference;
@@ -31,6 +32,7 @@ export function SettingsPanel({
   onLogout?: () => void;
   onClearData: () => void;
   onShowHowToPlay: () => void;
+  onPractice?: () => void;
   onRestartTutorial?: () => void;
 }) {
   return (
@@ -119,6 +121,9 @@ export function SettingsPanel({
       <nav className="settings-links" aria-label="Help and policies">
         <button className="settings-link-button" type="button" onClick={onShowHowToPlay}>
           How to Play
+        </button>
+        <button className="settings-link-button" type="button" onClick={onPractice}>
+          Practice
         </button>
         <button className="settings-link-button" type="button" onClick={onRestartTutorial}>
           Restart Tutorial

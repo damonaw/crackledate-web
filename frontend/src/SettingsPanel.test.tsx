@@ -19,6 +19,7 @@ describe('SettingsPanel', () => {
     );
 
     expect(markup).toContain('How to Play');
+    expect(markup).toContain('Practice');
     expect(markup).toContain('settings-link-button');
     expect(markup).toContain('$1.99');
     expect(markup).not.toContain('An Ouroborialis Game');

@@ -978,6 +978,27 @@ a {
   padding: 0;
 }
 
+.practice-coach {
+  border: 1px solid var(--ios-blue-soft);
+  border-radius: 12px;
+  background: var(--ios-blue-soft);
+  color: var(--ios-label);
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  text-align: center;
+}
+
+.practice-coach strong {
+  font-size: 0.92rem;
+}
+
+.practice-coach span {
+  color: var(--ios-secondary-label);
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
 .game-ad-banner {
   min-height: 50px;
   border: 1px solid var(--ios-separator);
@@ -3365,5 +3386,4 @@ a {
     transform: scale(1.05) rotate(0deg);
   }
 }
-
 

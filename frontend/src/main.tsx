@@ -30,8 +30,10 @@ import { EquationHelperRow } from './EquationHelperRow';
 import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
+import { nextVisibleHintStep, shouldGateFullSolutionHint } from './hintFlow';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
+import { practiceCompletionTarget } from './practiceCompletion';
 import { practiceRound, practiceSuccessMessage } from './practiceRound';
 import { RULES_SECTIONS } from './rulesContent';
 import { savedSolutionDateSet } from './savedSolutionDates';
@@ -944,6 +946,9 @@ function GamePage() {
       clear();
       setMessageTone('success');
       setMessage(practiceSuccessMessage(result.leftValue ?? evaluation.left));
+      const destination = practiceCompletionTarget(todayId);
+      setSelectedDate(destination.selectedDate);
+      setActiveView(destination.activeView);
       if (guidedFirstWinActive) {
         localStorage.setItem(guidedFirstWinStorageKey, 'true');
         setGuidedFirstWinCompleted(true);
@@ -1000,7 +1005,7 @@ function GamePage() {
     }
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, guidedFirstWinActive, isPracticeMode, puzzle, startTime, todaySolutions, gameMode, targetValue]);
+  }, [clear, difficultyMode, equation, evaluation.left, guidedFirstWinActive, isPracticeMode, puzzle, startTime, todayId, todaySolutions, gameMode, targetValue]);
 
   const applyHintStep = useCallback(
     (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
@@ -1108,54 +1113,6 @@ function GamePage() {
     [puzzle, tokens, gameMode, applyEditorEdit],
   );
 
-  const getNextUsefulHintStep = useCallback((
-    currentStep: number,
-    data: { step1: string; step2: string; solution: string; balancingHint?: string; mathTip?: string }
-  ): number => {
-    const normalize = (str: string) => str.replace(/\s+/g, '').replace(/=+$/, '');
-    const normEquation = normalize(equation);
-
-    let step = currentStep;
-
-    // If step is 1, check if we should skip to 2
-    if (step === 1) {
-      if (gameMode === 'classic' || gameMode === 'double_equality') {
-        const isLHSComplete = (() => {
-          const normStep2 = normalize(data.step2);
-          return normEquation.startsWith(normStep2);
-        })();
-
-        if (isLHSComplete && Boolean(data.balancingHint)) {
-          // Do not skip! Step 1 will display the balancing hint.
-        } else {
-          // In classic/double equality, step 1 is the target value.
-          // If the user has already entered an equals sign, or is in Easy Mode and the LHS is evaluated,
-          // the target value is already known, so step 1 is redundant.
-          if (equation.includes('=') || (isEasyMode && evaluation.left !== '?')) {
-            step = 2;
-          }
-        }
-      } else if (gameMode === 'target' && equation.includes('=')) {
-        step = 2;
-      }
-    }
-
-    // If step is 2, check if we should skip to 3
-    if (step === 2) {
-      if (gameMode === 'classic' || gameMode === 'double_equality' || gameMode === 'single_expr') {
-        const normStep2 = normalize(data.step2);
-        if (normEquation.startsWith(normStep2)) {
-          const canShowClue = gameMode === 'classic' && Boolean(data.balancingHint);
-          if (!canShowClue) {
-            step = 3;
-          }
-        }
-      }
-    }
-
-    return step;
-  }, [equation, gameMode, isEasyMode, evaluation]);
-
   const fetchHint = useCallback(async () => {
     if (!puzzle) return;
     setHintLoading(true);
@@ -1172,11 +1129,20 @@ function GamePage() {
       }
       const data = (await response.json()) as { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string };
       setHintData(data);
-      const hasEquals = equation.includes('=');
-      const startStep = (gameMode === 'target' && hasEquals) ? 2 : 1;
-      const initialStep = getNextUsefulHintStep(startStep, data);
+      const initialStep = nextVisibleHintStep({
+        requestedStep: 1,
+        currentHintStep: 0,
+        equation,
+        gameMode,
+        isEasyMode,
+        evaluatedLeft: evaluation.left,
+        data,
+      });
       
-      if (initialStep === 3 && !unlockedAutocompleteDates.has(puzzle.dateIdentifier)) {
+      if (initialStep === 3 && shouldGateFullSolutionHint({
+        isSupporter,
+        isDateUnlocked: unlockedAutocompleteDates.has(puzzle.dateIdentifier),
+      })) {
         setRewardModalAction({
           actionName: 'reveal a full solution',
           adDurationSeconds: HINT_REWARD_AD_DURATION_SECONDS,
@@ -1213,7 +1179,7 @@ function GamePage() {
     } finally {
       setHintLoading(false);
     }
-  }, [puzzle, gameMode, targetValue, equation, applyHintStep, getNextUsefulHintStep, unlockedAutocompleteDates]);
+  }, [puzzle, gameMode, targetValue, equation, applyHintStep, unlockedAutocompleteDates, isSupporter, isEasyMode, evaluation.left]);
 
   const handleHintClick = useCallback(() => {
     if (hintStep === 0) {
@@ -1221,14 +1187,25 @@ function GamePage() {
     } else {
       let nextStep = Math.min(hintStep + 1, 3);
       if (hintData) {
-        nextStep = getNextUsefulHintStep(nextStep, hintData);
+        nextStep = nextVisibleHintStep({
+          requestedStep: nextStep,
+          currentHintStep: hintStep,
+          equation,
+          gameMode,
+          isEasyMode,
+          evaluatedLeft: evaluation.left,
+          data: hintData,
+        });
       }
 
       if (nextStep === 3) {
         if (isDeadEnd || !hintData || !hintData.solution) {
           return;
         }
-        if (puzzle && !unlockedAutocompleteDates.has(puzzle.dateIdentifier)) {
+        if (puzzle && shouldGateFullSolutionHint({
+          isSupporter,
+          isDateUnlocked: unlockedAutocompleteDates.has(puzzle.dateIdentifier),
+        })) {
           setRewardModalAction({
             actionName: 'reveal a full solution',
             adDurationSeconds: HINT_REWARD_AD_DURATION_SECONDS,
@@ -1258,7 +1235,7 @@ function GamePage() {
         }
       }
     }
-  }, [hintStep, fetchHint, hintData, applyHintStep, puzzle, unlockedAutocompleteDates, isDeadEnd, getNextUsefulHintStep]);
+  }, [hintStep, fetchHint, hintData, applyHintStep, puzzle, unlockedAutocompleteDates, isDeadEnd, equation, gameMode, isEasyMode, evaluation.left, isSupporter]);
 
   const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
     const text = savedSolutionSharePayload(dateDisplayString(dateId), sol);
@@ -1567,6 +1544,7 @@ function GamePage() {
                   onBackspace={backspace}
                   onInsertValue={insertOperator}
                   onShowDetailedInstructions={showDetailedHowToPlay}
+                  onStartPractice={showPractice}
                   selectorMoveRef={selectorMoveRef}
                   nextDigit={nextDigit}
                   onAppendDigit={appendDigit}
@@ -3147,6 +3125,7 @@ function EquationEditor({
   onBackspace,
   onInsertValue,
   onShowDetailedInstructions,
+  onStartPractice,
   selectorMoveRef,
   nextDigit,
   onAppendDigit,
@@ -3158,6 +3137,7 @@ function EquationEditor({
   onBackspace: () => void;
   onInsertValue: (value: string) => void;
   onShowDetailedInstructions: () => void;
+  onStartPractice: () => void;
   selectorMoveRef?: React.MutableRefObject<SelectorMoveHandler | null>;
   nextDigit?: number | null;
   onAppendDigit?: () => void;
@@ -3336,7 +3316,10 @@ function EquationEditor({
         }}
         onKeyDown={handleEditorKey}
       >
-        <EquationEmptyState onShowDetailedInstructions={onShowDetailedInstructions} />
+        <EquationEmptyState
+          onShowDetailedInstructions={onShowDetailedInstructions}
+          onStartPractice={onStartPractice}
+        />
       </div>
     );
   }

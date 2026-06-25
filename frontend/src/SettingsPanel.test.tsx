@@ -27,9 +27,31 @@ describe('SettingsPanel', () => {
     expect(markup).toContain('$1.99');
     expect(markup).toContain('removes date-based sponsor ads');
     expect(markup).toContain('Support for $1.99');
+    expect(markup).toContain('settings-support-action');
     expect(markup).not.toContain('An Ouroborialis Game');
     expect(markup).not.toContain('settings-branding-mark');
     expect(markup).not.toContain('src="/ouroborialis-logo.png"');
     expect(markup).not.toContain('Ad-Free');
+  });
+
+  test('does not show the supporter purchase action when already supported', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        themePreference="system"
+        difficultyMode="easy"
+        gameMode="classic"
+        onThemePreferenceChange={() => {}}
+        onDifficultyModeChange={() => {}}
+        onGameModeChange={() => {}}
+        onClearData={() => {}}
+        onShowHowToPlay={() => {}}
+        onSupport={() => {}}
+        isSupporter={true}
+      />,
+    );
+
+    expect(markup).toContain('Supporter ads are removed on this browser.');
+    expect(markup).not.toContain('Support for $1.99');
+    expect(markup).not.toContain('settings-support-action');
   });
 });

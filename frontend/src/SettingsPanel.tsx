@@ -152,7 +152,7 @@ export function SettingsPanel({
             : 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.'}
         </span>
         {!isSupporter && (
-          <button type="button" onClick={onSupport}>
+          <button className="settings-support-action" type="button" onClick={onSupport}>
             Support for $1.99
           </button>
         )}

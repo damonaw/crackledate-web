@@ -15,18 +15,18 @@ describe('SettingsPanel', () => {
         onGameModeChange={() => {}}
         onClearData={() => {}}
         onShowHowToPlay={() => {}}
+        onSupport={() => {}}
       />,
     );
 
     expect(markup).toContain('How to Play');
     expect(markup).toContain('Practice');
     expect(markup).toContain('Rules');
-    expect(markup).toContain('Restart Guided First Crack');
+    expect(markup).toContain('Restart Practice Round');
     expect(markup).toContain('settings-link-button');
     expect(markup).toContain('$1.99');
-    expect(markup).toContain('does not remove date-based sponsor ads');
-    expect(markup).toContain('Future dates can ask for a 30-second sponsor ad.');
-    expect(markup).toContain('Past dates and extra current-date solves can show a banner ad.');
+    expect(markup).toContain('removes date-based sponsor ads');
+    expect(markup).toContain('Support for $1.99');
     expect(markup).not.toContain('An Ouroborialis Game');
     expect(markup).not.toContain('settings-branding-mark');
     expect(markup).not.toContain('src="/ouroborialis-logo.png"');

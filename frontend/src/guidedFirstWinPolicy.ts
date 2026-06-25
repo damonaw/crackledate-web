@@ -17,9 +17,9 @@ export type GuidedFirstWinToken = {
 export const guidedFirstWinStorageKey = 'crackledate.web.guidedFirstWinCompleted.v1';
 
 export const guidedFirstWinCopy: GuidedFirstWinCopy = {
-  title: 'Guided First Crack',
-  body: "Crack today's date by building a balanced equation. We will guide the first few taps, then hand you into the daily puzzle.",
-  primaryAction: 'Start guided crack',
+  title: 'Practice Round',
+  body: 'The practice round is the guided tutorial. Follow one complete solved example, then play the daily puzzle on your own.',
+  primaryAction: 'Start practice round',
   secondaryAction: 'Read rules',
 };
 

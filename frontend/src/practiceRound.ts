@@ -4,7 +4,7 @@ export const practiceRound = {
   displayDate: 'June 19, 2026',
   digits: [6, 1, 9, 2, 0, 2, 6],
   title: 'Practice Round',
-  coach: 'Practice does not affect your daily streak or saved solutions.',
+  coach: 'Follow the highlighted steps. Practice does not affect your daily streak or saved solutions.',
 } as const;
 
 export function practiceSuccessMessage(value: string): string {

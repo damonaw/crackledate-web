@@ -16,5 +16,6 @@ describe('rulesContent', () => {
     expect(text).toContain('Practice does not save progress.');
     expect(text).toContain('Past dates can show a banner ad.');
     expect(text).toContain('Future dates can ask for a 30-second sponsor ad.');
+    expect(text).toContain('The supporter option removes date-based ads on this device.');
   });
 });

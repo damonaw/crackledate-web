@@ -1054,6 +1054,12 @@ a {
   line-height: 1.35;
 }
 
+.practice-coach small {
+  color: var(--ios-tertiary-label);
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
 .next-badge-target {
   border: 1px solid var(--ios-separator);
   border-radius: 12px;

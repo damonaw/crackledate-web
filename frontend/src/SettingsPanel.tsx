@@ -21,6 +21,8 @@ export function SettingsPanel({
   onPractice = () => undefined,
   onShowRules = () => undefined,
   onRestartTutorial = () => undefined,
+  onSupport = () => undefined,
+  isSupporter = false,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
@@ -36,6 +38,8 @@ export function SettingsPanel({
   onPractice?: () => void;
   onShowRules?: () => void;
   onRestartTutorial?: () => void;
+  onSupport?: () => void;
+  isSupporter?: boolean;
 }) {
   return (
     <section className="settings-page" aria-labelledby="settings-title">
@@ -131,7 +135,7 @@ export function SettingsPanel({
           Rules
         </button>
         <button className="settings-link-button" type="button" onClick={onRestartTutorial}>
-          Restart Guided First Crack
+          Restart Practice Round
         </button>
         <a href="/privacy/">Privacy</a>
         <a href="/support/">Support</a>
@@ -143,8 +147,15 @@ export function SettingsPanel({
       <div className="settings-support-card" aria-label="$1.99 Supporter Option">
         <strong>$1.99 Supporter Option</strong>
         <span>
-          The supporter option is for supporting Crackle Date. It does not remove date-based sponsor ads. Future dates can ask for a 30-second sponsor ad. Past dates and extra current-date solves can show a banner ad.
+          {isSupporter
+            ? 'Supporter ads are removed on this browser.'
+            : 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.'}
         </span>
+        {!isSupporter && (
+          <button type="button" onClick={onSupport}>
+            Support for $1.99
+          </button>
+        )}
       </div>
     </section>
   );

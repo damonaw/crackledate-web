@@ -107,17 +107,17 @@ link or entering the emailed 6-digit code. Passwords must be at least 8 characte
 Argon2id hashes. Verified accounts can sync saved solutions, submission attempts, theme preference, and
 difficulty mode.
 
-Monetization is date-based and limited: the supporter option is `$1.99` and does not
-remove date-based ads. Past dates can show a banner ad, the current date can show a banner after
-one saved solution, and future dates can require a 30-second sponsor ad before play.
+Monetization is date-based and limited: the supporter option is `$1.99` and removes
+date-based ads in the current browser. Non-supporters can see a banner on past dates, a banner
+after one current-date saved solution, and a 30-second sponsor unlock before future-date play.
 
 Guided First Crack is the first-time web onboarding path. It uses the shared
-Android/iOS route policy, starts the real daily puzzle, and shows in-game coaching
-until the first guided daily solve is submitted.
+Android/iOS route policy and starts the Practice Round guided tutorial, which highlights each
+next step until the full sample solution is submitted.
 
-Practice is a sandbox reachable from Settings. It uses the shared June 19, 2026 sample
-round and validates equations without saving progress, syncing account data, or submitting
-the attempt to the backend.
+Practice is a sandbox reachable from Settings and is also the guided tutorial. It uses the shared
+June 19, 2026 sample round and validates equations without saving progress, syncing account data,
+or submitting the attempt to the backend.
 
 Rules is a written Settings destination separate from Cracked Instructions. It documents
 digit order, the leading-zero rule, the equals-sign requirement, practice boundaries,

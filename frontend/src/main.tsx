@@ -54,10 +54,13 @@ import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
 import {
   GuidedFirstWinRoute,
-  guidedFirstWinCoachMessageFor,
   guidedFirstWinStorageKey,
   routeForGuidedFirstWin,
 } from './guidedFirstWinPolicy';
+import {
+  guidedPracticeGlowKey,
+  guidedPracticeStepForTokens,
+} from './guidedPractice';
 import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
 import {
   FUTURE_DATE_AD_DURATION_SECONDS,
@@ -330,6 +333,7 @@ const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
 const difficultyModeKey = 'crackledate.web.difficulty.v1';
+const supporterEntitlementKey = 'crackledate.web.supporter.v1';
 const emptyDigitIndices = new Set<number>();
 
 function App() {
@@ -373,6 +377,7 @@ function GamePage() {
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
+  const [isSupporter, setIsSupporter] = useState(() => localStorage.getItem(supporterEntitlementKey) === 'true');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
   const [showImportPrompt, setShowImportPrompt] = useState(false);
@@ -451,14 +456,10 @@ function GamePage() {
     () => routeForGuidedFirstWin({ playStarted, guidedFirstWinCompleted }),
     [guidedFirstWinCompleted, playStarted],
   );
-  const guidedFirstWinCoachMessage = useMemo(() => {
-    if (!guidedFirstWinActive || !puzzle || isPracticeMode) return null;
-    return guidedFirstWinCoachMessageFor({
-      tokens,
-      puzzleDigits: puzzle.digits,
-      nextRequiredDigitIndex: nextDigitIndex,
-    });
-  }, [guidedFirstWinActive, isPracticeMode, nextDigitIndex, puzzle, tokens]);
+  const guidedPracticeStep = useMemo(
+    () => (isPracticeMode ? guidedPracticeStepForTokens(tokens) : null),
+    [isPracticeMode, tokens],
+  );
   const todaySolutions = puzzle && !isPracticeMode ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
   const savedSolutionDates = useMemo(() => savedSolutionDateSet(savedSolutions), [savedSolutions]);
   const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
@@ -478,6 +479,7 @@ function GamePage() {
         selectedDate,
         today: todayId,
         savedSolutionCount: todaySolutions.length,
+        removesAds: isSupporter,
       });
   const gameAdBannerReason = gameAdBannerPlacement === 'none' ? null : gameAdBannerPlacement;
   const isEasyMode = difficultyMode === 'easy';
@@ -522,6 +524,7 @@ function GamePage() {
     }
     return null;
   }, [hintStep, hintData, isDeadEnd, equation]);
+  const activeGlowKey = guidedPracticeGlowKey(guidedPracticeStep) ?? mappedGlowKey;
 
   const syncAccountData = useCallback(async (user: AuthUser, options: { promptImport?: boolean } = {}) => {
     if (!user.emailVerified) {
@@ -750,7 +753,7 @@ function GamePage() {
   }, [dailyDashboardSummary]);
 
   const handleUnlockTomorrow = useCallback(() => {
-    if (unlockedFutureDates.has(tomorrowId)) {
+    if (isSupporter || unlockedFutureDates.has(tomorrowId)) {
       setSelectedDate(tomorrowId);
     } else {
       setRewardModalAction({
@@ -770,7 +773,7 @@ function GamePage() {
         },
       });
     }
-  }, [todayId, tomorrowId, unlockedFutureDates]);
+  }, [isSupporter, todayId, tomorrowId, unlockedFutureDates]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -941,6 +944,11 @@ function GamePage() {
       clear();
       setMessageTone('success');
       setMessage(practiceSuccessMessage(result.leftValue ?? evaluation.left));
+      if (guidedFirstWinActive) {
+        localStorage.setItem(guidedFirstWinStorageKey, 'true');
+        setGuidedFirstWinCompleted(true);
+        setGuidedFirstWinActive(false);
+      }
       return;
     }
 
@@ -1274,6 +1282,7 @@ function GamePage() {
 
   const showPractice = useCallback(() => {
     clear();
+    setGuidedFirstWinActive(false);
     setActiveView('practice');
   }, [clear]);
 
@@ -1300,12 +1309,13 @@ function GamePage() {
   }, []);
 
   const startGuidedFirstWin = useCallback(() => {
+    clear();
     localStorage.setItem(playStartedKey, 'true');
     setPlayStarted(true);
     setGuidedFirstWinActive(true);
-    setActiveView('game');
+    setActiveView('practice');
     setMessage('');
-  }, []);
+  }, [clear]);
 
   const restartTutorial = useCallback(() => {
     localStorage.removeItem(playStartedKey);
@@ -1325,10 +1335,12 @@ function GamePage() {
     localStorage.removeItem(guidedFirstWinStorageKey);
     localStorage.removeItem(themePreferenceKey);
     localStorage.removeItem(difficultyModeKey);
+    localStorage.removeItem(supporterEntitlementKey);
     setSavedSolutions({});
     setPlayStarted(false);
     setGuidedFirstWinCompleted(false);
     setGuidedFirstWinActive(false);
+    setIsSupporter(false);
     setThemePreference('light');
     setDifficultyMode('easy');
     setEditorState(emptyEditorState());
@@ -1337,6 +1349,14 @@ function GamePage() {
     setActiveView('game');
     setMessageTone('success');
     setMessage('Local data cleared.');
+  }, []);
+
+  const supportApp = useCallback(() => {
+    localStorage.setItem(supporterEntitlementKey, 'true');
+    setIsSupporter(true);
+    setRewardModalAction(null);
+    setMessageTone('success');
+    setMessage('Thanks for supporting Crackle Date. Sponsor ads are removed on this device.');
   }, []);
 
   const showCalendar = useCallback(() => {
@@ -1357,6 +1377,7 @@ function GamePage() {
       selectedDate,
       today: todayId,
       unlockedFutureDates,
+      removesAds: isSupporter,
     });
 
     if (decision.kind === 'future_unlock') {
@@ -1379,7 +1400,7 @@ function GamePage() {
     } else {
       setActiveView('game');
     }
-  }, [selectedDate, unlockedFutureDates]);
+  }, [isSupporter, selectedDate, unlockedFutureDates]);
 
   const chooseToday = useCallback(() => {
     setSelectedDate(localDateIdentifier(new Date()));
@@ -1505,7 +1526,8 @@ function GamePage() {
           {isPracticeMode && (
             <div className="practice-coach" role="note">
               <strong>{practiceRound.title}: {practiceRound.displayDate}</strong>
-              <span>{practiceRound.coach}</span>
+              <span>{guidedPracticeStep?.instruction ?? practiceRound.coach}</span>
+              <small>{practiceRound.coach}</small>
             </div>
           )}
           {gameAdBannerReason && <GameAdBanner reason={gameAdBannerReason} />}
@@ -1637,13 +1659,6 @@ function GamePage() {
                   </div>
                 )}
 
-                {guidedFirstWinCoachMessage && (
-                  <div className="practice-coach guided-first-win-coach" role="note">
-                    <strong>Guided First Crack</strong>
-                    <span>{guidedFirstWinCoachMessage}</span>
-                  </div>
-                )}
-
                 {puzzle && (
                   <DigitRail
                     digits={puzzle.digits}
@@ -1651,7 +1666,7 @@ function GamePage() {
                     usedDigitIndices={usedDigitIndices}
                     activeIndex={nextDigitIndex}
                     onActiveDigitClick={nextDigit !== null ? appendDigit : undefined}
-                    glowActiveDigit={mappedGlowKey !== null && /[0-9]/.test(mappedGlowKey)}
+                    glowActiveDigit={activeGlowKey === 'digit'}
                   />
                 )}
 
@@ -1662,23 +1677,23 @@ function GamePage() {
                       type="button"
                       onClick={() => insertOperator(value)}
                       data-operator-value={value}
-                      className={mappedGlowKey === value ? 'glow' : ''}
+                      className={activeGlowKey === value ? 'glow' : ''}
                     >
                       {label}
                     </button>
                   ))}
-                  <button className="danger" type="button" onClick={clear}>
+                  <button className={`danger ${activeGlowKey === 'Clear' ? 'glow' : ''}`.trim()} type="button" onClick={clear}>
                     C
                   </button>
-                  <button className={`warning ${mappedGlowKey === 'Backspace' ? 'glow' : ''}`.trim()} type="button" onClick={backspace} aria-label="Backspace">
+                  <button className={`warning ${activeGlowKey === 'Backspace' ? 'glow' : ''}`.trim()} type="button" onClick={backspace} aria-label="Backspace">
                     ⌫
                   </button>
                   {gameMode !== 'single_expr' && (
-                    <button className={`wide ${mappedGlowKey === '=' ? 'glow' : ''}`.trim()} type="button" onClick={() => insertText('=')}>
+                    <button className={`wide ${activeGlowKey === '=' ? 'glow' : ''}`.trim()} type="button" onClick={() => insertText('=')}>
                       =
                     </button>
                   )}
-                  <button className={gameMode === 'single_expr' ? 'wide submit' : 'submit'} type="button" onClick={submit}>
+                  <button className={`${gameMode === 'single_expr' ? 'wide submit' : 'submit'} ${activeGlowKey === 'Submit' ? 'glow' : ''}`.trim()} type="button" onClick={submit}>
                     Submit
                   </button>
                 </div>
@@ -1725,6 +1740,8 @@ function GamePage() {
           onPractice={showPractice}
           onShowRules={showRules}
           onRestartTutorial={restartTutorial}
+          onSupport={supportApp}
+          isSupporter={isSupporter}
         />
       )}
 
@@ -1779,6 +1796,7 @@ function GamePage() {
             setRewardModalAction(null);
             setAuthModalMode('signup');
           }}
+          onSupporterUpgrade={supportApp}
           isLoggedIn={!!authUser}
         />
       )}
@@ -2082,6 +2100,7 @@ function RewardModal({
   onSuccess,
   onClose,
   onOpenAuth,
+  onSupporterUpgrade,
   isLoggedIn,
 }: {
   actionName: string;
@@ -2090,6 +2109,7 @@ function RewardModal({
   onSuccess: () => void;
   onClose: () => void;
   onOpenAuth: () => void;
+  onSupporterUpgrade: () => void;
   isLoggedIn: boolean;
 }) {
   const [status, setStatus] = useState<'ready' | 'playing' | 'completed'>('ready');
@@ -2141,10 +2161,6 @@ function RewardModal({
     setTimeLeft(adDurationSeconds);
   };
 
-  const handleUpgradeDemo = () => {
-    alert("This is a demo $1.99 supporter checkout path. In production, this can connect to your payment gateway.");
-  };
-
   return (
     <div className="modal-backdrop" role="presentation">
       <section 
@@ -2188,7 +2204,7 @@ function RewardModal({
                   </li>
                   <li>
                     <span className="check-icon">✓</span>
-                    <span>One-time supporter path</span>
+                    <span>Removes sponsor banners</span>
                   </li>
                   <li>
                     <span className="check-icon">✓</span>
@@ -2196,14 +2212,14 @@ function RewardModal({
                   </li>
                   <li>
                     <span className="check-icon">✓</span>
-                    <span>Sponsor banners can still appear</span>
+                    <span>Future dates open without sponsor gates</span>
                   </li>
                 </ul>
 
                 <button 
                   type="button" 
                   className="reward-option-btn premium-btn"
-                  onClick={handleUpgradeDemo}
+                  onClick={onSupporterUpgrade}
                 >
                   Support for $1.99
                 </button>
@@ -3636,7 +3652,7 @@ function PrivacyPage() {
           },
           {
             label: '$1.99 supporter option',
-            body: 'The supporter option is for supporting Crackle Date. It does not remove date-based ads.',
+            body: 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.',
           },
         ]}
       />
@@ -3671,11 +3687,11 @@ function SupportPage() {
         rows={[
           {
             label: '$1.99 Supporter Option',
-            body: 'The supporter option is for supporting Crackle Date. It does not remove date-based sponsor ads.',
+            body: 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.',
           },
           {
             label: 'Future date unlocks',
-            body: 'Future dates can use a 30-second sponsor ad before play. Past dates and extra current-date solves can show a banner ad.',
+            body: 'Future dates can use a 30-second sponsor ad before play. Past dates and extra current-date solves can show a banner ad unless the supporter option is active.',
           },
         ]}
       />

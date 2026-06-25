@@ -26,15 +26,15 @@ describe('guidedFirstWinPolicy', () => {
     })).toBe(GuidedFirstWinRoute.TodayGame);
   });
 
-  test('uses the shared Guided First Crack copy contract', () => {
+  test('uses the shared practice tutorial copy contract', () => {
     expect(guidedFirstWinStorageKey).toBe('crackledate.web.guidedFirstWinCompleted.v1');
-    expect(guidedFirstWinCopy.title).toBe('Guided First Crack');
-    expect(guidedFirstWinCopy.body).toContain("Crack today's date");
-    expect(guidedFirstWinCopy.primaryAction).toBe('Start guided crack');
+    expect(guidedFirstWinCopy.title).toBe('Practice Round');
+    expect(guidedFirstWinCopy.body).toContain('The practice round is the guided tutorial');
+    expect(guidedFirstWinCopy.primaryAction).toBe('Start practice round');
     expect(guidedFirstWinCopy.secondaryAction).toBe('Read rules');
   });
 
-  test('coaches the first guided daily solve from equation progress', () => {
+  test('keeps the legacy daily coach deterministic while tutorial routes to practice', () => {
     const digits = [6, 2, 5, 2, 6];
 
     expect(guidedFirstWinCoachMessageFor({
@@ -69,12 +69,13 @@ describe('guidedFirstWinPolicy', () => {
     })).toBe('Step 4: submit to check whether the two sides match.');
   });
 
-  test('web game uses the policy and in-game coach instead of generic tutorial-only onboarding', () => {
+  test('web game routes first-time tutorial into the same guided practice round', () => {
     const source = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
 
     expect(source).toContain('routeForGuidedFirstWin(');
     expect(source).toContain('guidedFirstWinCompleted');
-    expect(source).toContain('guidedFirstWinCoachMessageFor(');
+    expect(source).toContain('guidedPracticeStepForTokens(');
     expect(source).toContain('GuidedFirstWinRoute.GuidedFirstWin');
+    expect(source).toContain("setActiveView('practice')");
   });
 });

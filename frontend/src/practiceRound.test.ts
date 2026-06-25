@@ -7,7 +7,7 @@ describe('practiceRound', () => {
     expect(practiceRound.formattedDate).toBe('6-19-2026');
     expect(practiceRound.digits).toEqual([6, 1, 9, 2, 0, 2, 6]);
     expect(practiceRound.title).toBe('Practice Round');
-    expect(practiceRound.coach).toContain('does not affect');
+    expect(practiceRound.coach).toContain('Follow the highlighted steps');
     expect(practiceRound.coach).toContain('saved solutions');
   });
 

@@ -58,6 +58,31 @@ describe('dateAccessPolicy', () => {
     ).toEqual({ kind: 'future_unlock', selectedDate: '2026-06-26' });
   });
 
+  test('supporters bypass future unlocks and date banners', () => {
+    expect(
+      dateAccessDecisionFor({
+        selectedDate: '2026-06-26',
+        today: '2026-06-25',
+        unlockedFutureDates: new Set(),
+        removesAds: true,
+      }),
+    ).toEqual({ kind: 'open', showPastDateBanner: false });
+
+    expect(bannerPlacementForDate({
+      selectedDate: '2026-06-24',
+      today: '2026-06-25',
+      savedSolutionCount: 0,
+      removesAds: true,
+    })).toBe('none');
+
+    expect(bannerPlacementForDate({
+      selectedDate: '2026-06-25',
+      today: '2026-06-25',
+      savedSolutionCount: 2,
+      removesAds: true,
+    })).toBe('none');
+  });
+
   test('unlocked future dates open cleanly', () => {
     expect(
       dateAccessDecisionFor({

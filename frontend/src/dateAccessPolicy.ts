@@ -10,11 +10,17 @@ export function dateAccessDecisionFor({
   selectedDate,
   today,
   unlockedFutureDates,
+  removesAds = false,
 }: {
   selectedDate: string;
   today: string;
   unlockedFutureDates: Set<string>;
+  removesAds?: boolean;
 }): DateAccessDecision {
+  if (removesAds) {
+    return { kind: 'open', showPastDateBanner: false };
+  }
+
   if (selectedDate < today) {
     return { kind: 'open', showPastDateBanner: true };
   }
@@ -34,11 +40,17 @@ export function bannerPlacementForDate({
   selectedDate,
   today,
   savedSolutionCount,
+  removesAds = false,
 }: {
   selectedDate: string;
   today: string;
   savedSolutionCount: number;
+  removesAds?: boolean;
 }): DateAdBannerPlacement {
+  if (removesAds) {
+    return 'none';
+  }
+
   if (selectedDate === today) {
     return savedSolutionCount > 0 ? 'current_solution' : 'none';
   }

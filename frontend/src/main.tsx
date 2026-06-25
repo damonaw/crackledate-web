@@ -53,9 +53,14 @@ import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
 import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
+import {
+  FUTURE_DATE_AD_DURATION_SECONDS,
+  bannerPlacementForDate,
+  dateAccessDecisionFor,
+  dateAfterCancelingFutureGate,
+} from './dateAccessPolicy';
 import './styles.css';
 
-const FUTURE_DATE_AD_DURATION_SECONDS = 30;
 const HINT_REWARD_AD_DURATION_SECONDS = 15;
 
 type Puzzle = {
@@ -375,6 +380,7 @@ function GamePage() {
     adDurationSeconds: number;
     claimLabel: string;
     onSuccess: () => void;
+    onClose?: () => void;
   } | null>(null);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
   const autocompleteIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -449,14 +455,14 @@ function GamePage() {
     });
   }, [isPracticeMode, puzzle, savedSolutions, todayId]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
-  const gameAdBannerReason =
-    isPracticeMode
-      ? null
-      : selectedDate < todayId
-      ? 'past'
-      : selectedDate === todayId && todaySolutions.length >= 1
-        ? 'current_solution'
-        : null;
+  const gameAdBannerPlacement = isPracticeMode
+    ? 'none'
+    : bannerPlacementForDate({
+        selectedDate,
+        today: todayId,
+        savedSolutionCount: todaySolutions.length,
+      });
+  const gameAdBannerReason = gameAdBannerPlacement === 'none' ? null : gameAdBannerPlacement;
   const isEasyMode = difficultyMode === 'easy';
   const isLHSCompleteForHint = useMemo(() => {
     if (!hintData || gameMode !== 'classic') return false;
@@ -742,9 +748,12 @@ function GamePage() {
           });
           setSelectedDate(tomorrowId);
         },
+        onClose: () => {
+          setSelectedDate(dateAfterCancelingFutureGate(todayId));
+        },
       });
     }
-  }, [tomorrowId, unlockedFutureDates]);
+  }, [todayId, tomorrowId, unlockedFutureDates]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1314,18 +1323,27 @@ function GamePage() {
 
   const playCalendarDate = useCallback(() => {
     const todayId = localDateIdentifier(new Date());
-    if (selectedDate > todayId && !unlockedFutureDates.has(selectedDate)) {
+    const decision = dateAccessDecisionFor({
+      selectedDate,
+      today: todayId,
+      unlockedFutureDates,
+    });
+
+    if (decision.kind === 'future_unlock') {
       setRewardModalAction({
-        actionName: `play a puzzle in the future (${selectedDate})`,
+        actionName: `play a puzzle in the future (${decision.selectedDate})`,
         adDurationSeconds: FUTURE_DATE_AD_DURATION_SECONDS,
         claimLabel: 'Play Date',
         onSuccess: () => {
           setUnlockedFutureDates((prev) => {
             const next = new Set(prev);
-            next.add(selectedDate);
+            next.add(decision.selectedDate);
             return next;
           });
           setActiveView('game');
+        },
+        onClose: () => {
+          setSelectedDate(dateAfterCancelingFutureGate(todayId));
         },
       });
     } else {
@@ -1713,7 +1731,10 @@ function GamePage() {
             rewardModalAction.onSuccess();
             setRewardModalAction(null);
           }}
-          onClose={() => setRewardModalAction(null)}
+          onClose={() => {
+            rewardModalAction.onClose?.();
+            setRewardModalAction(null);
+          }}
           onOpenAuth={() => {
             setRewardModalAction(null);
             setAuthModalMode('signup');

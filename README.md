@@ -117,3 +117,6 @@ the attempt to the backend.
 
 Rules is a written Settings destination separate from Cracked Instructions. It documents
 digit order, the equals-sign requirement, practice boundaries, and date-based ad boundaries.
+
+Share payloads follow the shared Android contract: daily shares include progress without
+revealing the equation, while saved-solution shares include the equation, value, and solve time.

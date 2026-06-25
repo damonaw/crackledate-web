@@ -11,6 +11,7 @@ Guidance for Codex and other coding agents working in this repository.
 - Product monetization rules are shared with Android and iOS: `$1.99` supporter option, no ad removal tier, past-date banner, current-date banner after one saved solution, and 30-second future-date sponsor unlock.
 - Practice is shared with Android and iOS: use the June 19, 2026 sample round and never save, sync, or submit practice attempts.
 - Rules is a written Settings destination shared with Android and iOS; keep it separate from visual Cracked Instructions.
+- Share payloads are shared with Android and iOS: daily shares are spoiler-free, while saved-solution shares include the equation, value, and solve time.
 
 ## Local Development
 

@@ -36,6 +36,11 @@ import { practiceRound, practiceSuccessMessage } from './practiceRound';
 import { RULES_SECTIONS } from './rulesContent';
 import { savedSolutionDateSet } from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
+import {
+  dailyShareSummaryFromSolutions,
+  savedSolutionSharePayload,
+  spoilerFreeDailySharePayload,
+} from './sharePayloads';
 import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
@@ -673,18 +678,7 @@ function GamePage() {
   }, [selectedDate]);
 
   const shareSolutionText = useCallback((solution: SavedSolution) => {
-    const solMode = solution.mode || 'classic';
-    const modeName =
-      solMode === 'classic'
-        ? 'Classic'
-        : solMode === 'double_equality'
-        ? 'Double ='
-        : solMode === 'target'
-        ? `Target ${solution.targetValue || '10'}`
-        : `Single`;
-
-    const hintText = solution.usedHint ? ' 💡(with hint)' : '';
-    const text = `Crackle Date ${puzzle?.displayDate || selectedDate} (${modeName}) ⚡️\nSolved in ${formatTime(solution.seconds)}${hintText}! 🧠\nPlay at https://crackledate.com`;
+    const text = savedSolutionSharePayload(puzzle?.displayDate || dateDisplayString(selectedDate), solution);
 
     void navigator.clipboard
       .writeText(text)
@@ -699,8 +693,15 @@ function GamePage() {
   }, [puzzle, selectedDate]);
 
   const shareDailyResults = useCallback(() => {
-    const count = todaySolutions.length;
-    const text = `Crackle Date ${puzzle?.displayDate || selectedDate} ⚡️\nI found ${count} solution${count > 1 ? 's' : ''} today! 🧠\nPlay at https://crackledate.com`;
+    if (!puzzle) return;
+    const summary = dailyShareSummaryFromSolutions({
+      dateIdentifier: puzzle.dateIdentifier,
+      displayDate: puzzle.displayDate,
+      todayIdentifier: todayId,
+      savedSolutions,
+    });
+    if (!summary) return;
+    const text = spoilerFreeDailySharePayload(summary);
 
     void navigator.clipboard
       .writeText(text)
@@ -712,7 +713,7 @@ function GamePage() {
         setMessageTone('error');
         setMessage('Failed to copy to clipboard.');
       });
-  }, [todaySolutions, puzzle, selectedDate]);
+  }, [puzzle, savedSolutions, todayId]);
 
   const handleUnlockTomorrow = useCallback(() => {
     if (unlockedFutureDates.has(tomorrowId)) {
@@ -1210,25 +1211,11 @@ function GamePage() {
   }, [hintStep, fetchHint, hintData, applyHintStep, puzzle, unlockedAutocompleteDates, isDeadEnd, getNextUsefulHintStep]);
 
   const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
-    const solutionMode = sol.mode ?? gameMode;
-    const solutionTargetValue = sol.targetValue ?? targetValue;
-    const modeLabel =
-      solutionMode === 'classic'
-        ? 'Classic'
-        : solutionMode === 'double_equality'
-        ? 'Double Equality'
-        : solutionMode === 'target'
-        ? `Target (${solutionTargetValue})`
-        : `Single Expression (${solutionTargetValue})`;
-
-    const archiveNote = sol.solvedOnOtherDay ? ' (Archive)' : '';
-    const hintNote = sol.usedHint ? ' (with hints)' : '';
-    const difficultyLabel = sol.difficulty ? (sol.difficulty === 'hard' ? 'Hard' : 'Easy') : (difficultyMode === 'hard' ? 'Hard' : 'Easy');
-    const text = `Crackle Date 🧩 ${dateId}${archiveNote}\nMode: ${modeLabel}${hintNote}\nDifficulty: ${difficultyLabel}\nTime: ${formatTime(sol.seconds)}\nValue: ${sol.value}\nhttps://crackledate.com`;
+    const text = savedSolutionSharePayload(dateDisplayString(dateId), sol);
     void navigator.clipboard.writeText(text);
     setMessageTone('success');
     setMessage('Stats copied to clipboard!');
-  }, [gameMode, targetValue, difficultyMode]);
+  }, []);
 
   const dateInputLabel = useMemo(() => {
     if (!puzzle) return 'Puzzle date';
@@ -3813,6 +3800,10 @@ function dateFromIdentifier(identifier: string): Date {
     return new Date();
   }
   return new Date(year, month - 1, day);
+}
+
+function dateDisplayString(identifier: string): string {
+  return fullDateFormatter.format(dateFromIdentifier(identifier));
 }
 
 function startOfMonth(date: Date): Date {

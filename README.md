@@ -15,6 +15,7 @@ This is the deployable web version of Crackle Date for `crackledate.com`.
 - React + Vite frontend for the playable browser board.
 - Go backend for puzzle date metadata, expression evaluation, and equation validation.
 - A single Docker image serves the React build and `/api/*` routes.
+- Optional accounts, local saves, a `$1.99` supporter option, sponsor banners for past dates and repeat current-date solves, and a 30-second sponsor unlock for future dates.
 
 This keeps the runtime small and simple: the single container can sit behind any HTTPS reverse proxy or tunnel, while React handles the equation-builder interaction.
 
@@ -105,3 +106,7 @@ Accounts are optional. Email/password accounts require email verification by eit
 link or entering the emailed 6-digit code. Passwords must be at least 8 characters and are stored with
 Argon2id hashes. Verified accounts can sync saved solutions, submission attempts, theme preference, and
 difficulty mode.
+
+Monetization is date-based and limited: the supporter option is `$1.99` and does not
+remove date-based ads. Past dates can show a banner ad, the current date can show a banner after
+one saved solution, and future dates can require a 30-second sponsor ad before play.

@@ -130,11 +130,11 @@ export function SettingsPanel({
         </button>
       </nav>
 
-      <div className="settings-branding" aria-label="Game studio credit">
-        <div className="settings-branding-mark" aria-hidden="true">
-          <img className="settings-branding-logo" src="/ouroborialis-logo.png" alt="" />
-        </div>
-        <span className="settings-branding-copy">An Ouroborialis Game</span>
+      <div className="settings-support-card" aria-label="$1.99 Supporter Option">
+        <strong>$1.99 Supporter Option</strong>
+        <span>
+          Supports Crackle Date development. Date-based sponsor ads may still appear on archive play, extra current-date solves, and future-date unlocks.
+        </span>
       </div>
     </section>
   );

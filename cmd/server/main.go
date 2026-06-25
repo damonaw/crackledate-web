@@ -572,9 +572,22 @@ func computeBalancingHintAndTip(sol string, mode string, prefix string, digits [
 	if len(parts) != 2 {
 		return "", ""
 	}
-	rhs := parts[1]
-	rhs = strings.ReplaceAll(rhs, " ", "")
+	lhs := strings.ReplaceAll(parts[0], " ", "")
+	rhs := strings.ReplaceAll(parts[1], " ", "")
 
+	// Check that the prefix includes an '=' so the LHS is complete.
+	if !strings.Contains(prefix, "=") {
+		return "", ""
+	}
+
+	// Evaluate the LHS to get the target value for the RHS.
+	evalRes := game.RunningValues(lhs)
+	if evalRes.Left == "?" || evalRes.Left == "" {
+		return "", ""
+	}
+	targetVal := evalRes.Left
+
+	// Figure out unused digits.
 	usedCount := countDigits(prefix)
 	if usedCount >= len(digits) {
 		return "", ""
@@ -583,46 +596,37 @@ func computeBalancingHintAndTip(sol string, mode string, prefix string, digits [
 	if len(unusedDigits) < 2 {
 		return "", ""
 	}
-	lastDigit := unusedDigits[len(unusedDigits)-1]
 
-	rhs = stripOuterParentheses(rhs)
-	lastOpIdx := findLastTopLevelOperator(rhs)
-	if lastOpIdx == -1 {
-		return "", ""
+	// Build a readable list of the unused digits.
+	digitStrs := make([]string, len(unusedDigits))
+	for i, d := range unusedDigits {
+		digitStrs[i] = fmt.Sprintf("%d", d)
 	}
+	digitList := strings.Join(digitStrs, ", ")
 
-	prefixExpr := rhs[:lastOpIdx]
-	suffixExpr := rhs[lastOpIdx+1:]
+	// --- Step 1: Balancing hint ---
+	hint := fmt.Sprintf("The left side equals %s. You need to use the remaining digits (%s) to also make %s on the right side.", targetVal, digitList, targetVal)
 
-	if countDigits(suffixExpr) != 1 {
-		return "", ""
-	}
-
-	evalRes := game.RunningValues(prefixExpr)
-	if evalRes.Left == "?" || evalRes.Left == "" {
-		return "", ""
-	}
-
-	valStr := evalRes.Left
+	// --- Step 2: Math tip ---
+	// Scan the full RHS for identity patterns.
 	tip := ""
-	if strings.Contains(prefixExpr, "^0") {
+	if strings.Contains(rhs, "^0") {
 		tip = "Tip: remember that x^0 = 1 (any number raised to 0 is equal to 1)."
-	} else if strings.Contains(prefixExpr, "^") {
-		tip = "Tip: remember that x^y is x raised to the power of y (e.g., 2^3 = 8)."
-	} else if strings.Contains(prefixExpr, "!") {
+	} else if strings.Contains(rhs, "!") {
 		tip = "Tip: remember that x! is the factorial of x (e.g., 0! = 1, 3! = 6)."
-	} else if strings.Contains(prefixExpr, "√") {
-		tip = "Tip: remember that √x is the square root of x (e.g., √4 = 2, √0 = 0)."
-	} else if strings.Contains(prefixExpr, "|") {
+	} else if strings.Contains(rhs, "√") {
+		tip = "Tip: remember that √x is the square root of x (e.g., √4 = 2, √9 = 3)."
+	} else if strings.Contains(rhs, "^") {
+		tip = "Tip: remember that x^y is x raised to the power of y (e.g., 2^3 = 8)."
+	} else if strings.Contains(rhs, "|") {
 		tip = "Tip: remember that |x| is the absolute value of x (e.g., |-3| = 3)."
 	} else {
 		tip = "Tip: try combining the digits using arithmetic operations."
 	}
 
-	displayPrefix := formatExprForDisplay(prefixExpr)
-	tip = fmt.Sprintf("%s You can make %s using the remaining digits: %s = %s", tip, valStr, displayPrefix, valStr)
+	displayRhs := formatExprForDisplay(rhs)
+	tip = fmt.Sprintf("%s You can make %s using: %s = %s", tip, targetVal, displayRhs, targetVal)
 
-	hint := fmt.Sprintf("%d is the last digit, so you need to make the rest of the right side digits equal %s for the left side to equal the right side.", lastDigit, valStr)
 	return hint, tip
 }
 

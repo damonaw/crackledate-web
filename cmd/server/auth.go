@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"math/big"
 	"net/http"
 	"net/mail"
@@ -923,11 +924,28 @@ func allowSameOrigin(writer http.ResponseWriter, request *http.Request) bool {
 		return true
 	}
 	parsed, err := url.Parse(origin)
-	if err != nil || !strings.EqualFold(parsed.Host, request.Host) {
+	if err != nil {
 		writeJSON(writer, http.StatusForbidden, map[string]string{"error": "Cross-origin request blocked"})
 		return false
 	}
-	return true
+	if strings.EqualFold(parsed.Host, request.Host) {
+		return true
+	}
+	// For local development, allow requests between localhost/127.0.0.1 on different ports
+	isLocal := func(h string) bool {
+		hostOnly := h
+		if strings.Contains(h, ":") {
+			hostOnly, _, _ = strings.Cut(h, ":")
+		}
+		hostOnly = strings.Trim(hostOnly, "[]")
+		return hostOnly == "localhost" || hostOnly == "127.0.0.1" || hostOnly == "::1"
+	}
+	if isLocal(parsed.Host) && isLocal(request.Host) {
+		return true
+	}
+	log.Printf("allowSameOrigin mismatch: parsed.Host=%q, request.Host=%q", parsed.Host, request.Host)
+	writeJSON(writer, http.StatusForbidden, map[string]string{"error": "Cross-origin request blocked"})
+	return false
 }
 
 func normalizeEmail(value string) (string, error) {

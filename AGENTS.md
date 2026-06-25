@@ -8,6 +8,7 @@ Guidance for Codex and other coding agents working in this repository.
 - The frontend is React + Vite in `frontend/`.
 - The backend is Go in `cmd/server/` and `internal/`.
 - The Vite dev server proxies `/api` requests to the Go backend on `http://localhost:8080`.
+- Product monetization rules are shared with Android and iOS: `$1.99` supporter option, no ad removal tier, past-date banner, current-date banner after one saved solution, and 30-second future-date sponsor unlock.
 
 ## Local Development
 
@@ -56,3 +57,4 @@ Open `http://localhost:5173/` for the local app.
 - Keep the Go backend and Vite frontend as separate local dev processes.
 - Do not commit `frontend/node_modules/`, `frontend/dist/`, `data/`, or local log files.
 - Prefer small, focused changes and run the relevant checks before committing.
+- Keep privacy/support copy aligned when changing account, ad, paid-support, or submission behavior.

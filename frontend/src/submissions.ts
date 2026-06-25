@@ -6,6 +6,8 @@ export type SolutionSubmission = {
   platform: 'web';
   appVersion?: string;
   clientRejectionReason?: string;
+  mode?: string;
+  targetValue?: string;
 };
 
 type FetchFunction = typeof fetch;

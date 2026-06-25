@@ -30,13 +30,49 @@ import { EquationHelperRow } from './EquationHelperRow';
 import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
+import { nextVisibleHintStep, shouldGateFullSolutionHint } from './hintFlow';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
+import { practiceCompletionTarget } from './practiceCompletion';
+import { practiceRound, practiceSuccessMessage } from './practiceRound';
+import { RULES_SECTIONS } from './rulesContent';
 import { savedSolutionDateSet } from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
+import {
+  dailyDashboardSummaryFromSolutions,
+  monthProgressText,
+  solutionCountText,
+  streakDescription,
+  streakValue,
+  successMessage,
+  type DailyDashboardSummary,
+} from './dailyDashboard';
+import {
+  savedSolutionSharePayload,
+  spoilerFreeDailySharePayload,
+} from './sharePayloads';
 import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
+import { GuidedTutorial } from './GuidedTutorial';
+import {
+  GuidedFirstWinRoute,
+  guidedFirstWinStorageKey,
+  routeForGuidedFirstWin,
+} from './guidedFirstWinPolicy';
+import {
+  guidedPracticeGlowKey,
+  guidedPracticeStepForTokens,
+} from './guidedPractice';
+import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
+import {
+  FUTURE_DATE_AD_DURATION_SECONDS,
+  bannerPlacementForDate,
+  dateAccessDecisionFor,
+  dateAfterCancelingFutureGate,
+} from './dateAccessPolicy';
 import './styles.css';
+
+const HINT_REWARD_AD_DURATION_SECONDS = 15;
 
 type Puzzle = {
   dateIdentifier: string;
@@ -44,10 +80,12 @@ type Puzzle = {
   formattedDate: string;
   digits: number[];
   delimiterPositions: number[];
+  targetValue?: string;
 };
 
 type EvaluationResponse = {
   left: string;
+  middle?: string;
   right: string;
   errorMessage?: string;
 };
@@ -68,6 +106,11 @@ type SavedSolution = {
   timestamp: string;
   seconds: number;
   value: string;
+  mode?: string;
+  targetValue?: string;
+  solvedOnOtherDay?: boolean;
+  usedHint?: boolean;
+  difficulty?: 'easy' | 'hard';
 };
 
 type StoredSolutions = Record<string, SavedSolution[]>;
@@ -129,16 +172,170 @@ const keyboardInsertableOperators: Record<string, string> = {
   '(': '(',
   ')': ')',
   '|': '|',
+  '=': '=',
   s: '√',
   S: '√',
   r: '√',
   R: '√',
 };
 
+const gameModeKey = 'crackledate.web.gamemode.v1';
+const targetValueKey = 'crackledate.web.targetvalue.v1';
+
+function loadGameMode(): 'classic' | 'double_equality' | 'target' | 'single_expr' {
+  const value = localStorage.getItem(gameModeKey);
+  return value === 'classic' || value === 'double_equality' || value === 'target' || value === 'single_expr' ? value : 'classic';
+}
+
+function loadTargetValue(): string {
+  return localStorage.getItem(targetValueKey) || '10';
+}
+
+function Confetti() {
+  const particles = useMemo(() => {
+    const colors = ['#ff3b30', '#ff9500', '#34c759', '#007aff', '#af52de', '#ffcc00'];
+    return Array.from({ length: 60 }).map((_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      color: colors[i % colors.length],
+      size: Math.random() * 8 + 6,
+      delay: Math.random() * 1.5,
+      duration: Math.random() * 2 + 2,
+      drift: Math.random() * 40 - 20,
+    }));
+  }, []);
+
+  return (
+    <div className="confetti-container" aria-hidden="true">
+      {particles.map((p) => (
+        <div
+          key={p.id}
+          className="confetti-particle"
+          style={{
+            left: `${p.x}%`,
+            backgroundColor: p.color,
+            width: `${p.size}px`,
+            height: `${p.size}px`,
+            animationDelay: `${p.delay}s`,
+            animationDuration: `${p.duration}s`,
+            '--drift': `${p.drift}px`,
+          } as React.CSSProperties}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ShareIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ display: 'block' }}>
+      <path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8" />
+      <polyline points="16 6 12 2 8 6" />
+      <line x1="12" y1="2" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+function calculateStreaks(savedSolutions: StoredSolutions) {
+  const solvedDates = Object.keys(savedSolutions)
+    .filter((dateStr) => savedSolutions[dateStr] && savedSolutions[dateStr]!.length > 0)
+    .map((dateStr) => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (!y || !m || !d) return 0;
+      return Math.floor(Date.UTC(y, m - 1, d) / (24 * 60 * 60 * 1000));
+    })
+    .filter(Boolean)
+    .sort((a, b) => a - b);
+
+  if (solvedDates.length === 0) {
+    return { currentStreak: 0, maxStreak: 0 };
+  }
+
+  const today = new Date();
+  const todayNum = Math.floor(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()) / (24 * 60 * 60 * 1000));
+
+  let maxStreak = 0;
+  let currentStreak = 0;
+  let runningStreak = 0;
+  let prevDay = -999;
+
+  for (const day of solvedDates) {
+    if (day === prevDay + 1) {
+      runningStreak++;
+    } else if (day !== prevDay) {
+      runningStreak = 1;
+    }
+    if (runningStreak > maxStreak) {
+      maxStreak = runningStreak;
+    }
+    prevDay = day;
+  }
+
+  const lastSolvedDay = solvedDates[solvedDates.length - 1]!;
+  if (lastSolvedDay === todayNum || lastSolvedDay === todayNum - 1) {
+    currentStreak = 0;
+    let expected = lastSolvedDay;
+    for (let idx = solvedDates.length - 1; idx >= 0; idx--) {
+      const day = solvedDates[idx]!;
+      if (day === expected) {
+        currentStreak++;
+        expected--;
+      } else if (day < expected) {
+        break;
+      }
+    }
+  } else {
+    currentStreak = 0;
+  }
+
+  return { currentStreak, maxStreak };
+}
+
+function StatsDashboard({ savedSolutions }: { savedSolutions: StoredSolutions }) {
+  const { currentStreak, maxStreak } = useMemo(() => calculateStreaks(savedSolutions), [savedSolutions]);
+  const { totalSolved, avgTime } = useMemo(() => {
+    const dates = Object.keys(savedSolutions).filter((dateStr) => savedSolutions[dateStr] && savedSolutions[dateStr]!.length > 0);
+    const allSeconds = Object.values(savedSolutions)
+      .flat()
+      .map((s) => s.seconds)
+      .filter((s) => s > 0);
+    const avg = allSeconds.length > 0 ? Math.round(allSeconds.reduce((a, b) => a + b, 0) / allSeconds.length) : 0;
+    return {
+      totalSolved: dates.length,
+      avgTime: avg,
+    };
+  }, [savedSolutions]);
+
+  return (
+    <section className="stats-dashboard" aria-labelledby="dashboard-title">
+      <h2 id="dashboard-title" className="sr-only">Dashboard Stats</h2>
+      <div className="dashboard-grid">
+        <div className="dashboard-card">
+          <span className="dashboard-val">{totalSolved}</span>
+          <span className="dashboard-label">Played</span>
+        </div>
+        <div className="dashboard-card">
+          <span className="dashboard-val">{currentStreak}</span>
+          <span className="dashboard-label">Streak</span>
+        </div>
+        <div className="dashboard-card">
+          <span className="dashboard-val">{maxStreak}</span>
+          <span className="dashboard-label">Max Streak</span>
+        </div>
+        <div className="dashboard-card">
+          <span className="dashboard-val">{formatTime(avgTime)}</span>
+          <span className="dashboard-label">Avg Time</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
 const difficultyModeKey = 'crackledate.web.difficulty.v1';
+const supporterEntitlementKey = 'crackledate.web.supporter.v1';
 const emptyDigitIndices = new Set<number>();
 
 function App() {
@@ -154,41 +351,182 @@ function App() {
 
 function GamePage() {
   const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
-  const [isPlaying, setIsPlaying] = useState(() => localStorage.getItem(playStartedKey) === 'true');
-  const [activeView, setActiveView] = useState<'game' | 'calendar' | 'solutions' | 'settings' | 'howToPlay'>(
+  const [playStarted, setPlayStarted] = useState(() => localStorage.getItem(playStartedKey) === 'true');
+  const [guidedFirstWinCompleted, setGuidedFirstWinCompleted] = useState(
+    () => localStorage.getItem(guidedFirstWinStorageKey) === 'true',
+  );
+  const [guidedFirstWinActive, setGuidedFirstWinActive] = useState(false);
+  const [activeView, setActiveView] = useState<'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules'>(
     'game',
   );
   const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
-  const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', right: '?', equation: '' });
+  const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', middle: '', right: '?', equation: '' });
+  const [gameMode, setGameMode] = useState<'classic' | 'double_equality' | 'target' | 'single_expr'>(loadGameMode);
+  const [targetValue, setTargetValue] = useState<string>(loadTargetValue);
+  const [shakeActive, setShakeActive] = useState(false);
+  const [confettiActive, setConfettiActive] = useState(false);
+  const [hintStep, setHintStep] = useState(0);
+  const [hintData, setHintData] = useState<{ solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string } | null>(null);
+  const [hintLoading, setHintLoading] = useState(false);
+  const [isDeadEnd, setIsDeadEnd] = useState(false);
+  const [shakeHintButton, setShakeHintButton] = useState(false);
+  const [usedHint, setUsedHint] = useState(false);
   const [message, setMessage] = useState('');
   const [messageTone, setMessageTone] = useState<FeedbackTone>('success');
   const [startTime, setStartTime] = useState<number | null>(null);
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
+  const [isSupporter, setIsSupporter] = useState(() => localStorage.getItem(supporterEntitlementKey) === 'true');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
   const [showImportPrompt, setShowImportPrompt] = useState(false);
   const [pendingImportSolutions, setPendingImportSolutions] = useState<StoredSolutions>({});
   const [accountPreferencesLoaded, setAccountPreferencesLoaded] = useState(false);
+  const [unlockedFutureDates, setUnlockedFutureDates] = useState<Set<string>>(() => new Set());
+  const [unlockedAutocompleteDates, setUnlockedAutocompleteDates] = useState<Set<string>>(() => new Set());
+  const [rewardModalAction, setRewardModalAction] = useState<{
+    actionName: string;
+    adDurationSeconds: number;
+    claimLabel: string;
+    onSuccess: () => void;
+    onClose?: () => void;
+  } | null>(null);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
+  const autocompleteIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isAutocompleting, setIsAutocompleting] = useState(false);
+  const [isSearchingAnother, setIsSearchingAnother] = useState(false);
+  const todayId = useMemo(() => localDateIdentifier(new Date()), []);
+  const tomorrowId = useMemo(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    return localDateIdentifier(tomorrow);
+  }, []);
+  const isPracticeMode = activeView === 'practice';
+  const puzzleDateIdentifier = isPracticeMode ? practiceRound.dateIdentifier : selectedDate;
 
   const { tokens, selection } = editorState;
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
   const usedDigitIndices = useMemo(() => digitIndicesInUse(tokens), [tokens]);
+  const unusedDigits = useMemo(() => {
+    if (!puzzle) return [];
+    return puzzle.digits.filter((_, idx) => !usedDigitIndices.has(idx));
+  }, [puzzle, usedDigitIndices]);
+  const isEquationCorrect = useMemo(() => {
+    if (!puzzle) return false;
+    const allDigitsUsed = usedDigitIndices.size === puzzle.digits.length;
+    if (!allDigitsUsed) return false;
+    if (evaluation.errorMessage) return false;
+
+    const eqParts = equation.split('=');
+    switch (gameMode) {
+      case 'double_equality':
+        return (
+          eqParts.length === 3 &&
+          evaluation.left !== '?' &&
+          evaluation.left === evaluation.middle &&
+          evaluation.middle === evaluation.right
+        );
+      case 'single_expr':
+        return (
+          eqParts.length === 1 &&
+          evaluation.left !== '?' &&
+          evaluation.left === targetValue
+        );
+      case 'target':
+        return (
+          eqParts.length === 2 &&
+          evaluation.left !== '?' &&
+          evaluation.left === targetValue &&
+          evaluation.right === targetValue
+        );
+      default: // classic
+        return (
+          eqParts.length === 2 &&
+          evaluation.left !== '?' &&
+          evaluation.left === evaluation.right
+        );
+    }
+  }, [puzzle, usedDigitIndices, evaluation, equation, gameMode, targetValue]);
   const nextDigitIndex = useMemo(
     () => (puzzle ? firstUnusedDigitIndex(tokens, puzzle.digits) : null),
     [puzzle, tokens],
   );
-  const todaySolutions = puzzle ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
+  const guidedFirstWinRoute = useMemo(
+    () => routeForGuidedFirstWin({ playStarted, guidedFirstWinCompleted }),
+    [guidedFirstWinCompleted, playStarted],
+  );
+  const guidedPracticeStep = useMemo(
+    () => (isPracticeMode ? guidedPracticeStepForTokens(tokens) : null),
+    [isPracticeMode, tokens],
+  );
+  const todaySolutions = puzzle && !isPracticeMode ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
   const savedSolutionDates = useMemo(() => savedSolutionDateSet(savedSolutions), [savedSolutions]);
   const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
+  const dailyDashboardSummary = useMemo(() => {
+    if (!puzzle || isPracticeMode) return null;
+    return dailyDashboardSummaryFromSolutions({
+      dateIdentifier: puzzle.dateIdentifier,
+      displayDate: puzzle.displayDate,
+      todayIdentifier: todayId,
+      savedSolutions,
+    });
+  }, [isPracticeMode, puzzle, savedSolutions, todayId]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
+  const gameAdBannerPlacement = isPracticeMode
+    ? 'none'
+    : bannerPlacementForDate({
+        selectedDate,
+        today: todayId,
+        savedSolutionCount: todaySolutions.length,
+        removesAds: isSupporter,
+      });
+  const gameAdBannerReason = gameAdBannerPlacement === 'none' ? null : gameAdBannerPlacement;
   const isEasyMode = difficultyMode === 'easy';
+  const isLHSCompleteForHint = useMemo(() => {
+    if (!hintData || gameMode !== 'classic') return false;
+    const normalize = (str: string) => str.replace(/\s+/g, '').replace(/=+$/, '');
+    return normalize(equation).startsWith(normalize(hintData.step2));
+  }, [equation, hintData, gameMode]);
   const isVerifiedAccount = Boolean(authUser?.emailVerified);
   const accountImportKey = authUser ? `crackledate.web.import-offered.${authUser.email}` : '';
+
+  const mappedGlowKey = useMemo(() => {
+    if (hintStep === 0 || !hintData) return null;
+    if (isDeadEnd) {
+      return 'Backspace';
+    }
+
+    const normalizeEquationStr = (eq: string): string => {
+      return eq.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/\s/g, '');
+    };
+    const normEq = normalizeEquationStr(equation);
+    const normSol = normalizeEquationStr(hintData.solution);
+
+    if (normSol.startsWith(normEq)) {
+      const nextChar = normSol[normEq.length];
+      if (nextChar) {
+        const asciiToButtonVal: Record<string, string> = {
+          '+': '+',
+          '-': '-',
+          '*': '×',
+          '/': '÷',
+          '^': '^',
+          '√': '√',
+          '!': '!',
+          '|': '|',
+          '(': '(',
+          ')': ')',
+          '=': '=',
+        };
+        return asciiToButtonVal[nextChar] || nextChar;
+      }
+    }
+    return null;
+  }, [hintStep, hintData, isDeadEnd, equation]);
+  const activeGlowKey = guidedPracticeGlowKey(guidedPracticeStep) ?? mappedGlowKey;
 
   const syncAccountData = useCallback(async (user: AuthUser, options: { promptImport?: boolean } = {}) => {
     if (!user.emailVerified) {
@@ -263,6 +601,67 @@ function GamePage() {
   }, [difficultyMode]);
 
   useEffect(() => {
+    localStorage.setItem(gameModeKey, gameMode);
+    setHintStep(0);
+    setHintData(null);
+    setUsedHint(false);
+  }, [gameMode]);
+
+  useEffect(() => {
+    localStorage.setItem(targetValueKey, targetValue);
+    setHintStep(0);
+    setHintData(null);
+    setUsedHint(false);
+  }, [targetValue]);
+
+  useEffect(() => {
+    if (isAutocompleting) return;
+    setShakeHintButton(false);
+
+    if (!puzzle) return;
+
+    const timer = setTimeout(() => {
+      setShakeHintButton(true);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, [equation, puzzle, gameMode, targetValue, isAutocompleting]);
+
+  useEffect(() => {
+    if (isAutocompleting) return;
+    if (hintStep > 0 && puzzle) {
+      const controller = new AbortController();
+      const query = new URLSearchParams({
+        date: puzzle.dateIdentifier,
+        mode: gameMode,
+        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : '',
+        prefix: equation,
+      });
+
+      fetch(`/api/hint?${query.toString()}`, { signal: controller.signal })
+        .then((res) => {
+          if (res.ok) {
+            setIsDeadEnd(false);
+            return res.json();
+          }
+          throw new Error('No solution found');
+        })
+        .then((data: any) => {
+          setHintData(data);
+        })
+        .catch((err) => {
+          if (err.name !== 'AbortError') {
+            setIsDeadEnd(true);
+          }
+        });
+
+      return () => controller.abort();
+    } else {
+      setIsDeadEnd(false);
+    }
+  }, [equation, hintStep, gameMode, targetValue, puzzle, isAutocompleting]);
+
+  useEffect(() => {
     if (isVerifiedAccount && accountPreferencesLoaded) {
       void saveAccountPreferences({ themePreference, difficultyMode });
     }
@@ -270,15 +669,26 @@ function GamePage() {
 
   useEffect(() => {
     let isCurrent = true;
-    fetch(`/api/puzzle?date=${selectedDate}`)
+    fetch(`/api/puzzle?date=${puzzleDateIdentifier}`)
       .then((response) => response.json() as Promise<Puzzle>)
       .then((nextPuzzle) => {
         if (!isCurrent) return;
+        if (autocompleteIntervalRef.current) {
+          clearInterval(autocompleteIntervalRef.current);
+          autocompleteIntervalRef.current = null;
+        }
         setPuzzle(nextPuzzle);
+        if (nextPuzzle.targetValue) {
+          setTargetValue(nextPuzzle.targetValue);
+        }
         setEditorState(emptyEditorState());
-        setEvaluation({ left: '?', right: '?', equation: '' });
+        setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
         setMessage('');
         setStartTime(null);
+        setHintStep(0);
+        setHintData(null);
+        setUsedHint(false);
+        setConfettiActive(false);
       })
       .catch(() => {
         setMessageTone('error');
@@ -286,26 +696,104 @@ function GamePage() {
       });
     return () => {
       isCurrent = false;
+      if (autocompleteIntervalRef.current) {
+        clearInterval(autocompleteIntervalRef.current);
+        autocompleteIntervalRef.current = null;
+      }
     };
+  }, [puzzleDateIdentifier]);
+
+  useEffect(() => {
+    if (isEquationCorrect) {
+      setHintStep(0);
+      setHintData(null);
+    }
+  }, [isEquationCorrect]);
+
+  useEffect(() => {
+    return () => {
+      if (autocompleteIntervalRef.current) {
+        clearInterval(autocompleteIntervalRef.current);
+        autocompleteIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    setIsSearchingAnother(false);
   }, [selectedDate]);
+
+  const shareSolutionText = useCallback((solution: SavedSolution) => {
+    const text = savedSolutionSharePayload(puzzle?.displayDate || dateDisplayString(selectedDate), solution);
+
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setMessageTone('success');
+        setMessage('Result copied to clipboard!');
+      })
+      .catch(() => {
+        setMessageTone('error');
+        setMessage('Failed to copy to clipboard.');
+      });
+  }, [puzzle, selectedDate]);
+
+  const shareDailyResults = useCallback(() => {
+    if (!dailyDashboardSummary) return;
+    const text = spoilerFreeDailySharePayload(dailyDashboardSummary);
+
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setMessageTone('success');
+        setMessage('Summary copied to clipboard!');
+      })
+      .catch(() => {
+        setMessageTone('error');
+        setMessage('Failed to copy to clipboard.');
+      });
+  }, [dailyDashboardSummary]);
+
+  const handleUnlockTomorrow = useCallback(() => {
+    if (isSupporter || unlockedFutureDates.has(tomorrowId)) {
+      setSelectedDate(tomorrowId);
+    } else {
+      setRewardModalAction({
+        actionName: `play tomorrow's puzzle (${tomorrowId})`,
+        adDurationSeconds: FUTURE_DATE_AD_DURATION_SECONDS,
+        claimLabel: 'Play Tomorrow',
+        onSuccess: () => {
+          setUnlockedFutureDates((prev) => {
+            const next = new Set(prev);
+            next.add(tomorrowId);
+            return next;
+          });
+          setSelectedDate(tomorrowId);
+        },
+        onClose: () => {
+          setSelectedDate(dateAfterCancelingFutureGate(todayId));
+        },
+      });
+    }
+  }, [isSupporter, todayId, tomorrowId, unlockedFutureDates]);
 
   useEffect(() => {
     const controller = new AbortController();
     fetch('/api/evaluate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: selectedDate, equation }),
+      body: JSON.stringify({ date: puzzleDateIdentifier, equation }),
       signal: controller.signal,
     })
       .then((response) => response.json() as Promise<EvaluationResponse>)
       .then((response) => setEvaluation({ ...response, equation }))
       .catch((error: Error) => {
         if (error.name !== 'AbortError') {
-          setEvaluation({ left: '?', right: '?', equation });
+          setEvaluation({ left: '?', middle: '', right: '?', equation });
         }
       });
     return () => controller.abort();
-  }, [equation, selectedDate]);
+  }, [equation, puzzleDateIdentifier]);
 
   const applyEditorEdit = useCallback(
     (
@@ -314,6 +802,11 @@ function GamePage() {
         selection: EditorSelection,
       ) => { tokens: EquationToken[]; selection: EditorSelection },
     ) => {
+      if (autocompleteIntervalRef.current) {
+        clearInterval(autocompleteIntervalRef.current);
+        autocompleteIntervalRef.current = null;
+        setIsAutocompleting(false);
+      }
       setEditorState((current) => {
         const next = edit(current.tokens, current.selection);
         return {
@@ -372,6 +865,9 @@ function GamePage() {
 
   const insertOperator = useCallback(
     (value: string) => {
+      if (value === '=' && gameMode === 'single_expr') {
+        return;
+      }
       if (value === '|') {
         insertAbsoluteDelimiter();
         return;
@@ -386,7 +882,7 @@ function GamePage() {
       }
       insertText(value);
     },
-    [insertAbsoluteDelimiter, insertClosingDelimiter, insertText],
+    [insertAbsoluteDelimiter, insertClosingDelimiter, insertText, gameMode],
   );
 
   const appendDigit = useCallback(() => {
@@ -404,8 +900,12 @@ function GamePage() {
   }, [applyEditorEdit]);
 
   const clear = useCallback(() => {
+    if (autocompleteIntervalRef.current) {
+      clearInterval(autocompleteIntervalRef.current);
+      autocompleteIntervalRef.current = null;
+    }
     setEditorState(emptyEditorState());
-    setEvaluation({ left: '?', right: '?', equation: '' });
+    setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
     setMessage('');
     setStartTime(null);
   }, []);
@@ -417,7 +917,7 @@ function GamePage() {
   const submit = useCallback(async () => {
     if (!puzzle) return;
     const normalizedEquation = equation.trim();
-    if (todaySolutions.some((solution) => solution.equation === normalizedEquation)) {
+    if (!isPracticeMode && todaySolutions.some((solution) => solution.equation === normalizedEquation)) {
       setMessageTone('error');
       setMessage('Solution already saved for this date.');
       return;
@@ -426,21 +926,50 @@ function GamePage() {
     const response = await fetch('/api/validate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: puzzle.dateIdentifier, equation: normalizedEquation }),
+      body: JSON.stringify({
+        date: puzzle.dateIdentifier,
+        equation: normalizedEquation,
+        mode: gameMode,
+        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
+      }),
     });
     const result = (await response.json()) as ValidationResponse;
     if (!result.valid) {
       setMessageTone('error');
       setMessage(result.errorMessage ?? 'That equation is not valid.');
+      setShakeActive(true);
+      setTimeout(() => setShakeActive(false), 500);
+      return;
+    }
+
+    if (isPracticeMode) {
+      clear();
+      setMessageTone('success');
+      setMessage(practiceSuccessMessage(result.leftValue ?? evaluation.left));
+      const destination = practiceCompletionTarget(todayId);
+      setSelectedDate(destination.selectedDate);
+      setActiveView(destination.activeView);
+      if (guidedFirstWinActive) {
+        localStorage.setItem(guidedFirstWinStorageKey, 'true');
+        setGuidedFirstWinCompleted(true);
+        setGuidedFirstWinActive(false);
+      }
       return;
     }
 
     const seconds = startTime ? Math.max(1, Math.round((Date.now() - startTime) / 1000)) : 0;
+    const solvedTodayIdentifier = localDateIdentifier(new Date());
+    const solvedOnOtherDay = solvedTodayIdentifier !== puzzle.dateIdentifier;
     const solution: SavedSolution = {
       equation: normalizedEquation,
       timestamp: new Date().toISOString(),
       seconds,
       value: result.leftValue ?? evaluation.left,
+      mode: gameMode,
+      targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
+      difficulty: difficultyMode,
+      solvedOnOtherDay,
+      usedHint,
     };
     setSavedSolutions((current) => {
       const next = {
@@ -457,11 +986,263 @@ function GamePage() {
       difficulty: difficultyMode,
       platform: 'web',
       appVersion: webAppVersion,
+      mode: gameMode,
+      targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
     });
-    clear();
+    if (guidedFirstWinActive) {
+      localStorage.setItem(guidedFirstWinStorageKey, 'true');
+      setGuidedFirstWinCompleted(true);
+      setGuidedFirstWinActive(false);
+    }
+    setIsSearchingAnother(false);
     setMessageTone('success');
-    setMessage(`Solved. Both sides equal ${solution.value}.`);
-  }, [clear, difficultyMode, equation, evaluation.left, puzzle, startTime, todaySolutions]);
+    if (gameMode === 'double_equality') {
+      setMessage(`Solved. All sides equal ${solution.value}.`);
+    } else if (gameMode === 'single_expr') {
+      setMessage(`Solved. Expression equals ${solution.value}.`);
+    } else {
+      setMessage(`Solved. Both sides equal ${solution.value}.`);
+    }
+    setConfettiActive(true);
+    setTimeout(() => setConfettiActive(false), 4000);
+  }, [clear, difficultyMode, equation, evaluation.left, guidedFirstWinActive, isPracticeMode, puzzle, startTime, todayId, todaySolutions, gameMode, targetValue]);
+
+  const applyHintStep = useCallback(
+    (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
+      if (!puzzle) return;
+
+      if (step === 1) {
+        const hasEquals = tokens.some((t) => t.value === '=');
+        if (!hasEquals && gameMode !== 'single_expr' && tokens.length > 0) {
+          const expectedCount = gameMode === 'double_equality' ? 2 : 1;
+          applyEditorEdit((currentTokens, currentSelection) => {
+            let updatedTokens = [...currentTokens];
+            let updatedSelection = { ...currentSelection };
+            for (let i = 0; i < expectedCount; i++) {
+              const edit = insertTokensAtSelection(updatedTokens, updatedSelection, [createOperatorToken('=')]);
+              updatedTokens = edit.tokens;
+              updatedSelection = edit.selection;
+            }
+            return { tokens: updatedTokens, selection: updatedSelection };
+          });
+        }
+      } else if (step === 2) {
+        const insertStr = gameMode === 'single_expr' ? data.step1 : data.step2;
+        const hintTokens = stringToEquationTokens(insertStr, puzzle.digits);
+        applyEditorEdit((currentTokens, currentSelection) => {
+          let updatedTokens = [...currentTokens];
+          let updatedSelection = { ...currentSelection };
+          const hasEqualsInEditor = updatedTokens.some((t) => t.value === '=');
+
+          if (gameMode === 'classic' || gameMode === 'double_equality') {
+            if (hasEqualsInEditor) {
+              return { tokens: currentTokens, selection: currentSelection };
+            }
+            // Avoid duplicate LHS entry by checking if currentTokens already match the hintTokens.
+            // If they do, insert '=' instead.
+            const normEquation = currentTokens.map(t => t.value).join('').replace(/\s+/g, '');
+            const normHint = insertStr.replace(/\s+/g, '');
+            if (normEquation !== '' && (normEquation.startsWith(normHint) || normHint.startsWith(normEquation))) {
+              return insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken('=')]);
+            }
+            return insertTokensAtSelection(currentTokens, currentSelection, hintTokens);
+          }
+
+          if (gameMode === 'target') {
+            if (!hasEqualsInEditor) {
+              const edit = insertTokensAtSelection(updatedTokens, updatedSelection, [createOperatorToken('=')]);
+              updatedTokens = edit.tokens;
+              updatedSelection = edit.selection;
+            }
+            return insertTokensAtSelection(updatedTokens, updatedSelection, hintTokens);
+          }
+
+          return insertTokensAtSelection(currentTokens, currentSelection, hintTokens);
+        });
+      } else if (step === 3) {
+        if (autocompleteIntervalRef.current) {
+          clearInterval(autocompleteIntervalRef.current);
+        }
+        setIsAutocompleting(true);
+        const targetTokens = stringToEquationTokens(data.solution, puzzle.digits);
+        const currentLength = tokens.length;
+        
+        let isMatchingPrefix = true;
+        for (let i = 0; i < currentLength; i++) {
+          if (!targetTokens[i] || targetTokens[i].value !== tokens[i].value) {
+            isMatchingPrefix = false;
+            break;
+          }
+        }
+
+        const startIdx = isMatchingPrefix ? currentLength : 0;
+        let index = startIdx;
+        const initialTokens = isMatchingPrefix ? [...tokens] : [];
+
+        setEditorState({
+          tokens: initialTokens,
+          selection: { kind: 'slot', index: initialTokens.length },
+        });
+
+        autocompleteIntervalRef.current = setInterval(() => {
+          if (index >= targetTokens.length) {
+            if (autocompleteIntervalRef.current) {
+              clearInterval(autocompleteIntervalRef.current);
+              autocompleteIntervalRef.current = null;
+            }
+            setIsAutocompleting(false);
+            setHintStep(0);
+            setHintData(null);
+            return;
+          }
+
+          const tokenToAdd = targetTokens[index];
+          if (tokenToAdd) {
+            setEditorState((prev) => {
+              const nextTokens = [...prev.tokens, tokenToAdd];
+              return {
+                tokens: nextTokens,
+                selection: { kind: 'slot', index: nextTokens.length },
+              };
+            });
+          }
+          index++;
+        }, 300);
+      }
+    },
+    [puzzle, tokens, gameMode, applyEditorEdit],
+  );
+
+  const fetchHint = useCallback(async () => {
+    if (!puzzle) return;
+    setHintLoading(true);
+    try {
+      const query = new URLSearchParams({
+        date: puzzle.dateIdentifier,
+        mode: gameMode,
+        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : '',
+        prefix: equation,
+      });
+      const response = await fetch(`/api/hint?${query.toString()}`);
+      if (!response.ok) {
+        throw new Error('No solution found');
+      }
+      const data = (await response.json()) as { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string };
+      setHintData(data);
+      const initialStep = nextVisibleHintStep({
+        requestedStep: 1,
+        currentHintStep: 0,
+        equation,
+        gameMode,
+        isEasyMode,
+        evaluatedLeft: evaluation.left,
+        data,
+      });
+      
+      if (initialStep === 3 && shouldGateFullSolutionHint({
+        isSupporter,
+        isDateUnlocked: unlockedAutocompleteDates.has(puzzle.dateIdentifier),
+      })) {
+        setRewardModalAction({
+          actionName: 'reveal a full solution',
+          adDurationSeconds: HINT_REWARD_AD_DURATION_SECONDS,
+          claimLabel: 'Unlock Clue',
+          onSuccess: () => {
+            setUnlockedAutocompleteDates((prev) => {
+              const next = new Set(prev);
+              next.add(puzzle.dateIdentifier);
+              return next;
+            });
+            setHintStep(3);
+            applyHintStep(3, data);
+          },
+        });
+        setIsDeadEnd(false);
+        setUsedHint(true);
+      } else {
+        setHintStep(initialStep);
+        setIsDeadEnd(false);
+        setUsedHint(true);
+        applyHintStep(initialStep, data);
+      }
+    } catch {
+      setMessageTone('error');
+      if (equation.trim().length > 0) {
+        const errMsg = gameMode === 'single_expr'
+          ? 'Could not quickly find a solution with what is currently entered.'
+          : 'Could not quickly find a solution to balance the sides with what is currently entered.';
+        setMessage(errMsg);
+        setIsDeadEnd(true);
+      } else {
+        setMessage('Could not find any solutions for this puzzle.');
+      }
+    } finally {
+      setHintLoading(false);
+    }
+  }, [puzzle, gameMode, targetValue, equation, applyHintStep, unlockedAutocompleteDates, isSupporter, isEasyMode, evaluation.left]);
+
+  const handleHintClick = useCallback(() => {
+    if (hintStep === 0) {
+      void fetchHint();
+    } else {
+      let nextStep = Math.min(hintStep + 1, 3);
+      if (hintData) {
+        nextStep = nextVisibleHintStep({
+          requestedStep: nextStep,
+          currentHintStep: hintStep,
+          equation,
+          gameMode,
+          isEasyMode,
+          evaluatedLeft: evaluation.left,
+          data: hintData,
+        });
+      }
+
+      if (nextStep === 3) {
+        if (isDeadEnd || !hintData || !hintData.solution) {
+          return;
+        }
+        if (puzzle && shouldGateFullSolutionHint({
+          isSupporter,
+          isDateUnlocked: unlockedAutocompleteDates.has(puzzle.dateIdentifier),
+        })) {
+          setRewardModalAction({
+            actionName: 'reveal a full solution',
+            adDurationSeconds: HINT_REWARD_AD_DURATION_SECONDS,
+            claimLabel: 'Unlock Clue',
+            onSuccess: () => {
+              setUnlockedAutocompleteDates((prev) => {
+                const next = new Set(prev);
+                next.add(puzzle.dateIdentifier);
+                return next;
+              });
+              setHintStep(3);
+              if (hintData) {
+                applyHintStep(3, hintData);
+              }
+            },
+          });
+        } else {
+          setHintStep(3);
+          if (hintData) {
+            applyHintStep(3, hintData);
+          }
+        }
+      } else {
+        setHintStep(nextStep);
+        if (hintData) {
+          applyHintStep(nextStep, hintData);
+        }
+      }
+    }
+  }, [hintStep, fetchHint, hintData, applyHintStep, puzzle, unlockedAutocompleteDates, isDeadEnd, equation, gameMode, isEasyMode, evaluation.left, isSupporter]);
+
+  const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
+    const text = savedSolutionSharePayload(dateDisplayString(dateId), sol);
+    void navigator.clipboard.writeText(text);
+    setMessageTone('success');
+    setMessage('Stats copied to clipboard!');
+  }, []);
 
   const dateInputLabel = useMemo(() => {
     if (!puzzle) return 'Puzzle date';
@@ -473,35 +1254,53 @@ function GamePage() {
   }, []);
 
   const playPuzzle = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('game');
   }, []);
 
+  const showPractice = useCallback(() => {
+    clear();
+    setGuidedFirstWinActive(false);
+    setActiveView('practice');
+  }, [clear]);
+
+  const showRules = useCallback(() => {
+    setActiveView('rules');
+  }, []);
+
   const showSolutions = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('solutions');
   }, []);
 
   const showSettingsPage = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('settings');
   }, []);
 
   const showHowToPlay = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setShowHowToPlayDetailFirst(false);
     setActiveView('howToPlay');
   }, []);
 
   const showDetailedHowToPlay = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setShowHowToPlayDetailFirst(true);
     setActiveView('howToPlay');
+  }, []);
+
+  const startGuidedFirstWin = useCallback(() => {
+    clear();
+    localStorage.setItem(playStartedKey, 'true');
+    setPlayStarted(true);
+    setGuidedFirstWinActive(true);
+    setActiveView('practice');
+    setMessage('');
+  }, [clear]);
+
+  const restartTutorial = useCallback(() => {
+    localStorage.removeItem(playStartedKey);
+    localStorage.removeItem(guidedFirstWinStorageKey);
+    setPlayStarted(false);
+    setGuidedFirstWinCompleted(false);
+    setGuidedFirstWinActive(false);
+    setActiveView('game');
   }, []);
 
   const clearBrowserData = useCallback(() => {
@@ -510,23 +1309,34 @@ function GamePage() {
 
     localStorage.removeItem(storageKey);
     localStorage.removeItem(playStartedKey);
+    localStorage.removeItem(guidedFirstWinStorageKey);
     localStorage.removeItem(themePreferenceKey);
     localStorage.removeItem(difficultyModeKey);
+    localStorage.removeItem(supporterEntitlementKey);
     setSavedSolutions({});
+    setPlayStarted(false);
+    setGuidedFirstWinCompleted(false);
+    setGuidedFirstWinActive(false);
+    setIsSupporter(false);
     setThemePreference('light');
     setDifficultyMode('easy');
     setEditorState(emptyEditorState());
     setEvaluation({ left: '?', right: '?', equation: '' });
     setStartTime(null);
-    setIsPlaying(false);
     setActiveView('game');
     setMessageTone('success');
     setMessage('Local data cleared.');
   }, []);
 
+  const supportApp = useCallback(() => {
+    localStorage.setItem(supporterEntitlementKey, 'true');
+    setIsSupporter(true);
+    setRewardModalAction(null);
+    setMessageTone('success');
+    setMessage('Thanks for supporting Crackle Date. Sponsor ads are removed on this device.');
+  }, []);
+
   const showCalendar = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setIsPlaying(true);
     setActiveView('calendar');
   }, []);
 
@@ -536,12 +1346,42 @@ function GamePage() {
 
   const chooseCalendarDate = useCallback((dateIdentifier: string) => {
     setSelectedDate(dateIdentifier);
-    setActiveView('game');
   }, []);
 
+  const playCalendarDate = useCallback(() => {
+    const todayId = localDateIdentifier(new Date());
+    const decision = dateAccessDecisionFor({
+      selectedDate,
+      today: todayId,
+      unlockedFutureDates,
+      removesAds: isSupporter,
+    });
+
+    if (decision.kind === 'future_unlock') {
+      setRewardModalAction({
+        actionName: `play a puzzle in the future (${decision.selectedDate})`,
+        adDurationSeconds: FUTURE_DATE_AD_DURATION_SECONDS,
+        claimLabel: 'Play Date',
+        onSuccess: () => {
+          setUnlockedFutureDates((prev) => {
+            const next = new Set(prev);
+            next.add(decision.selectedDate);
+            return next;
+          });
+          setActiveView('game');
+        },
+        onClose: () => {
+          setSelectedDate(dateAfterCancelingFutureGate(todayId));
+        },
+      });
+    } else {
+      setActiveView('game');
+    }
+  }, [isSupporter, selectedDate, unlockedFutureDates]);
+
   const chooseToday = useCallback(() => {
-    chooseCalendarDate(localDateIdentifier(new Date()));
-  }, [chooseCalendarDate]);
+    setSelectedDate(localDateIdentifier(new Date()));
+  }, []);
 
   const openLogin = useCallback(() => {
     setAuthModalMode(authUser ? 'account' : 'login');
@@ -599,163 +1439,308 @@ function GamePage() {
 
   return (
     <main
-      className={`app-shell ${isPlaying ? 'play-shell' : 'start-shell'} ${
-        isPlaying && activeView === 'game' ? 'game-shell' : ''
+      className={`app-shell play-shell ${
+        activeView === 'game' || activeView === 'practice' ? 'game-shell' : ''
       } ${activeView === 'calendar' ? 'calendar-shell detail-shell' : ''} ${
         activeView === 'solutions' ? 'solutions-shell detail-shell' : ''
       } ${
         activeView === 'settings' ? 'settings-shell detail-shell' : ''
       } ${
         activeView === 'howToPlay' ? 'how-to-play-shell detail-shell' : ''
+      } ${
+        activeView === 'rules' ? 'how-to-play-shell detail-shell' : ''
       }`}
     >
-      {isPlaying && (
-        <header className="top-bar game-top-bar">
-          <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
-            <img src="/app-icon.png" alt="" />
-          </button>
-          <nav className="site-nav" aria-label="Site">
+      <header className="top-bar game-top-bar">
+        <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
+          <img src="/app-icon.png" alt="" />
+        </button>
+        <nav className="site-nav" aria-label="Site">
+          {activeView === 'game' && !isEquationCorrect && !(todaySolutions.length > 0 && !isSearchingAnother) && (
             <ToolbarButton
-              label={puzzle?.displayDate ?? 'Calendar'}
-              icon={<CalendarIcon />}
-              isExpanded={activeView === 'calendar'}
-              onClick={activeView === 'calendar' ? showGame : showCalendar}
-              ariaLabel={dateInputLabel}
+              label="Hint"
+              icon={<HintIcon />}
+              className={`toolbar-hint-button${shakeHintButton ? ' shake' : ''}`}
+              isExpanded={true}
+              onClick={handleHintClick}
+              disabled={hintLoading}
             />
-            <ToolbarButton
-              label="Stats"
-              icon={<StatsIcon />}
-              isExpanded={activeView === 'solutions'}
-              onClick={activeView === 'solutions' ? showGame : showSolutions}
-            />
-            <ToolbarButton
-              label="Settings"
-              icon={<SettingsIcon />}
-              isExpanded={activeView === 'settings'}
-              onClick={activeView === 'settings' ? showGame : showSettingsPage}
-            />
-            <ToolbarButton
-              label={themePreference === 'dark' ? 'Light' : 'Dark'}
-              icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
-              className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
-              isExpanded={false}
-              onClick={toggleThemePreference}
-              ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
-            />
-          </nav>
-        </header>
-      )}
+          )}
+          <ToolbarButton
+            label={puzzle?.displayDate ?? 'Calendar'}
+            icon={<CalendarIcon />}
+            isExpanded={activeView === 'calendar'}
+            onClick={activeView === 'calendar' ? showGame : showCalendar}
+            ariaLabel={dateInputLabel}
+          />
+          <ToolbarButton
+            label="Stats"
+            icon={<StatsIcon />}
+            isExpanded={activeView === 'solutions'}
+            onClick={activeView === 'solutions' ? showGame : showSolutions}
+          />
+          <ToolbarButton
+            label="Settings"
+            icon={<SettingsIcon />}
+            isExpanded={activeView === 'settings'}
+            onClick={activeView === 'settings' ? showGame : showSettingsPage}
+          />
+          <ToolbarButton
+            label={themePreference === 'dark' ? 'Light' : 'Dark'}
+            icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
+            className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
+            isExpanded={false}
+            onClick={toggleThemePreference}
+            ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
+          />
+        </nav>
+      </header>
 
-      {!isPlaying && (
-        <StartPage
-          onPlay={playPuzzle}
-          onLogin={openLogin}
-          authUser={authUser}
-        />
-      )}
+      {confettiActive && <Confetti />}
 
-      {isPlaying && activeView === 'game' && (
+      {(activeView === 'game' || activeView === 'practice') && (
         <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
-          <div className="expression-area">
-            <EquationEditor
-              tokens={tokens}
-              selection={selection}
-              onSelectionChange={(nextSelection) =>
-                setEditorState((current) => ({
-                  ...current,
-                  selection: normalizeEditorSelection(nextSelection, current.tokens.length),
-                }))
-              }
-              onBackspace={backspace}
-              onInsertValue={insertOperator}
-              onShowDetailedInstructions={showDetailedHowToPlay}
-              selectorMoveRef={selectorMoveRef}
-            />
-
-            <EquationHelperRow
-              showHelperValues={isEasyMode}
-              leftValue={<RepeatingDecimalValue value={evaluation.left || '?'} />}
-              rightValue={<RepeatingDecimalValue value={evaluation.right || '?'} />}
-              onMove={moveSelectorFromControls}
-            />
-          </div>
-
-          <div className="control-area">
-            {puzzle && (
-              <DigitRail
-                digits={puzzle.digits}
-                delimiterPositions={puzzle.delimiterPositions}
-                usedDigitIndices={usedDigitIndices}
-                activeIndex={nextDigitIndex}
-                onActiveDigitClick={nextDigit !== null ? appendDigit : undefined}
-              />
-            )}
-
-            <div className="operator-grid" aria-label="Equation controls">
-              {operators.map(([label, value]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => insertOperator(value)}
-                  data-operator-value={value}
-                >
-                  {label}
-                </button>
-              ))}
-              <button className="danger" type="button" onClick={clear}>
-                C
-              </button>
-              <button className="warning" type="button" onClick={backspace} aria-label="Backspace">
-                ⌫
-              </button>
-              <button className="wide" type="button" onClick={() => insertText('=')}>
-                =
-              </button>
-              <button className="submit" type="button" onClick={submit}>
-                Submit
-              </button>
+          {isPracticeMode && (
+            <div className="practice-coach" role="note">
+              <strong>{practiceRound.title}: {practiceRound.displayDate}</strong>
+              <span>{guidedPracticeStep?.instruction ?? practiceRound.coach}</span>
+              <small>{practiceRound.coach}</small>
             </div>
-          </div>
+          )}
+          {gameAdBannerReason && <GameAdBanner reason={gameAdBannerReason} />}
+          {todaySolutions.length > 0 && !isSearchingAnother ? (
+            <VictoryPanel
+              displayDate={puzzle?.displayDate ?? selectedDate}
+              summary={dailyDashboardSummary}
+              solutions={todaySolutions}
+              savedSolutions={savedSolutions}
+              badges={badges}
+              onPlayAnother={() => {
+                clear();
+                setIsSearchingAnother(true);
+              }}
+              onUnlockTomorrow={handleUnlockTomorrow}
+              onShare={shareDailyResults}
+              onShareIndividual={shareSolutionText}
+              onShowSavedSolutions={showSolutions}
+              onShowCalendar={showCalendar}
+              isFutureUnlocked={unlockedFutureDates.has(tomorrowId)}
+              hasTomorrow={selectedDate === todayId}
+              isArchived={selectedDate < todayId}
+              onGoToToday={chooseToday}
+            />
+          ) : (
+            <>
+              <div className={`expression-area ${shakeActive ? 'shake' : ''}`}>
+                <EquationEditor
+                  tokens={tokens}
+                  selection={selection}
+                  onSelectionChange={(nextSelection) =>
+                    setEditorState((current) => ({
+                      ...current,
+                      selection: normalizeEditorSelection(nextSelection, current.tokens.length),
+                    }))
+                  }
+                  onBackspace={backspace}
+                  onInsertValue={insertOperator}
+                  onShowDetailedInstructions={showDetailedHowToPlay}
+                  onStartPractice={showPractice}
+                  selectorMoveRef={selectorMoveRef}
+                  nextDigit={nextDigit}
+                  onAppendDigit={appendDigit}
+                  isAutocompleting={isAutocompleting}
+                />
+
+                <EquationHelperRow
+                  showHelperValues={isEasyMode}
+                  leftValue={<RepeatingDecimalValue value={evaluation.left || '?'} />}
+                  middleValue={<RepeatingDecimalValue value={evaluation.middle || '?'} />}
+                  rightValue={<RepeatingDecimalValue value={evaluation.right || '?'} />}
+                  onMove={moveSelectorFromControls}
+                  gameMode={gameMode}
+                  targetValue={(gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined}
+                />
+              </div>
+
+              <div className="control-area">
+                {hintStep > 0 && hintData && (
+                  <div className="hint-panel" aria-live="polite">
+                    <div className="hint-header">
+                      <strong>Hint (Step {hintStep}/3)</strong>
+                      <button
+                        type="button"
+                        className="close-hint"
+                        onClick={() => {
+                          setHintStep(0);
+                          setHintData(null);
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="hint-body">
+                      {isDeadEnd ? (
+                        isEquationCorrect ? (
+                          <p className="dead-end-message success-message">
+                            🎉 Equation is correct! Click Submit to save your solution.
+                          </p>
+                        ) : (
+                          <p className="dead-end-message">
+                            ⚠️ {gameMode === 'single_expr' ? (
+                              <>Could not quickly find a solution with what is currently entered. Try backspacing or clearing.</>
+                            ) : (
+                              <>Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.</>
+                            )}
+                          </p>
+                        )
+                      ) : (
+                        <>
+                          {hintStep === 1 && (
+                            <p>
+                              {gameMode === 'target' || gameMode === 'single_expr' ? (
+                                <>Left side could start with: <code>{hintData.step1}</code></>
+                              ) : isLHSCompleteForHint && hintData.balancingHint ? (
+                                <>{hintData.balancingHint}</>
+                              ) : (
+                                <>Target value of all parts is: <strong>{hintData.step1}</strong></>
+                              )}
+                            </p>
+                          )}
+                          {hintStep === 2 && (
+                            <p>
+                              {gameMode === 'single_expr' ? (
+                                <>Expression is almost complete: <code>{hintData.step2}</code></>
+                              ) : gameMode === 'target' ? (
+                                <>Right side could start with: <code>{hintData.step2}</code></>
+                              ) : gameMode === 'double_equality' ? (
+                                <>First two parts could be: <code>{hintData.step2}</code></>
+                              ) : isLHSCompleteForHint && hintData.balancingHint ? (
+                                <>{hintData.mathTip || "Tip: remember that x^0 = 1"}</>
+                              ) : (
+                                <>Left side could be: <code>{hintData.step2}</code></>
+                              )}
+                            </p>
+                          )}
+                          {hintStep === 3 && (
+                            <p>
+                              A possible solution: <code>{hintData.step3}</code>
+                            </p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {hintStep < 3 && !isDeadEnd && (
+                      <button type="button" className="next-hint-button" onClick={handleHintClick}>
+                        Next Hint
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                {puzzle && (
+                  <DigitRail
+                    digits={puzzle.digits}
+                    delimiterPositions={puzzle.delimiterPositions}
+                    usedDigitIndices={usedDigitIndices}
+                    activeIndex={nextDigitIndex}
+                    onActiveDigitClick={nextDigit !== null ? appendDigit : undefined}
+                    glowActiveDigit={activeGlowKey === 'digit'}
+                  />
+                )}
+
+                <div className="operator-grid" aria-label="Equation controls">
+                  {operators.map(([label, value]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => insertOperator(value)}
+                      data-operator-value={value}
+                      className={activeGlowKey === value ? 'glow' : ''}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button className={`danger ${activeGlowKey === 'Clear' ? 'glow' : ''}`.trim()} type="button" onClick={clear}>
+                    C
+                  </button>
+                  <button className={`warning ${activeGlowKey === 'Backspace' ? 'glow' : ''}`.trim()} type="button" onClick={backspace} aria-label="Backspace">
+                    ⌫
+                  </button>
+                  {gameMode !== 'single_expr' && (
+                    <button className={`wide ${activeGlowKey === '=' ? 'glow' : ''}`.trim()} type="button" onClick={() => insertText('=')}>
+                      =
+                    </button>
+                  )}
+                  <button className={`${gameMode === 'single_expr' ? 'wide submit' : 'submit'} ${activeGlowKey === 'Submit' ? 'glow' : ''}`.trim()} type="button" onClick={submit}>
+                    Submit
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </section>
       )}
 
       <StatusToast message={feedbackMessage} tone={feedbackTone} />
 
-      {isPlaying && activeView === 'calendar' && (
+      {activeView === 'calendar' && (
         <CalendarPage
           selectedDate={selectedDate}
           savedSolutionDates={savedSolutionDates}
           onSelectedDateChange={chooseCalendarDate}
           onToday={chooseToday}
+          savedSolutions={savedSolutions}
+          onShare={shareSolution}
+          onPlay={playCalendarDate}
         />
       )}
 
-      {isPlaying && activeView === 'solutions' && (
+      {activeView === 'solutions' && (
         <SolutionsPage
-          displayDate={puzzle?.displayDate ?? 'Selected date'}
-          solutions={todaySolutions}
           badges={badges}
+          savedSolutions={savedSolutions}
         />
       )}
 
-      {isPlaying && activeView === 'settings' && (
+      {activeView === 'settings' && (
         <SettingsPanel
           themePreference={themePreference}
           difficultyMode={difficultyMode}
+          gameMode={gameMode}
           authUser={authUser}
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
+          onGameModeChange={setGameMode}
           onLogin={openLogin}
           onLogout={handleLogout}
           onClearData={clearBrowserData}
           onShowHowToPlay={showHowToPlay}
+          onPractice={showPractice}
+          onShowRules={showRules}
+          onRestartTutorial={restartTutorial}
+          onSupport={supportApp}
+          isSupporter={isSupporter}
         />
       )}
 
-      {isPlaying && activeView === 'howToPlay' && (
-        <HowToPlayStartView
+      {activeView === 'howToPlay' && (
+        <HowToPlayView
           initiallyShowDetail={showHowToPlayDetailFirst}
           onPlay={playPuzzle}
+        />
+      )}
+
+      {activeView === 'rules' && (
+        <WrittenRulesView
+          onPlay={playPuzzle}
+          onHowToPlay={showHowToPlay}
+        />
+      )}
+
+      {guidedFirstWinRoute === GuidedFirstWinRoute.GuidedFirstWin && activeView === 'game' && (
+        <GuidedTutorial
+          onStartGuidedCrack={startGuidedFirstWin}
+          onReadRules={showRules}
         />
       )}
 
@@ -769,6 +1754,28 @@ function GamePage() {
           onAuthenticated={handleAuthenticated}
           onLogout={handleLogout}
           onClose={() => setAuthModalMode(null)}
+        />
+      )}
+
+      {rewardModalAction && (
+        <RewardModal
+          actionName={rewardModalAction.actionName}
+          adDurationSeconds={rewardModalAction.adDurationSeconds}
+          claimLabel={rewardModalAction.claimLabel}
+          onSuccess={() => {
+            rewardModalAction.onSuccess();
+            setRewardModalAction(null);
+          }}
+          onClose={() => {
+            rewardModalAction.onClose?.();
+            setRewardModalAction(null);
+          }}
+          onOpenAuth={() => {
+            setRewardModalAction(null);
+            setAuthModalMode('signup');
+          }}
+          onSupporterUpgrade={supportApp}
+          isLoggedIn={!!authUser}
         />
       )}
 
@@ -1008,6 +2015,493 @@ function AuthModal({
   );
 }
 
+function CircularTimer({ timeLeft, total = 5, onClick, active }: { timeLeft: number; total: number; onClick: () => void; active: boolean }) {
+  const radius = 18;
+  const stroke = 3;
+  const normalizedRadius = radius - stroke;
+  const circumference = normalizedRadius * 2 * Math.PI;
+  const strokeDashoffset = circumference - (timeLeft / total) * circumference;
+
+  return (
+    <button
+      className={`playable-ad-close-btn ${active ? 'active animate-bounce' : 'disabled'}`}
+      type="button"
+      onClick={active ? onClick : undefined}
+      disabled={!active}
+      aria-label={active ? "Close and claim reward" : `Close disabled. Ad ends in ${timeLeft} seconds`}
+    >
+      <svg height={radius * 2} width={radius * 2} className="timer-svg">
+        <circle
+          stroke="rgba(255, 255, 255, 0.15)"
+          fill="rgba(0, 0, 0, 0.5)"
+          strokeWidth={stroke}
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+        <circle
+          stroke={active ? "var(--ios-green)" : "#ff007f"}
+          fill="transparent"
+          strokeWidth={stroke}
+          strokeDasharray={`${circumference} ${circumference}`}
+          style={{ strokeDashoffset, transition: 'stroke-dashoffset 1s linear' }}
+          strokeLinecap="round"
+          r={normalizedRadius}
+          cx={radius}
+          cy={radius}
+        />
+      </svg>
+      <span className="timer-text">
+        {active ? '×' : timeLeft}
+      </span>
+    </button>
+  );
+}
+
+function GameAdBanner({ reason }: { reason: 'past' | 'current_solution' }) {
+  const copy = reason === 'past'
+    ? 'Archive play is supported by a sponsor banner.'
+    : 'Additional solves for today are supported by a sponsor banner.';
+
+  return (
+    <aside className="game-ad-banner" aria-label="Sponsor banner">
+      <span className="game-ad-label">Ad</span>
+      <span>{copy}</span>
+    </aside>
+  );
+}
+
+function RewardModal({
+  actionName,
+  adDurationSeconds,
+  claimLabel,
+  onSuccess,
+  onClose,
+  onOpenAuth,
+  onSupporterUpgrade,
+  isLoggedIn,
+}: {
+  actionName: string;
+  adDurationSeconds: number;
+  claimLabel: string;
+  onSuccess: () => void;
+  onClose: () => void;
+  onOpenAuth: () => void;
+  onSupporterUpgrade: () => void;
+  isLoggedIn: boolean;
+}) {
+  const [status, setStatus] = useState<'ready' | 'playing' | 'completed'>('ready');
+  const [timeLeft, setTimeLeft] = useState(adDurationSeconds);
+
+  // Countdown timer effect for Ad Option
+  useEffect(() => {
+    if (status !== 'playing') return;
+
+    const timer = setInterval(() => {
+      setTimeLeft((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          setStatus('completed');
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [status]);
+
+  // Dynamic Google AdSense injection
+  useEffect(() => {
+    if (status === 'playing') {
+      const scriptId = 'adsense-sdk';
+      let script = document.getElementById(scriptId) as HTMLScriptElement | null;
+      if (!script) {
+        script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-demo';
+        script.async = true;
+        script.crossOrigin = 'anonymous';
+        document.body.appendChild(script);
+      }
+
+      // Initialize ads
+      try {
+        ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
+      } catch (e) {
+        console.warn('AdSense init error:', e);
+      }
+    }
+  }, [status]);
+
+  const startAd = () => {
+    setStatus('playing');
+    setTimeLeft(adDurationSeconds);
+  };
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section 
+        className={`auth-modal reward-modal-wrapper ${status === 'playing' ? 'ad-playing' : ''} ${status === 'completed' ? 'ad-completed' : ''}`} 
+        role="dialog" 
+        aria-modal="true" 
+        aria-labelledby="reward-title"
+        onPointerUp={(e) => e.stopPropagation()}
+      >
+        <header className="reward-modal-header">
+          <h2 id="reward-title">Support Crackle Date</h2>
+          <button 
+            type="button" 
+            className="reward-modal-close" 
+            onClick={onClose}
+            aria-label="Close modal"
+          >
+            ×
+          </button>
+        </header>
+
+        {status === 'ready' && (
+          <div className="reward-portal-content">
+            <p className="reward-subtitle">
+              Choose how you'd like to unlock <strong>"{actionName}"</strong>:
+            </p>
+            
+            <div className={`reward-options-grid ${isLoggedIn ? 'two-cols' : 'three-cols'}`}>
+              
+              {/* Card 1: Supporter Option */}
+              <div className="reward-option-card premium-card">
+                <div className="card-badge">SUPPORTER</div>
+                <div className="card-icon">$</div>
+                <h3 className="card-title">Supporter Option</h3>
+                <div className="card-price">$1.99</div>
+                
+                <ul className="card-features">
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>Support Crackle Date development</span>
+                  </li>
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>Removes sponsor banners</span>
+                  </li>
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>Keeps saves and stats unchanged</span>
+                  </li>
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>Future dates open without sponsor gates</span>
+                  </li>
+                </ul>
+
+                <button 
+                  type="button" 
+                  className="reward-option-btn premium-btn"
+                  onClick={onSupporterUpgrade}
+                >
+                  Support for $1.99
+                </button>
+              </div>
+
+              {/* Card 2: Sync Account (only if NOT logged in) */}
+              {!isLoggedIn && (
+                <div className="reward-option-card sync-card">
+                  <div className="card-badge sync-badge">RECOMMENDED</div>
+                  <div className="card-icon">🔑</div>
+                  <h3 className="card-title">Sync Progress</h3>
+                  <div className="card-price">Free</div>
+                  
+                  <ul className="card-features">
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <span>Track streaks & solve stats</span>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <span>Sync seamlessly across devices</span>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <span>Save custom puzzle settings</span>
+                    </li>
+                    <li>
+                      <span className="check-icon">✓</span>
+                      <span>Permanent progress backup</span>
+                    </li>
+                  </ul>
+
+                  <button 
+                    type="button" 
+                    className="reward-option-btn sync-btn"
+                    onClick={onOpenAuth}
+                  >
+                    Create Free Account
+                  </button>
+                </div>
+              )}
+
+              {/* Card 3: Free with Ads */}
+              <div className="reward-option-card ad-option-card">
+                <div className="card-badge free-badge">FREE</div>
+                <div className="card-icon">📺</div>
+                <h3 className="card-title">Watch Ad</h3>
+                <div className="card-price">{adDurationSeconds} Seconds</div>
+                
+                <ul className="card-features">
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>Quick {adDurationSeconds}-second countdown</span>
+                  </li>
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>No subscription required</span>
+                  </li>
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>Supports independent developer</span>
+                  </li>
+                  <li>
+                    <span className="check-icon">✓</span>
+                    <span>Unlock instantly</span>
+                  </li>
+                </ul>
+
+                <button 
+                  type="button" 
+                  className="reward-option-btn ad-btn"
+                  onClick={startAd}
+                >
+                  Watch Sponsor Ad
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {status === 'playing' && (
+          <div className="ad-playback-container">
+            <div className="ad-playback-header">
+              <span className="ad-playback-badge">Sponsor Advertisement</span>
+              <CircularTimer
+                timeLeft={timeLeft}
+                total={adDurationSeconds}
+                onClick={() => setStatus('completed')}
+                active={timeLeft === 0}
+              />
+            </div>
+
+            <div className="adsense-slot-container">
+              {/* Google AdSense ins container */}
+              <ins 
+                className="adsbygoogle"
+                style={{ display: 'block', width: '300px', height: '250px', margin: '0 auto' }}
+                data-ad-client="ca-pub-demo"
+                data-ad-slot="1234567890"
+              />
+              
+              {/* Fallback visual container that matches state of the art */}
+              <div className="adsense-fallback-placeholder">
+                <div className="spinner"></div>
+                <p className="placeholder-brand">Crackle Date Sponsor</p>
+                <p className="placeholder-sub">Ad loading or blocked by extension...</p>
+              </div>
+            </div>
+            
+            <p className="ad-playback-footer">
+              Your unlock will be available after the timer completes. Thank you for supporting Crackle Date.
+            </p>
+          </div>
+        )}
+
+        {status === 'completed' && (
+          <div className="ad-playback-completed">
+            <div className="completed-icon">✓</div>
+            <h3>Reward Ready!</h3>
+            <p>Sponsor advertisement complete. Continue below.</p>
+            <button 
+              type="button" 
+              className="reward-claim-btn"
+              onClick={onSuccess}
+            >
+              {claimLabel}
+            </button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function VictoryPanel({
+  displayDate,
+  summary,
+  solutions,
+  savedSolutions,
+  badges,
+  onPlayAnother,
+  onUnlockTomorrow,
+  onShare,
+  onShareIndividual,
+  onShowSavedSolutions,
+  onShowCalendar,
+  isFutureUnlocked,
+  hasTomorrow,
+  isArchived,
+  onGoToToday,
+}: {
+  displayDate: string;
+  summary: DailyDashboardSummary | null;
+  solutions: SavedSolution[];
+  savedSolutions: StoredSolutions;
+  badges: SolutionBadge[];
+  onPlayAnother: () => void;
+  onUnlockTomorrow?: () => void;
+  onShare: () => void;
+  onShareIndividual: (sol: SavedSolution) => void;
+  onShowSavedSolutions: () => void;
+  onShowCalendar: () => void;
+  isFutureUnlocked: boolean;
+  hasTomorrow: boolean;
+  isArchived: boolean;
+  onGoToToday: () => void;
+}) {
+  const nextBadgeTarget = nextBadgeTargetFromBadges(badges);
+  const victoryMessage = summary
+    ? successMessage(summary.latestValue)
+    : solutions.length === 1
+      ? "You solved today's puzzle. Awesome work!"
+      : `You found ${solutions.length} solutions for this date!`;
+
+  return (
+    <div className="victory-panel-card">
+      <div className="victory-badge-row">
+        <span className="victory-badge-pill">🎉 Puzzle Cracked!</span>
+      </div>
+      <h2 className="victory-date-title">{displayDate}</h2>
+      <p className="victory-subtext">{victoryMessage}</p>
+
+      {summary && (
+        <section className="daily-dashboard-crackle" aria-label="Latest cracked solution">
+          <span>CRACKED</span>
+          <MathEquation equation={summary.latestEquation} className="daily-dashboard-equation" />
+          <strong>{solutionCountText(summary.solvedCountForDate)}</strong>
+        </section>
+      )}
+
+      <div className="victory-stats-box">
+        {summary ? <DailyDashboardStats summary={summary} /> : <StatsDashboard savedSolutions={savedSolutions} />}
+      </div>
+
+      {nextBadgeTarget && (
+        <section className="next-badge-target" aria-labelledby="next-badge-target-title">
+          <span className="next-badge-label">Next Badge</span>
+          <h3 id="next-badge-target-title">{nextBadgeTarget.title}</h3>
+          <p>{nextBadgeTarget.description}</p>
+          <strong>{nextBadgeTarget.actionText}</strong>
+        </section>
+      )}
+
+      <div className="victory-solutions-section">
+        <h3>Your Solutions</h3>
+        <ul className="victory-sol-list">
+          {solutions.map((sol, index) => {
+            const solMode = sol.mode || 'classic';
+            const modeLabel =
+              solMode === 'classic'
+                ? 'Classic'
+                : solMode === 'double_equality'
+                ? 'Double ='
+                : solMode === 'target'
+                ? `Target (${sol.targetValue || '10'})`
+                : `Single (${sol.targetValue || '10'})`;
+
+            return (
+              <li className="victory-sol-item" key={index}>
+                <div className="victory-sol-main">
+                  <span className="victory-sol-math">
+                    <MathEquation equation={sol.equation} />
+                  </span>
+                  <div className="victory-sol-metadata">
+                    <span className="victory-badge-mode">{modeLabel}</span>
+                    <span>⏱ {formatTime(sol.seconds)}</span>
+                    <span className={`victory-badge-diff difficulty-${sol.difficulty || 'easy'}`}>
+                      {sol.difficulty || 'easy'}
+                    </span>
+                    {sol.usedHint && <span className="victory-badge-hint">💡 Hint</span>}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="victory-share-individual-btn"
+                  onClick={() => onShareIndividual(sol)}
+                  aria-label="Share this solution"
+                >
+                  <ShareIcon />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
+      <div className="victory-cta-actions">
+        <button className="auth-primary victory-main-share-btn" type="button" onClick={onShare}>
+          <span className="share-icon-inline">
+            <ShareIcon />
+          </span>
+          Share Daily
+        </button>
+
+        <div className="victory-secondary-row">
+          <button className="auth-secondary" type="button" onClick={onPlayAnother}>
+            Keep Playing
+          </button>
+
+          <button className="auth-secondary" type="button" onClick={onShowSavedSolutions}>
+            Saved Solutions
+          </button>
+
+          <button className="auth-secondary" type="button" onClick={onShowCalendar}>
+            Calendar
+          </button>
+
+          {isArchived && (
+            <button className="auth-secondary" type="button" onClick={onGoToToday}>
+              Play Today's Puzzle
+            </button>
+          )}
+
+          {hasTomorrow && onUnlockTomorrow && (
+            <button className="auth-secondary unlock-tomorrow-btn-ad" type="button" onClick={onUnlockTomorrow}>
+              {isFutureUnlocked ? "Play Tomorrow's Puzzle" : "Unlock Tomorrow's Puzzle (30s Ad)"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DailyDashboardStats({ summary }: { summary: DailyDashboardSummary }) {
+  return (
+    <section className="daily-dashboard-stats" aria-labelledby="daily-dashboard-stats-title">
+      <h3 id="daily-dashboard-stats-title" className="sr-only">Daily Dashboard Stats</h3>
+      <article className="daily-dashboard-stat-card" aria-label={`Streak, ${streakDescription(summary.streakCount)}`}>
+        <span>Streak</span>
+        <strong>{streakValue(summary.streakCount)}</strong>
+      </article>
+      <article
+        className="daily-dashboard-stat-card"
+        aria-label={`Month, ${monthProgressText(summary.monthSolvedCount, summary.monthAvailableCount)}`}
+      >
+        <span>Month</span>
+        <strong>{monthProgressText(summary.monthSolvedCount, summary.monthAvailableCount)}</strong>
+      </article>
+    </section>
+  );
+}
+
 function ImportPrompt({
   count,
   onImport,
@@ -1059,24 +2553,21 @@ function StatsIcon() {
 }
 
 function SolutionsPage({
-  displayDate,
-  solutions,
   badges,
+  savedSolutions,
 }: {
-  displayDate: string;
-  solutions: SavedSolution[];
   badges: SolutionBadge[];
+  savedSolutions: StoredSolutions;
 }) {
   return (
     <section className="solutions-page" aria-labelledby="solutions-page-title">
       <div className="solutions-page-header">
         <div>
-          <h1 id="solutions-page-title">Saved Solutions</h1>
-          <p>{displayDate}</p>
+          <h1 id="solutions-page-title">Stats</h1>
         </div>
       </div>
+      <StatsDashboard savedSolutions={savedSolutions} />
       <BadgesSection badges={badges} />
-      <SolutionsList solutions={solutions} />
     </section>
   );
 }
@@ -1120,23 +2611,53 @@ function formatBadgeEarnedDate(dateIdentifier: string | undefined): string {
   return fullDateFormatter.format(new Date(year, month - 1, day));
 }
 
-function SolutionsList({ solutions }: { solutions: SavedSolution[] }) {
+function SolutionsList({ solutions, onShare }: { solutions: SavedSolution[]; onShare?: (sol: SavedSolution) => void }) {
   if (solutions.length === 0) {
     return <p>No solutions saved for this date yet.</p>;
   }
 
   return (
-    <ol>
-      {solutions.map((solution) => (
-        <li key={`${solution.equation}-${solution.timestamp}`}>
-          <strong>
-            <MathEquation equation={solution.equation} className="solution-equation" />
-          </strong>
-          <span>
-            {formatTime(solution.seconds)} · value <RepeatingDecimalValue value={solution.value} />
-          </span>
-        </li>
-      ))}
+    <ol className="solutions-list">
+      {solutions.map((solution) => {
+        const solutionMode = solution.mode ?? 'classic';
+        const modeLabel =
+          solutionMode === 'classic'
+            ? 'Classic'
+            : solutionMode === 'double_equality'
+            ? 'Double Equality'
+            : solutionMode === 'target'
+            ? `Target (${solution.targetValue ?? '?'})`
+            : `Single Expr (${solution.targetValue ?? '?'})`;
+
+        return (
+          <li key={`${solution.equation}-${solution.timestamp}`}>
+            <div className="solution-row-content">
+              <strong>
+                <MathEquation equation={solution.equation} className="solution-equation" />
+              </strong>
+              <span className="solution-meta-row">
+                <span className="solution-mode">{modeLabel}</span>
+                <span className="solution-divider">·</span>
+                <span>{formatTime(solution.seconds)}</span>
+                <span className="solution-divider">·</span>
+                <span className="solution-value-label">value <RepeatingDecimalValue value={solution.value} /></span>
+                {solution.solvedOnOtherDay && <span className="solution-badge archive-badge">Archive</span>}
+                {solution.usedHint && <span className="solution-badge hint-badge">Used Hint</span>}
+                {solution.difficulty && (
+                  <span className={`solution-badge difficulty-${solution.difficulty}`}>
+                    {solution.difficulty}
+                  </span>
+                )}
+              </span>
+            </div>
+            {onShare && (
+              <button className="share-row-button" type="button" onClick={() => onShare(solution)} aria-label="Share solution">
+                <ShareIcon />
+              </button>
+            )}
+          </li>
+        );
+      })}
     </ol>
   );
 }
@@ -1212,6 +2733,7 @@ function ToolbarButton({
   onClick,
   ariaLabel = label,
   className = '',
+  disabled = false,
 }: {
   label: string;
   icon: React.ReactNode;
@@ -1219,6 +2741,7 @@ function ToolbarButton({
   onClick: () => void;
   ariaLabel?: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -1228,10 +2751,21 @@ function ToolbarButton({
       aria-pressed={isExpanded}
       data-expanded={isExpanded}
       onClick={onClick}
+      disabled={disabled}
     >
       {icon}
       <span>{label}</span>
     </button>
+  );
+}
+
+function HintIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A5.5 5.5 0 0 0 7 8c0 1.3.5 2.6 1.5 3.5.8.8 1.3 1.5 1.5 2.5" />
+      <path d="M9 18h6" />
+      <path d="M10 22h4" />
+    </svg>
   );
 }
 
@@ -1303,66 +2837,12 @@ function appendValueSegment(segments: ValueSegment[], text: string, isRepeating:
   segments.push({ text, isRepeating });
 }
 
-function StartPage({
-  onPlay,
-  onLogin,
-  authUser,
-}: {
-  onPlay: () => void;
-  onLogin: () => void;
-  authUser: AuthUser | null;
-}) {
-  const [showInstructions, setShowInstructions] = useState(false);
-
-  if (showInstructions) {
-    return (
-      <HowToPlayStartView
-        onPlay={onPlay}
-      />
-    );
-  }
-
-  return (
-    <section className="start-panel" aria-labelledby="start-title">
-      <div className="start-card">
-        <div className="start-copy">
-          <img className="start-icon" src="/app-icon.png" alt="" />
-          <h1 id="start-title">Crackle Date</h1>
-          <p className="start-tagline">
-            Crack the date into equal values{' '}
-            <br />
-            with Math!
-          </p>
-        </div>
-
-        <div className="start-actions" aria-label="Start actions">
-          <button
-            className="start-action-button"
-            type="button"
-            onClick={() => setShowInstructions(true)}
-          >
-            How to Play
-          </button>
-          <button className="start-action-button" type="button" onClick={onLogin}>
-            {authUser ? 'Account' : 'Log in'}
-          </button>
-          <button className="start-action-button play-button" type="button" onClick={onPlay}>
-            Play
-          </button>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function HowToPlayStartView({
-  initiallyShowDetail = false,
+function HowToPlayView({
   onPlay,
 }: {
   initiallyShowDetail?: boolean;
   onPlay: () => void;
 }) {
-  const [showDetail, setShowDetail] = useState(initiallyShowDetail);
   const [detailIndex, setDetailIndex] = useState(0);
   const detailCard = HOW_TO_PLAY_DETAIL_CARDS[detailIndex];
 
@@ -1376,99 +2856,105 @@ function HowToPlayStartView({
     setDetailIndex((current) => (current + 1) % HOW_TO_PLAY_DETAIL_CARDS.length);
   }, []);
 
-  if (showDetail && detailCard) {
-    return (
-      <section className="start-panel" aria-labelledby="how-to-play-detail-title">
-        <div className="how-to-play-card detailed-how-to-play-card">
-          <div className="how-to-play-header">
-            <img className="start-icon" src="/app-icon.png" alt="" />
-            <div>
-              <p className="document-kicker">Crackle Date</p>
-              <h1 id="how-to-play-detail-title">Cracked Instructions</h1>
-            </div>
-          </div>
-
-          <div className="how-to-play-actions">
-            <button
-              className="start-action-button secondary-button"
-              type="button"
-              onClick={() => setShowDetail(false)}
-            >
-              Quick Guide
-            </button>
-            <button className="start-action-button play-button" type="button" onClick={onPlay}>
-              Play
-            </button>
-          </div>
-
-          <article className="how-to-play-detail-card" aria-live="polite">
-            <img src={detailCard.imageSrc} alt={detailCard.imageAlt} />
-            <div className="how-to-play-detail-note">
-              <p className="how-to-play-detail-count">
-                {detailIndex + 1} of {HOW_TO_PLAY_DETAIL_CARDS.length}
-              </p>
-              <h2>{detailCard.title}</h2>
-              <p>{detailCard.note}</p>
-            </div>
-          </article>
-
-          <div className="how-to-play-detail-controls" aria-label="Detailed instruction controls">
-            <button
-              className="selector-arrow-button"
-              type="button"
-              onClick={goToPreviousDetail}
-              aria-label="Previous instruction card"
-            >
-              ←
-            </button>
-            <button
-              className="selector-arrow-button"
-              type="button"
-              onClick={goToNextDetail}
-              aria-label="Next instruction card"
-            >
-              →
-            </button>
-          </div>
-
-        </div>
-      </section>
-    );
+  if (!detailCard) {
+    return null;
   }
 
   return (
-    <section className="start-panel" aria-labelledby="how-to-play-title">
-      <div className="how-to-play-card">
+    <section className="start-panel" aria-labelledby="how-to-play-detail-title">
+      <div className="how-to-play-card detailed-how-to-play-card">
         <div className="how-to-play-header">
           <img className="start-icon" src="/app-icon.png" alt="" />
           <div>
             <p className="document-kicker">Crackle Date</p>
-            <h1 id="how-to-play-title">How to Play</h1>
+            <h1 id="how-to-play-detail-title">Cracked Instructions</h1>
           </div>
         </div>
 
         <div className="how-to-play-actions">
-          <button className="start-action-button secondary-button" type="button" onClick={() => setShowDetail(true)}>
-            Cracked Instructions
-          </button>
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
-            Play
+            Back to Game
           </button>
         </div>
 
-        <ol className="how-to-play-list">
-          {HOW_TO_PLAY_SECTIONS.map((section) => (
-            <li className="how-to-play-step" key={section.title}>
-              <strong>{section.title}</strong>
+        <article className="how-to-play-detail-card" aria-live="polite">
+          <img src={detailCard.imageSrc} alt={detailCard.imageAlt} />
+          <div className="how-to-play-detail-note">
+            <p className="how-to-play-detail-count">
+              {detailIndex + 1} of {HOW_TO_PLAY_DETAIL_CARDS.length}
+            </p>
+            <h2>{detailCard.title}</h2>
+            <p>{detailCard.note}</p>
+          </div>
+        </article>
+
+        <div className="how-to-play-detail-controls" aria-label="Detailed instruction controls">
+          <button
+            className="selector-arrow-button"
+            type="button"
+            onClick={goToPreviousDetail}
+            aria-label="Previous instruction card"
+          >
+            ←
+          </button>
+          <button
+            className="selector-arrow-button"
+            type="button"
+            onClick={goToNextDetail}
+            aria-label="Next instruction card"
+          >
+            →
+          </button>
+        </div>
+
+      </div>
+    </section>
+  );
+}
+
+function WrittenRulesView({
+  onPlay,
+  onHowToPlay,
+}: {
+  onPlay: () => void;
+  onHowToPlay: () => void;
+}) {
+  return (
+    <section className="start-panel" aria-labelledby="written-rules-title">
+      <div className="how-to-play-card written-rules-card">
+        <div className="how-to-play-header">
+          <img className="start-icon" src="/app-icon.png" alt="" />
+          <div>
+            <p className="document-kicker">Crackle Date</p>
+            <h1 id="written-rules-title">Rules</h1>
+          </div>
+        </div>
+
+        <p className="written-rules-intro">
+          Use the date digits to make both sides equal. Practice is separate from your daily progress.
+        </p>
+
+        <div className="how-to-play-actions">
+          <button className="start-action-button play-button" type="button" onClick={onPlay}>
+            Back to Game
+          </button>
+          <button className="start-action-button secondary" type="button" onClick={onHowToPlay}>
+            Cracked Instructions
+          </button>
+        </div>
+
+        <div className="written-rules-list">
+          {RULES_SECTIONS.map((section) => (
+            <section className="written-rule-section" key={section.title} aria-labelledby={`rules-${section.title.toLowerCase().replaceAll(' ', '-')}`}>
+              <h2 id={`rules-${section.title.toLowerCase().replaceAll(' ', '-')}`}>{section.title}</h2>
               <ul>
-                {section.items.map((item) => (
-                  <li key={item}>{item}</li>
+                {section.rows.map((row) => (
+                  <li key={row}>{row}</li>
                 ))}
               </ul>
-            </li>
+            </section>
           ))}
-        </ol>
-
+        </div>
       </div>
     </section>
   );
@@ -1479,11 +2965,17 @@ function CalendarPage({
   savedSolutionDates,
   onSelectedDateChange,
   onToday,
+  savedSolutions,
+  onShare,
+  onPlay,
 }: {
   selectedDate: string;
   savedSolutionDates: ReadonlySet<string>;
   onSelectedDateChange: (date: string) => void;
   onToday: () => void;
+  savedSolutions: StoredSolutions;
+  onShare: (sol: SavedSolution, dateId: string) => void;
+  onPlay: () => void;
 }) {
   const selectedDateObject = useMemo(() => dateFromIdentifier(selectedDate), [selectedDate]);
   const [visibleMonth, setVisibleMonth] = useState(() => startOfMonth(selectedDateObject));
@@ -1525,6 +3017,16 @@ function CalendarPage({
           savedSolutionDates={savedSolutionDates}
           onSelectedDateChange={onSelectedDateChange}
         />
+      </div>
+
+      <div className="calendar-equations-section">
+        <div className="calendar-equations-header">
+          <h2>Equations for {formatBadgeEarnedDate(selectedDate)}</h2>
+          <button className="play-date-button" type="button" onClick={onPlay}>
+            Play this Date
+          </button>
+        </div>
+        <SolutionsList solutions={savedSolutions[selectedDate] ?? []} onShare={(sol) => onShare(sol, selectedDate)} />
       </div>
     </section>
   );
@@ -1582,12 +3084,14 @@ function DigitRail({
   usedDigitIndices = emptyDigitIndices,
   activeIndex = null,
   onActiveDigitClick,
+  glowActiveDigit = false,
 }: {
   digits: number[];
   delimiterPositions: number[];
   usedDigitIndices?: ReadonlySet<number>;
   activeIndex?: number | null;
   onActiveDigitClick?: () => void;
+  glowActiveDigit?: boolean;
 }) {
   const delimiters = new Set(delimiterPositions);
   return (
@@ -1596,7 +3100,7 @@ function DigitRail({
         <React.Fragment key={`${digit}-${index}`}>
           {index === activeIndex && onActiveDigitClick ? (
             <button
-              className={digitClassName(index, usedDigitIndices, activeIndex)}
+              className={`${digitClassName(index, usedDigitIndices, activeIndex)} ${glowActiveDigit ? 'glow' : ''}`.trim()}
               type="button"
               onClick={onActiveDigitClick}
               aria-label={`Use current digit ${digit}`}
@@ -1621,7 +3125,11 @@ function EquationEditor({
   onBackspace,
   onInsertValue,
   onShowDetailedInstructions,
+  onStartPractice,
   selectorMoveRef,
+  nextDigit,
+  onAppendDigit,
+  isAutocompleting = false,
 }: {
   tokens: EquationToken[];
   selection: EditorSelection;
@@ -1629,7 +3137,11 @@ function EquationEditor({
   onBackspace: () => void;
   onInsertValue: (value: string) => void;
   onShowDetailedInstructions: () => void;
+  onStartPractice: () => void;
   selectorMoveRef?: React.MutableRefObject<SelectorMoveHandler | null>;
+  nextDigit?: number | null;
+  onAppendDigit?: () => void;
+  isAutocompleting?: boolean;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const normalizedSelection = normalizeEditorSelection(selection, tokens.length);
@@ -1726,6 +3238,11 @@ function EquationEditor({
           onInsertValue(value);
           return;
         }
+        if (nextDigit !== undefined && nextDigit !== null && onAppendDigit && event.key === String(nextDigit)) {
+          event.preventDefault();
+          onAppendDigit();
+          return;
+        }
       }
 
       if (event.key !== 'Backspace') return;
@@ -1736,6 +3253,8 @@ function EquationEditor({
       onBackspace,
       onInsertValue,
       moveSelector,
+      nextDigit,
+      onAppendDigit,
     ],
   );
 
@@ -1753,7 +3272,14 @@ function EquationEditor({
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Backspace' && keyboardInsertableOperators[event.key] === undefined) {
+      const isDigitMatch = nextDigit !== undefined && nextDigit !== null && event.key === String(nextDigit);
+      if (
+        event.key !== 'ArrowLeft' &&
+        event.key !== 'ArrowRight' &&
+        event.key !== 'Backspace' &&
+        keyboardInsertableOperators[event.key] === undefined &&
+        !isDigitMatch
+      ) {
         return;
       }
 
@@ -1773,13 +3299,13 @@ function EquationEditor({
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
-  }, [handleEditorKey, isEditableTarget]);
+  }, [handleEditorKey, isEditableTarget, nextDigit]);
 
   if (tokens.length === 0) {
     return (
       <div
         ref={editorRef}
-        className="equation-box empty"
+        className={`equation-box empty ${isAutocompleting ? 'autocompleting' : ''}`}
         aria-label="Equation input"
         data-testid="equation-editor"
         tabIndex={0}
@@ -1790,7 +3316,10 @@ function EquationEditor({
         }}
         onKeyDown={handleEditorKey}
       >
-        <EquationEmptyState onShowDetailedInstructions={onShowDetailedInstructions} />
+        <EquationEmptyState
+          onShowDetailedInstructions={onShowDetailedInstructions}
+          onStartPractice={onStartPractice}
+        />
       </div>
     );
   }
@@ -1798,7 +3327,7 @@ function EquationEditor({
   return (
     <div
       ref={editorRef}
-      className="equation-box"
+      className={`equation-box ${isAutocompleting ? 'autocompleting' : ''}`}
       aria-label="Equation input"
       data-testid="equation-editor"
       tabIndex={0}
@@ -2044,8 +3573,8 @@ function PrivacyPage() {
     <DocumentShell
       currentPage="privacy"
       title="Privacy"
-      subtitle="Crackle Date is built to be played without accounts, ads, or cross-app tracking."
-      meta="Last updated June 7, 2026"
+      subtitle="Crackle Date is built to be played with local saves, optional accounts, limited sponsor ads, and no public profile."
+      meta="Last updated June 25, 2026"
     >
       <DocumentSection
         title="Local Storage"
@@ -2094,11 +3623,29 @@ function PrivacyPage() {
       />
 
       <DocumentSection
+        title="Ads"
+        rows={[
+          {
+            label: 'Date-based sponsor ads',
+            body: 'Past dates can show a banner ad. The current date can show a banner ad after you already have one saved solution for that date. Future dates can ask you to watch a 30-second sponsor ad before opening that date.',
+          },
+          {
+            label: 'Ad technology',
+            body: 'Web sponsor ads may be served through a browser ad provider. Depending on the provider and your browser settings, ad delivery can process device, browser, approximate location, and ad interaction signals.',
+          },
+          {
+            label: '$1.99 supporter option',
+            body: 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.',
+          },
+        ]}
+      />
+
+      <DocumentSection
         title="Tracking"
         rows={[
           {
-            label: 'No advertising profile',
-            body: 'Crackle Date does not show ads, sell personal information, or track you across other apps or websites.',
+            label: 'No sale of personal information',
+            body: 'Crackle Date does not sell personal information or provide a public user profile, leaderboard, or user-generated content feed.',
           },
           {
             label: 'No public profile',
@@ -2115,9 +3662,23 @@ function SupportPage() {
     <DocumentShell
       currentPage="support"
       title="Support"
-      subtitle="Quick checks for gameplay, saved data, display issues, and details to include when something does not behave as expected."
-      meta="Last updated June 7, 2026"
+      subtitle="Quick checks for gameplay, saved data, ads, paid support, display issues, and details to include when something does not behave as expected."
+      meta="Last updated June 25, 2026"
     >
+      <DocumentSection
+        title="Paid Support"
+        rows={[
+          {
+            label: '$1.99 Supporter Option',
+            body: 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.',
+          },
+          {
+            label: 'Future date unlocks',
+            body: 'Future dates can use a 30-second sponsor ad before play. Past dates and extra current-date solves can show a banner ad unless the supporter option is active.',
+          },
+        ]}
+      />
+
       <DocumentSection
         title="Common Checks"
         rows={[
@@ -2271,6 +3832,64 @@ function createDigitToken(value: number, digitIndex: number): EquationToken {
   return { id: createTokenId(), value: String(value), digitIndex };
 }
 
+function stringToEquationTokens(s: string, digits: number[]): EquationToken[] {
+  const tokens: EquationToken[] = [];
+  const usedIndices = new Set<number>();
+  
+  const operatorMap: Record<string, string> = {
+    '+': '+',
+    '-': '-',
+    '*': '×',
+    '×': '×',
+    '/': '÷',
+    '÷': '÷',
+    '^': '^',
+    '√': '√',
+    '!': '!',
+    '|': '|',
+    '(': '(',
+    ')': ')',
+    '=': '=',
+  };
+
+  for (let i = 0; i < s.length; i++) {
+    const char = s[i];
+    if (/[0-9]/.test(char)) {
+      const val = Number(char);
+      let foundIndex = -1;
+      for (let d = 0; d < digits.length; d++) {
+        if (digits[d] === val && !usedIndices.has(d)) {
+          foundIndex = d;
+          break;
+        }
+      }
+      if (foundIndex !== -1) {
+        usedIndices.add(foundIndex);
+        tokens.push({
+          id: createTokenId(),
+          value: char,
+          digitIndex: foundIndex,
+        });
+      } else {
+        tokens.push({
+          id: createTokenId(),
+          value: char,
+        });
+      }
+    } else if (operatorMap[char] !== undefined) {
+      const isPipe = char === '|';
+      const pipeCount = tokens.filter((t) => t.value === '|').length;
+      tokens.push({
+        id: createTokenId(),
+        value: operatorMap[char],
+        role: isPipe ? (pipeCount % 2 === 0 ? 'absoluteOpen' : 'absoluteClose') : undefined,
+      });
+    }
+  }
+
+  return tokens;
+}
+
 function tokensToEquation(tokens: EquationToken[]): string {
   return tokens.map((token) => token.value).join('');
 }
@@ -2310,6 +3929,10 @@ function dateFromIdentifier(identifier: string): Date {
     return new Date();
   }
   return new Date(year, month - 1, day);
+}
+
+function dateDisplayString(identifier: string): string {
+  return fullDateFormatter.format(dateFromIdentifier(identifier));
 }
 
 function startOfMonth(date: Date): Date {

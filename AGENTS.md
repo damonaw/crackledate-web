@@ -8,6 +8,12 @@ Guidance for Codex and other coding agents working in this repository.
 - The frontend is React + Vite in `frontend/`.
 - The backend is Go in `cmd/server/` and `internal/`.
 - The Vite dev server proxies `/api` requests to the Go backend on `http://localhost:8080`.
+- Product monetization rules are shared with Android and iOS: `$1.99` supporter option removes date-based ads, while non-supporters can see a past-date banner, current-date banner after one saved solution, and 30-second future-date sponsor unlock.
+- Guided First Crack is shared with Android and iOS: first-time web play should route through the guided entry, start the Practice Round guided tutorial, and mark completion only after the full guided practice solve succeeds.
+- Practice is shared with Android and iOS: use the June 19, 2026 sample round, highlight each next tutorial step, and never save, sync, or submit practice attempts.
+- Rules is a written Settings destination shared with Android and iOS; keep it separate from visual Cracked Instructions.
+- Share payloads are shared with Android and iOS: daily shares are spoiler-free, while saved-solution shares include the equation, value, and solve time.
+- Daily Dashboard work should match Android's selected-date summary: cracked moment, streak/month cards, next badge target, spoiler-free daily share, keep-playing, saved-solutions, and calendar actions.
 
 ## Local Development
 
@@ -56,3 +62,4 @@ Open `http://localhost:5173/` for the local app.
 - Keep the Go backend and Vite frontend as separate local dev processes.
 - Do not commit `frontend/node_modules/`, `frontend/dist/`, `data/`, or local log files.
 - Prefer small, focused changes and run the relevant checks before committing.
+- Keep privacy/support copy aligned when changing account, ad, paid-support, or submission behavior.

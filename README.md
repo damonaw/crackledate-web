@@ -15,6 +15,7 @@ This is the deployable web version of Crackle Date for `crackledate.com`.
 - React + Vite frontend for the playable browser board.
 - Go backend for puzzle date metadata, expression evaluation, and equation validation.
 - A single Docker image serves the React build and `/api/*` routes.
+- Guided First Crack onboarding, optional accounts, local saves, a `$1.99` supporter option, sponsor banners for past dates and repeat current-date solves, a 30-second sponsor unlock for future dates, a Practice sandbox, and written Rules.
 
 This keeps the runtime small and simple: the single container can sit behind any HTTPS reverse proxy or tunnel, while React handles the equation-builder interaction.
 
@@ -105,3 +106,26 @@ Accounts are optional. Email/password accounts require email verification by eit
 link or entering the emailed 6-digit code. Passwords must be at least 8 characters and are stored with
 Argon2id hashes. Verified accounts can sync saved solutions, submission attempts, theme preference, and
 difficulty mode.
+
+Monetization is date-based and limited: the supporter option is `$1.99` and removes
+date-based ads in the current browser. Non-supporters can see a banner on past dates, a banner
+after one current-date saved solution, and a 30-second sponsor unlock before future-date play.
+
+Guided First Crack is the first-time web onboarding path. It uses the shared
+Android/iOS route policy and starts the Practice Round guided tutorial, which highlights each
+next step until the full sample solution is submitted.
+
+Practice is a sandbox reachable from Settings and is also the guided tutorial. It uses the shared
+June 19, 2026 sample round and validates equations without saving progress, syncing account data,
+or submitting the attempt to the backend.
+
+Rules is a written Settings destination separate from Cracked Instructions. It documents
+digit order, the leading-zero rule, the equals-sign requirement, practice boundaries,
+and date-based ad boundaries.
+
+Share payloads follow the shared Android contract: daily shares include progress without
+revealing the equation, while saved-solution shares include the equation, value, and solve time.
+
+The post-solve panel is the web Daily Dashboard: it uses Android-aligned selected-date
+summary copy, streak/month cards, next badge target copy, spoiler-free daily sharing,
+and actions for keep playing, saved solutions, and calendar.

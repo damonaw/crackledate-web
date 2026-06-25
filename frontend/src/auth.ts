@@ -5,6 +5,11 @@ export type SavedSolution = {
   timestamp: string;
   seconds: number;
   value: string;
+  mode?: string;
+  targetValue?: string;
+  solvedOnOtherDay?: boolean;
+  usedHint?: boolean;
+  difficulty?: 'easy' | 'hard';
 };
 export type StoredSolutions = Record<string, SavedSolution[]>;
 

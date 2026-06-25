@@ -1,5 +1,6 @@
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
+type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
 type AuthUser = {
   email: string;
   emailVerified: boolean;
@@ -8,23 +9,37 @@ type AuthUser = {
 export function SettingsPanel({
   themePreference,
   difficultyMode,
+  gameMode,
   authUser = null,
   onThemePreferenceChange,
   onDifficultyModeChange,
+  onGameModeChange,
   onLogin = () => undefined,
   onLogout = () => undefined,
   onClearData,
   onShowHowToPlay,
+  onPractice = () => undefined,
+  onShowRules = () => undefined,
+  onRestartTutorial = () => undefined,
+  onSupport = () => undefined,
+  isSupporter = false,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
+  gameMode: GameMode;
   authUser?: AuthUser | null;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
+  onGameModeChange: (mode: GameMode) => void;
   onLogin?: () => void;
   onLogout?: () => void;
   onClearData: () => void;
   onShowHowToPlay: () => void;
+  onPractice?: () => void;
+  onShowRules?: () => void;
+  onRestartTutorial?: () => void;
+  onSupport?: () => void;
+  isSupporter?: boolean;
 }) {
   return (
     <section className="settings-page" aria-labelledby="settings-title">
@@ -84,11 +99,43 @@ export function SettingsPanel({
             ))}
           </div>
         </fieldset>
+
+        <fieldset className="settings-row">
+          <legend>Game Mode</legend>
+          <div className="segmented-control">
+            {([
+              { value: 'classic', label: 'Classic' },
+              { value: 'double_equality', label: 'Double =' },
+              { value: 'target', label: 'Target' },
+              { value: 'single_expr', label: 'Single' },
+            ] as const).map((mode) => (
+              <label key={mode.value}>
+                <input
+                  type="radio"
+                  name="gameMode"
+                  value={mode.value}
+                  checked={gameMode === mode.value}
+                  onChange={() => onGameModeChange(mode.value)}
+                />
+                <span>{mode.label}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
       </div>
 
       <nav className="settings-links" aria-label="Help and policies">
         <button className="settings-link-button" type="button" onClick={onShowHowToPlay}>
           How to Play
+        </button>
+        <button className="settings-link-button" type="button" onClick={onPractice}>
+          Practice
+        </button>
+        <button className="settings-link-button" type="button" onClick={onShowRules}>
+          Rules
+        </button>
+        <button className="settings-link-button" type="button" onClick={onRestartTutorial}>
+          Restart Practice Round
         </button>
         <a href="/privacy/">Privacy</a>
         <a href="/support/">Support</a>
@@ -97,11 +144,18 @@ export function SettingsPanel({
         </button>
       </nav>
 
-      <div className="settings-branding" aria-label="Game studio credit">
-        <div className="settings-branding-mark" aria-hidden="true">
-          <img className="settings-branding-logo" src="/ouroborialis-logo.png" alt="" />
-        </div>
-        <span className="settings-branding-copy">An Ouroborialis Game</span>
+      <div className="settings-support-card" aria-label="$1.99 Supporter Option">
+        <strong>$1.99 Supporter Option</strong>
+        <span>
+          {isSupporter
+            ? 'Supporter ads are removed on this browser.'
+            : 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.'}
+        </span>
+        {!isSupporter && (
+          <button className="settings-support-action" type="button" onClick={onSupport}>
+            Support for $1.99
+          </button>
+        )}
       </div>
     </section>
   );

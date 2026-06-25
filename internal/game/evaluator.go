@@ -23,6 +23,7 @@ var (
 	errUnexpectedEnd = errors.New("unexpected end of expression")
 	errUnexpected    = errors.New("unexpected token")
 	errNumberLarge   = errors.New("calculated number is too large")
+	errNonRealResult = errors.New("operation is outside supported real-number math")
 )
 
 type number struct {
@@ -445,7 +446,7 @@ func absNumber(value number) (number, error) {
 
 func sqrtNumber(value number) (number, error) {
 	if value.isNegative() {
-		return zeroNumber(), errors.New("result is an imaginary number")
+		return zeroNumber(), errNonRealResult
 	}
 	if value.rat != nil {
 		numeratorRoot, numeratorOK := perfectSquareRoot(value.rat.Num())
@@ -460,7 +461,7 @@ func sqrtNumber(value number) (number, error) {
 	}
 	result := math.Sqrt(floatValue)
 	if math.IsNaN(result) {
-		return zeroNumber(), errors.New("result is an imaginary number")
+		return zeroNumber(), errNonRealResult
 	}
 	return checked(numberFromFloat(new(big.Float).SetPrec(bigFloatPrecision).SetFloat64(result)))
 }
@@ -470,7 +471,7 @@ func powerNumbers(left, right number) (number, error) {
 		return integerPower(left, exponent)
 	}
 	if left.isNegative() {
-		return zeroNumber(), errors.New("result is an imaginary number")
+		return zeroNumber(), errNonRealResult
 	}
 	leftFloat, err := left.float64()
 	if err != nil {
@@ -482,7 +483,7 @@ func powerNumbers(left, right number) (number, error) {
 	}
 	result := math.Pow(leftFloat, rightFloat)
 	if math.IsNaN(result) {
-		return zeroNumber(), errors.New("result is an imaginary number")
+		return zeroNumber(), errNonRealResult
 	}
 	if math.IsInf(result, 0) {
 		return zeroNumber(), errNumberLarge

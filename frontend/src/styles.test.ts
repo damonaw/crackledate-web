@@ -1,4 +1,3 @@
-// @ts-expect-error The app tsconfig intentionally excludes Node types, but this test reads a local fixture.
 import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 
@@ -28,5 +27,21 @@ describe('stylesheet regressions', () => {
     expect(styles.indexOf('transform: translateY(0.06em);')).toBeLessThan(
       styles.indexOf('transform: translateY(-0.22em);'),
     );
+  });
+
+  test('keeps screen-reader-only labels out of visual layout', () => {
+    const declarations = declarationsFor('.sr-only');
+
+    expect(declarations).toContain('position: absolute;');
+    expect(declarations).toContain('width: 1px;');
+    expect(declarations).toContain('clip: rect(0, 0, 0, 0);');
+  });
+
+  test('styles the settings support action instead of falling back to a native button', () => {
+    const declarations = declarationsFor('.settings-support-action');
+
+    expect(declarations).toContain('border: 0;');
+    expect(declarations).toContain('background: var(--ios-blue);');
+    expect(declarations).toContain('border-radius: 12px;');
   });
 });

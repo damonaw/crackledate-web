@@ -7,7 +7,10 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': apiTarget,
+      '/api': {
+        target: apiTarget,
+        changeOrigin: false,
+      },
     },
   },
 });

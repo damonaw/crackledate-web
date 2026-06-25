@@ -120,3 +120,5 @@ digit order, the equals-sign requirement, practice boundaries, and date-based ad
 
 Share payloads follow the shared Android contract: daily shares include progress without
 revealing the equation, while saved-solution shares include the equation, value, and solve time.
+
+The post-solve panel surfaces the next badge target using Android-aligned action copy.

@@ -1046,6 +1046,46 @@ a {
   line-height: 1.35;
 }
 
+.next-badge-target {
+  border: 1px solid var(--ios-separator);
+  border-radius: 12px;
+  background: var(--ios-secondary-background);
+  display: grid;
+  gap: 5px;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.next-badge-label {
+  color: var(--ios-secondary-label);
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.next-badge-target h3,
+.next-badge-target p {
+  margin: 0;
+}
+
+.next-badge-target h3 {
+  color: var(--ios-label);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.next-badge-target p,
+.next-badge-target strong {
+  color: var(--ios-secondary-label);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
+.next-badge-target strong {
+  color: var(--ios-label);
+}
+
 .game-ad-banner {
   min-height: 50px;
   border: 1px solid var(--ios-separator);

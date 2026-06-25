@@ -44,6 +44,7 @@ import {
 import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
+import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
 import './styles.css';
 
 const FUTURE_DATE_AD_DURATION_SECONDS = 30;
@@ -1455,6 +1456,7 @@ function GamePage() {
               displayDate={puzzle?.displayDate ?? selectedDate}
               solutions={todaySolutions}
               savedSolutions={savedSolutions}
+              badges={badges}
               onPlayAnother={() => {
                 clear();
                 setIsSearchingAnother(true);
@@ -2267,6 +2269,7 @@ function VictoryPanel({
   displayDate,
   solutions,
   savedSolutions,
+  badges,
   onPlayAnother,
   onUnlockTomorrow,
   onShare,
@@ -2279,6 +2282,7 @@ function VictoryPanel({
   displayDate: string;
   solutions: SavedSolution[];
   savedSolutions: StoredSolutions;
+  badges: SolutionBadge[];
   onPlayAnother: () => void;
   onUnlockTomorrow?: () => void;
   onShare: () => void;
@@ -2288,6 +2292,8 @@ function VictoryPanel({
   isArchived: boolean;
   onGoToToday: () => void;
 }) {
+  const nextBadgeTarget = nextBadgeTargetFromBadges(badges);
+
   return (
     <div className="victory-panel-card">
       <div className="victory-badge-row">
@@ -2304,6 +2310,15 @@ function VictoryPanel({
       <div className="victory-stats-box">
         <StatsDashboard savedSolutions={savedSolutions} />
       </div>
+
+      {nextBadgeTarget && (
+        <section className="next-badge-target" aria-labelledby="next-badge-target-title">
+          <span className="next-badge-label">Next Badge</span>
+          <h3 id="next-badge-target-title">{nextBadgeTarget.title}</h3>
+          <p>{nextBadgeTarget.description}</p>
+          <strong>{nextBadgeTarget.actionText}</strong>
+        </section>
+      )}
 
       <div className="victory-solutions-section">
         <h3>Your Solutions</h3>

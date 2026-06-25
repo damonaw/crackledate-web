@@ -143,7 +143,7 @@ export function SettingsPanel({
       <div className="settings-support-card" aria-label="$1.99 Supporter Option">
         <strong>$1.99 Supporter Option</strong>
         <span>
-          Supports Crackle Date development. Date-based sponsor ads may still appear on archive play, extra current-date solves, and future-date unlocks.
+          The supporter option is for supporting Crackle Date. It does not remove date-based sponsor ads. Future dates can ask for a 30-second sponsor ad. Past dates and extra current-date solves can show a banner ad.
         </span>
       </div>
     </section>

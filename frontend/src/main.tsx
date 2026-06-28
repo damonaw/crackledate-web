@@ -336,6 +336,37 @@ function StatsDashboard({ savedSolutions }: { savedSolutions: StoredSolutions })
   );
 }
 
+function savedSolutionsSummary(savedSolutions: StoredSolutions) {
+  const entries = Object.entries(savedSolutions).flatMap(([dateIdentifier, solutions]) =>
+    (solutions ?? []).map((solution) => ({ dateIdentifier, solution })),
+  );
+  const solvedDates = new Set(entries.map((entry) => entry.dateIdentifier));
+  const timedSolutions = entries.map((entry) => entry.solution.seconds).filter((seconds) => seconds > 0);
+  const averageSeconds = timedSolutions.length > 0
+    ? Math.floor(timedSolutions.reduce((total, seconds) => total + seconds, 0) / timedSolutions.length)
+    : 0;
+  const fastestSeconds = timedSolutions.length > 0 ? Math.min(...timedSolutions) : 0;
+  const lastPlayed = entries
+    .map((entry) => {
+      const timestampTime = Date.parse(entry.solution.timestamp);
+      const fallbackTime = dateFromIdentifier(entry.dateIdentifier).getTime();
+      return {
+        dateIdentifier: entry.dateIdentifier,
+        sortTime: Number.isNaN(timestampTime) ? fallbackTime : timestampTime,
+      };
+    })
+    .sort((left, right) => right.sortTime - left.sortTime)[0]?.dateIdentifier;
+
+  return {
+    daysPlayed: solvedDates.size,
+    solutionCount: entries.length,
+    hardModeCount: entries.filter((entry) => entry.solution.difficulty === 'hard').length,
+    averageSeconds,
+    fastestSeconds,
+    lastPlayed,
+  };
+}
+
 const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
@@ -1249,9 +1280,16 @@ function GamePage() {
 
   const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
     const text = savedSolutionSharePayload(dateDisplayString(dateId), sol);
-    void navigator.clipboard.writeText(text);
-    setMessageTone('success');
-    setMessage('Stats copied to clipboard!');
+    void navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setMessageTone('success');
+        setMessage('Result copied to clipboard!');
+      })
+      .catch(() => {
+        setMessageTone('error');
+        setMessage('Failed to copy to clipboard.');
+      });
   }, []);
 
   const dateInputLabel = useMemo(() => {
@@ -1727,6 +1765,9 @@ function GamePage() {
         <SolutionsPage
           badges={badges}
           savedSolutions={savedSolutions}
+          selectedDate={selectedDate}
+          displayDate={puzzle?.displayDate ?? dateDisplayString(selectedDate)}
+          onShare={(solution) => shareSolution(solution, selectedDate)}
         />
       )}
 
@@ -2583,48 +2624,91 @@ function StatsIcon() {
 function SolutionsPage({
   badges,
   savedSolutions,
+  selectedDate,
+  displayDate,
+  onShare,
 }: {
   badges: SolutionBadge[];
   savedSolutions: StoredSolutions;
+  selectedDate: string;
+  displayDate: string;
+  onShare: (solution: SavedSolution) => void;
 }) {
+  const selectedSolutions = savedSolutions[selectedDate] ?? [];
+  const summary = useMemo(() => savedSolutionsSummary(savedSolutions), [savedSolutions]);
+
   return (
     <section className="solutions-page" aria-labelledby="solutions-page-title">
       <div className="solutions-page-header">
         <div>
-          <h1 id="solutions-page-title">Stats</h1>
+          <h1 id="solutions-page-title">Saved Solutions</h1>
+          <p>Badges, saved equations, and solve history.</p>
         </div>
       </div>
-      <StatsDashboard savedSolutions={savedSolutions} />
       <BadgesSection badges={badges} />
+      <section className="saved-solutions-section" aria-labelledby="saved-solutions-title">
+        <div className="saved-solutions-section-header">
+          <h2 id="saved-solutions-title">{displayDate} Solutions</h2>
+        </div>
+        <SolutionsList solutions={selectedSolutions} onShare={onShare} />
+      </section>
+      <section className="solutions-summary-section" aria-labelledby="solutions-summary-title">
+        <h2 id="solutions-summary-title">Summary</h2>
+        <div className="solutions-summary-grid">
+          <SummaryStat label="Days Played" value={String(summary.daysPlayed)} />
+          <SummaryStat label="Solution Count" value={String(summary.solutionCount)} />
+          <SummaryStat label="Hard Mode Count" value={String(summary.hardModeCount)} />
+          <SummaryStat label="Average Time" value={formatTime(summary.averageSeconds)} />
+          <SummaryStat label="Fastest Solve" value={formatTime(summary.fastestSeconds)} />
+        </div>
+      </section>
+      <section className="solutions-activity-section" aria-labelledby="solutions-activity-title">
+        <h2 id="solutions-activity-title">Activity</h2>
+        <div className="solutions-activity-row">
+          <span>Last Played</span>
+          <strong>{summary.lastPlayed ? formatBadgeEarnedDate(summary.lastPlayed) : 'No saved dates'}</strong>
+        </div>
+      </section>
     </section>
   );
 }
 
+function SummaryStat({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="solutions-summary-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
 function BadgesSection({ badges }: { badges: SolutionBadge[] }) {
-  const earnedBadges = badges.filter((badge) => badge.earned);
-
-  if (earnedBadges.length === 0) {
-    return null;
-  }
-
   return (
     <section className="badges-section" aria-labelledby="badges-title">
       <div className="badges-header">
-        <h2 id="badges-title">Badges</h2>
+        <h2 id="badges-title">Earned Badges</h2>
       </div>
 
       <div className="badge-grid">
-        {earnedBadges.map((badge) => (
+        {badges.map((badge) => (
           <article
-            className="solution-badge"
+            className={`badge-card ${badge.earned ? 'earned' : 'locked'}`}
             key={badge.id}
-            aria-label={`${badge.title}, earned ${formatBadgeEarnedDate(badge.earnedDate)}`}
+            aria-label={
+              badge.earned
+                ? `${badge.title}, earned ${formatBadgeEarnedDate(badge.earnedDate)}`
+                : `${badge.title}, locked. ${badge.description}`
+            }
           >
             {badge.iconSrc && (
               <img className="badge-icon" src={badge.iconSrc} alt="" />
             )}
             <strong>{badge.title}</strong>
-            <time dateTime={badge.earnedDate}>{formatBadgeEarnedDate(badge.earnedDate)}</time>
+            <span className={badge.earned ? 'badge-status earned' : 'badge-status locked'}>
+              {badge.earned ? 'Earned' : 'Locked'}
+            </span>
+            <p>{badge.description}</p>
+            {badge.earned && <time dateTime={badge.earnedDate}>{formatBadgeEarnedDate(badge.earnedDate)}</time>}
           </article>
         ))}
       </div>
@@ -3994,7 +4078,7 @@ function calendarDaysForMonth(month: Date): CalendarDay[] {
 }
 
 function formatTime(seconds: number): string {
-  if (!seconds) return 'Saved';
+  if (!seconds) return '0s';
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
   return minutes > 0 ? `${minutes}m ${remainingSeconds}s` : `${remainingSeconds}s`;

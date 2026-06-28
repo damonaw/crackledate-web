@@ -401,6 +401,20 @@ a {
   opacity: 1;
 }
 
+@media (max-width: 520px) {
+  .toolbar-trigger[data-expanded="true"] {
+    width: 44px;
+    max-width: 44px;
+    gap: 0;
+    padding: 0;
+  }
+
+  .toolbar-trigger[data-expanded="true"] span {
+    max-width: 0;
+    opacity: 0;
+  }
+}
+
 .toolbar-trigger.theme-target-light {
   background: color-mix(in srgb, var(--ios-tertiary-background) 82%, #ffffff);
   border-color: color-mix(in srgb, var(--glass-border) 72%, #ffb000);
@@ -1893,6 +1907,16 @@ a {
   border: 1px solid var(--glass-border);
   background: var(--glass-fill);
   color: var(--ios-blue);
+}
+
+.clear-data-modal-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.clear-data-confirm-action {
+  border-color: rgba(255, 59, 48, 0.42);
+  background: var(--ios-red);
 }
 
 .auth-switch {

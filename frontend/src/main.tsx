@@ -418,6 +418,7 @@ function GamePage() {
   const [isSupporter, setIsSupporter] = useState(() => localStorage.getItem(supporterEntitlementKey) === 'true');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
+  const [clearDataConfirmVisible, setClearDataConfirmVisible] = useState(false);
   const [showImportPrompt, setShowImportPrompt] = useState(false);
   const [pendingImportSolutions, setPendingImportSolutions] = useState<StoredSolutions>({});
   const [accountPreferencesLoaded, setAccountPreferencesLoaded] = useState(false);
@@ -1358,9 +1359,6 @@ function GamePage() {
   }, []);
 
   const clearBrowserData = useCallback(() => {
-    const confirmed = window.confirm('Clear saved solutions and settings from this browser?');
-    if (!confirmed) return;
-
     localStorage.removeItem(storageKey);
     localStorage.removeItem(playStartedKey);
     localStorage.removeItem(guidedFirstWinStorageKey);
@@ -1378,6 +1376,7 @@ function GamePage() {
     setEvaluation({ left: '?', right: '?', equation: '' });
     setStartTime(null);
     setActiveView('start');
+    setClearDataConfirmVisible(false);
     setMessageTone('success');
     setMessage('Local data cleared.');
   }, []);
@@ -1782,7 +1781,7 @@ function GamePage() {
           onGameModeChange={setGameMode}
           onLogin={openLogin}
           onLogout={handleLogout}
-          onClearData={clearBrowserData}
+          onClearData={() => setClearDataConfirmVisible(true)}
           onShowHowToPlay={showHowToPlay}
           onPractice={showPractice}
           onShowRules={showRules}
@@ -1848,6 +1847,13 @@ function GamePage() {
         />
       )}
 
+      {clearDataConfirmVisible && (
+        <ClearDataConfirmModal
+          onCancel={() => setClearDataConfirmVisible(false)}
+          onClear={clearBrowserData}
+        />
+      )}
+
       {showImportPrompt && (
         <ImportPrompt
           count={countStoredSolutions(pendingImportSolutions)}
@@ -1889,6 +1895,31 @@ function StatusToast({ message, tone }: { message: string; tone: FeedbackTone })
         <span className="status-toast-accent" aria-hidden="true" />
         <span>{message}</span>
       </button>
+    </div>
+  );
+}
+
+function ClearDataConfirmModal({
+  onCancel,
+  onClear,
+}: {
+  onCancel: () => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="auth-modal clear-data-modal" role="dialog" aria-modal="true" aria-labelledby="clear-data-title">
+        <h2 id="clear-data-title">Clear Data?</h2>
+        <p>This permanently deletes saved solutions, stats, and Crackle Date settings in this browser.</p>
+        <div className="clear-data-modal-actions">
+          <button className="auth-secondary" type="button" onClick={onCancel}>
+            Cancel
+          </button>
+          <button className="auth-primary clear-data-confirm-action" type="button" onClick={onClear}>
+            Clear
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

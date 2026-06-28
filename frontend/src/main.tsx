@@ -39,6 +39,7 @@ import { practiceRound, practiceSuccessMessage } from './practiceRound';
 import { RULES_SECTIONS } from './rulesContent';
 import { savedSolutionDateSet } from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
+import { StartScreen } from './StartScreen';
 import {
   dailyDashboardSummaryFromSolutions,
   monthProgressText,
@@ -71,6 +72,7 @@ import {
   dateAccessDecisionFor,
   dateAfterCancelingFutureGate,
 } from './dateAccessPolicy';
+import { initialActiveView } from './startScreenRouting';
 import './styles.css';
 
 const HINT_REWARD_AD_DURATION_SECONDS = 15;
@@ -120,6 +122,7 @@ type DifficultyMode = 'easy' | 'hard';
 type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
 type FeedbackTone = 'success' | 'error';
 type AuthModalMode = 'login' | 'signup' | 'verify' | 'account';
+type ActiveView = 'start' | 'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules';
 
 type EquationToken = EquationLatexToken & {
   id: string;
@@ -358,8 +361,8 @@ function GamePage() {
     () => localStorage.getItem(guidedFirstWinStorageKey) === 'true',
   );
   const [guidedFirstWinActive, setGuidedFirstWinActive] = useState(false);
-  const [activeView, setActiveView] = useState<'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules'>(
-    'game',
+  const [activeView, setActiveView] = useState<ActiveView>(
+    () => initialActiveView({ playStarted, guidedFirstWinCompleted }),
   );
   const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
@@ -1270,6 +1273,12 @@ function GamePage() {
     setActiveView('practice');
   }, [clear]);
 
+  const startPracticeFromStart = useCallback(() => {
+    localStorage.setItem(playStartedKey, 'true');
+    setPlayStarted(true);
+    showPractice();
+  }, [showPractice]);
+
   const showRules = useCallback(() => {
     setActiveView('rules');
   }, []);
@@ -1330,7 +1339,7 @@ function GamePage() {
     setEditorState(emptyEditorState());
     setEvaluation({ left: '?', right: '?', equation: '' });
     setStartTime(null);
-    setActiveView('game');
+    setActiveView('start');
     setMessageTone('success');
     setMessage('Local data cleared.');
   }, []);
@@ -1447,6 +1456,8 @@ function GamePage() {
   return (
     <main
       className={`app-shell play-shell ${
+        activeView === 'start' ? 'start-shell' : ''
+      } ${
         activeView === 'game' || activeView === 'practice' ? 'game-shell' : ''
       } ${activeView === 'calendar' ? 'calendar-shell detail-shell' : ''} ${
         activeView === 'solutions' ? 'solutions-shell detail-shell' : ''
@@ -1458,52 +1469,62 @@ function GamePage() {
         activeView === 'rules' ? 'how-to-play-shell detail-shell' : ''
       }`}
     >
-      <header className="top-bar game-top-bar">
-        <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
-          <img src="/app-icon.png" alt="" />
-        </button>
-        <nav className="site-nav" aria-label="Site">
-          {activeView === 'game' && !isEquationCorrect && !(todaySolutions.length > 0 && !isSearchingAnother) && (
+      {activeView !== 'start' && (
+        <header className="top-bar game-top-bar">
+          <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
+            <img src="/app-icon.png" alt="" />
+          </button>
+          <nav className="site-nav" aria-label="Site">
+            {activeView === 'game' && !isEquationCorrect && !(todaySolutions.length > 0 && !isSearchingAnother) && (
+              <ToolbarButton
+                label="Hint"
+                icon={<HintIcon />}
+                className={`toolbar-hint-button${shakeHintButton ? ' shake' : ''}`}
+                isExpanded={true}
+                onClick={handleHintClick}
+                disabled={hintLoading}
+              />
+            )}
             <ToolbarButton
-              label="Hint"
-              icon={<HintIcon />}
-              className={`toolbar-hint-button${shakeHintButton ? ' shake' : ''}`}
-              isExpanded={true}
-              onClick={handleHintClick}
-              disabled={hintLoading}
+              label={puzzle?.displayDate ?? 'Calendar'}
+              icon={<CalendarIcon />}
+              isExpanded={activeView === 'calendar'}
+              onClick={activeView === 'calendar' ? showGame : showCalendar}
+              ariaLabel={dateInputLabel}
             />
-          )}
-          <ToolbarButton
-            label={puzzle?.displayDate ?? 'Calendar'}
-            icon={<CalendarIcon />}
-            isExpanded={activeView === 'calendar'}
-            onClick={activeView === 'calendar' ? showGame : showCalendar}
-            ariaLabel={dateInputLabel}
-          />
-          <ToolbarButton
-            label="Stats"
-            icon={<StatsIcon />}
-            isExpanded={activeView === 'solutions'}
-            onClick={activeView === 'solutions' ? showGame : showSolutions}
-          />
-          <ToolbarButton
-            label="Settings"
-            icon={<SettingsIcon />}
-            isExpanded={activeView === 'settings'}
-            onClick={activeView === 'settings' ? showGame : showSettingsPage}
-          />
-          <ToolbarButton
-            label={themePreference === 'dark' ? 'Light' : 'Dark'}
-            icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
-            className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
-            isExpanded={false}
-            onClick={toggleThemePreference}
-            ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
-          />
-        </nav>
-      </header>
+            <ToolbarButton
+              label="Stats"
+              icon={<StatsIcon />}
+              isExpanded={activeView === 'solutions'}
+              onClick={activeView === 'solutions' ? showGame : showSolutions}
+            />
+            <ToolbarButton
+              label="Settings"
+              icon={<SettingsIcon />}
+              isExpanded={activeView === 'settings'}
+              onClick={activeView === 'settings' ? showGame : showSettingsPage}
+            />
+            <ToolbarButton
+              label={themePreference === 'dark' ? 'Light' : 'Dark'}
+              icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
+              className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
+              isExpanded={false}
+              onClick={toggleThemePreference}
+              ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
+            />
+          </nav>
+        </header>
+      )}
 
       {confettiActive && <Confetti />}
+
+      {activeView === 'start' && (
+        <StartScreen
+          onPlay={playPuzzle}
+          onHowToPlay={showHowToPlay}
+          onPractice={startPracticeFromStart}
+        />
+      )}
 
       {(activeView === 'game' || activeView === 'practice') && (
         <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>

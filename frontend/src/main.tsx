@@ -117,6 +117,7 @@ type SavedSolution = {
 type StoredSolutions = Record<string, SavedSolution[]>;
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
+type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
 type FeedbackTone = 'success' | 'error';
 type AuthModalMode = 'login' | 'signup' | 'verify' | 'account';
 
@@ -182,10 +183,10 @@ const keyboardInsertableOperators: Record<string, string> = {
 
 const gameModeKey = 'crackledate.web.gamemode.v1';
 const targetValueKey = 'crackledate.web.targetvalue.v1';
+const canonicalPublicGameMode = 'classic' as const;
 
-function loadGameMode(): 'classic' | 'double_equality' | 'target' | 'single_expr' {
-  const value = localStorage.getItem(gameModeKey);
-  return value === 'classic' || value === 'double_equality' || value === 'target' || value === 'single_expr' ? value : 'classic';
+function loadGameMode(): GameMode {
+  return canonicalPublicGameMode;
 }
 
 function loadTargetValue(): string {
@@ -364,7 +365,7 @@ function GamePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
   const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', middle: '', right: '?', equation: '' });
-  const [gameMode, setGameMode] = useState<'classic' | 'double_equality' | 'target' | 'single_expr'>(loadGameMode);
+  const [gameMode, setGameMode] = useState<GameMode>(loadGameMode);
   const [targetValue, setTargetValue] = useState<string>(loadTargetValue);
   const [shakeActive, setShakeActive] = useState(false);
   const [confettiActive, setConfettiActive] = useState(false);

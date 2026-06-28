@@ -28,6 +28,9 @@ describe('SettingsPanel', () => {
     expect(markup).toContain('removes date-based sponsor ads');
     expect(markup).toContain('Support for $1.99');
     expect(markup).toContain('settings-support-action');
+    expect(markup).not.toContain('Game Mode');
+    expect(markup).not.toContain('Double =');
+    expect(markup).not.toContain('Single');
     expect(markup).not.toContain('An Ouroborialis Game');
     expect(markup).not.toContain('settings-branding-mark');
     expect(markup).not.toContain('src="/ouroborialis-logo.png"');

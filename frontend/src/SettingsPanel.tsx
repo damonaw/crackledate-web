@@ -9,11 +9,9 @@ type AuthUser = {
 export function SettingsPanel({
   themePreference,
   difficultyMode,
-  gameMode,
   authUser = null,
   onThemePreferenceChange,
   onDifficultyModeChange,
-  onGameModeChange,
   onLogin = () => undefined,
   onLogout = () => undefined,
   onClearData,
@@ -95,29 +93,6 @@ export function SettingsPanel({
                   onChange={() => onDifficultyModeChange(mode)}
                 />
                 <span>{mode[0].toUpperCase() + mode.slice(1)}</span>
-              </label>
-            ))}
-          </div>
-        </fieldset>
-
-        <fieldset className="settings-row">
-          <legend>Game Mode</legend>
-          <div className="segmented-control">
-            {([
-              { value: 'classic', label: 'Classic' },
-              { value: 'double_equality', label: 'Double =' },
-              { value: 'target', label: 'Target' },
-              { value: 'single_expr', label: 'Single' },
-            ] as const).map((mode) => (
-              <label key={mode.value}>
-                <input
-                  type="radio"
-                  name="gameMode"
-                  value={mode.value}
-                  checked={gameMode === mode.value}
-                  onChange={() => onGameModeChange(mode.value)}
-                />
-                <span>{mode.label}</span>
               </label>
             ))}
           </div>

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
 
@@ -12,6 +13,14 @@ describe('HOW_TO_PLAY_SECTIONS', () => {
     expect(copy).toContain('Use every digit');
     expect(copy).toContain('Add exactly one equals sign');
     expect(copy).toContain('Submit');
+  });
+
+  test('is rendered by the in-app quick guide surface', () => {
+    const source = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
+
+    expect(source).toContain('HOW_TO_PLAY_SECTIONS.map');
+    expect(source).toContain('Cracked Instructions');
+    expect(source).toContain('Quick Guide');
   });
 
   test('explains advanced controls and hard mode', () => {

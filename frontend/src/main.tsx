@@ -2998,13 +2998,20 @@ function appendValueSegment(segments: ValueSegment[], text: string, isRepeating:
 }
 
 function HowToPlayView({
+  initiallyShowDetail = false,
   onPlay,
 }: {
   initiallyShowDetail?: boolean;
   onPlay: () => void;
 }) {
+  const [showsDetail, setShowsDetail] = useState(initiallyShowDetail);
   const [detailIndex, setDetailIndex] = useState(0);
   const detailCard = HOW_TO_PLAY_DETAIL_CARDS[detailIndex];
+
+  useEffect(() => {
+    setShowsDetail(initiallyShowDetail);
+    setDetailIndex(0);
+  }, [initiallyShowDetail]);
 
   const goToPreviousDetail = useCallback(() => {
     setDetailIndex((current) =>
@@ -3020,6 +3027,55 @@ function HowToPlayView({
     return null;
   }
 
+  if (!showsDetail) {
+    return (
+      <section className="start-panel" aria-labelledby="how-to-play-title">
+        <div className="how-to-play-card">
+          <div className="how-to-play-header">
+            <img className="start-icon" src="/app-icon.png" alt="" />
+            <div>
+              <p className="document-kicker">Crackle Date</p>
+              <h1 id="how-to-play-title">How to Play</h1>
+            </div>
+          </div>
+
+          <p className="written-rules-intro">
+            Use the date digits in order, add operators, and make both sides match.
+          </p>
+
+          <div className="how-to-play-actions">
+            <button className="start-action-button play-button" type="button" onClick={onPlay}>
+              Play
+            </button>
+            <button
+              className="start-action-button secondary"
+              type="button"
+              onClick={() => {
+                setShowsDetail(true);
+                setDetailIndex(0);
+              }}
+            >
+              Cracked Instructions
+            </button>
+          </div>
+
+          <div className="how-to-play-quick-list">
+            {HOW_TO_PLAY_SECTIONS.map((section, index) => (
+              <section className="how-to-play-quick-section" key={section.title}>
+                <h2>{index + 1}. {section.title}</h2>
+                <ul>
+                  {section.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </section>
+            ))}
+          </div>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="start-panel" aria-labelledby="how-to-play-detail-title">
       <div className="how-to-play-card detailed-how-to-play-card">
@@ -3033,7 +3089,14 @@ function HowToPlayView({
 
         <div className="how-to-play-actions">
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
-            Back to Game
+            Play
+          </button>
+          <button
+            className="start-action-button secondary"
+            type="button"
+            onClick={() => setShowsDetail(false)}
+          >
+            Quick Guide
           </button>
         </div>
 

@@ -1004,6 +1004,42 @@ a {
   gap: 10px;
 }
 
+.how-to-play-quick-list {
+  display: grid;
+  gap: 9px;
+}
+
+.how-to-play-quick-section {
+  border: 1px solid var(--ios-separator);
+  border-radius: 14px;
+  background: var(--ios-secondary-background);
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.how-to-play-quick-section h2 {
+  margin: 0;
+  color: var(--ios-label);
+  font-size: 0.98rem;
+  line-height: 1.2;
+}
+
+.how-to-play-quick-section ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.how-to-play-quick-section li {
+  color: var(--ios-secondary-label);
+  font-size: 0.9rem;
+  line-height: 1.35;
+}
+
+.how-to-play-quick-section li + li {
+  margin-top: 4px;
+}
+
 .written-rule-section {
   border: 1px solid var(--ios-separator);
   border-radius: 14px;

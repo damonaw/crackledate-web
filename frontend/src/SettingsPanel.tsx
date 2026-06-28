@@ -13,7 +13,6 @@ export function SettingsPanel({
   onThemePreferenceChange,
   onDifficultyModeChange,
   onLogin = () => undefined,
-  onLogout = () => undefined,
   onClearData,
   onShowHowToPlay,
   onPractice = () => undefined,
@@ -30,7 +29,6 @@ export function SettingsPanel({
   onDifficultyModeChange: (mode: DifficultyMode) => void;
   onGameModeChange: (mode: GameMode) => void;
   onLogin?: () => void;
-  onLogout?: () => void;
   onClearData: () => void;
   onShowHowToPlay: () => void;
   onPractice?: () => void;
@@ -44,22 +42,22 @@ export function SettingsPanel({
       <div className="settings-page-header">
         <div>
           <h1 id="settings-title">Settings</h1>
-          <p>{authUser?.emailVerified ? `Synced as ${authUser.email}` : 'Saved on this browser'}</p>
+          <p>
+            {authUser
+              ? authUser.emailVerified
+                ? `Synced as ${authUser.email}`
+                : `Signed in as ${authUser.email}. Verify email to sync.`
+              : 'Saved on this browser'}
+          </p>
         </div>
       </div>
 
       <div className="settings-group">
         <div className="settings-row account-row">
           <span>Account</span>
-          {authUser ? (
-            <button type="button" onClick={onLogout}>
-              Log out
-            </button>
-          ) : (
-            <button type="button" onClick={onLogin}>
-              Log in
-            </button>
-          )}
+          <button type="button" onClick={onLogin}>
+            {authUser ? 'Account' : 'Log in'}
+          </button>
         </div>
 
         <fieldset className="settings-row">

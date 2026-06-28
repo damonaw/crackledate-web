@@ -96,10 +96,15 @@ type preferencesResponse struct {
 }
 
 type accountSolution struct {
-	Equation  string `json:"equation"`
-	Timestamp string `json:"timestamp"`
-	Seconds   int    `json:"seconds"`
-	Value     string `json:"value"`
+	Equation         string `json:"equation"`
+	Timestamp        string `json:"timestamp"`
+	Seconds          int    `json:"seconds"`
+	Value            string `json:"value"`
+	Mode             string `json:"mode,omitempty"`
+	TargetValue      string `json:"targetValue,omitempty"`
+	SolvedOnOtherDay bool   `json:"solvedOnOtherDay,omitempty"`
+	UsedHint         bool   `json:"usedHint,omitempty"`
+	Difficulty       string `json:"difficulty,omitempty"`
 }
 
 type importSolutionsRequest struct {

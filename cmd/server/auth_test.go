@@ -121,6 +121,49 @@ func TestAuthenticatedSubmissionLinksAttemptAndSolution(t *testing.T) {
 	}
 }
 
+func TestImportSolutionsAcceptsBrowserSolutionMetadata(t *testing.T) {
+	service := newTestAuthService(t)
+	userID := createVerifiedUser(t, service, "player@example.com")
+	session, err := service.createSession(userID)
+	if err != nil {
+		t.Fatalf("createSession: %v", err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/me/solutions/import", strings.NewReader(`{
+		"solutions": {
+			"2026-05-16": [
+				{
+					"equation": "5+√16=2^0+2+6",
+					"timestamp": "2026-05-16T12:00:00Z",
+					"seconds": 136,
+					"value": "9",
+					"mode": "classic",
+					"targetValue": "10",
+					"solvedOnOtherDay": false,
+					"usedHint": true,
+					"difficulty": "easy"
+				}
+			]
+		}
+	}`))
+	request.AddCookie(&http.Cookie{Name: sessionCookieName, Value: session.token})
+	response := httptest.NewRecorder()
+
+	service.handleImportSolutions(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d with body %s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Imported int `json:"imported"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode import response: %v", err)
+	}
+	if payload.Imported != 1 {
+		t.Fatalf("imported = %d, want 1", payload.Imported)
+	}
+}
+
 func newTestAuthService(t *testing.T) *authService {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "accounts.db")

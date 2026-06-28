@@ -1442,16 +1442,21 @@ function GamePage() {
 
   const handleAuthenticated = useCallback(
     (user: AuthUser) => {
+      const wasVerifying = authModalMode === 'verify';
       setAuthUser(user);
       if (user.emailVerified) {
         setAuthModalMode(null);
+        if (wasVerifying) {
+          setMessageTone('success');
+          setMessage('Email verified. Your account is ready.');
+        }
         void syncAccountData(user, { promptImport: true });
       } else {
         setAuthModalMode('verify');
         setAccountPreferencesLoaded(false);
       }
     },
-    [syncAccountData],
+    [authModalMode, syncAccountData],
   );
 
   const handleLogout = useCallback(async () => {
@@ -1780,7 +1785,6 @@ function GamePage() {
           onDifficultyModeChange={setDifficultyMode}
           onGameModeChange={setGameMode}
           onLogin={openLogin}
-          onLogout={handleLogout}
           onClearData={() => setClearDataConfirmVisible(true)}
           onShowHowToPlay={showHowToPlay}
           onPractice={showPractice}
@@ -1965,17 +1969,27 @@ function AuthModal({
       setNotice('');
       setIsBusy(true);
       try {
+        const normalizedEmail = email.trim();
+        if (!normalizedEmail) {
+          throw new Error('Enter a valid email address');
+        }
+        if (mode !== 'verify' && !password) {
+          throw new Error('Enter your password');
+        }
+        if (mode === 'verify' && code.length !== 6) {
+          throw new Error('Enter the 6-digit verification code');
+        }
         if (mode === 'signup') {
           if (password.length < 8) {
             throw new Error('Password must be at least 8 characters');
           }
-          const nextUser = await signup(email, password, { themePreference, difficultyMode });
+          const nextUser = await signup(normalizedEmail, password, { themePreference, difficultyMode });
           onAuthenticated(nextUser);
           setNotice('Verification email sent. Click the link or enter the code.');
           return;
         }
         if (mode === 'login') {
-          const nextUser = await login(email, password);
+          const nextUser = await login(normalizedEmail, password);
           onAuthenticated(nextUser);
           if (!nextUser.emailVerified) {
             setNotice('Verify your email before account syncing turns on.');
@@ -1983,7 +1997,7 @@ function AuthModal({
           return;
         }
         if (mode === 'verify') {
-          const nextUser = await verifyCode(email, code);
+          const nextUser = await verifyCode(normalizedEmail, code);
           onAuthenticated(nextUser);
         }
       } catch (authError) {
@@ -2021,7 +2035,10 @@ function AuthModal({
             <h2 id="auth-title">Account</h2>
             <p>{user?.email}</p>
             {user?.emailVerified ? (
-              <span className="auth-status verified">Verified</span>
+              <>
+                <span className="auth-status verified">Verified</span>
+                <p className="auth-notice">Account sync is on for settings and saved solutions.</p>
+              </>
             ) : (
               <span className="auth-status">Email not verified</span>
             )}
@@ -2040,7 +2057,7 @@ function AuthModal({
             </button>
           </>
         ) : (
-          <form onSubmit={submitAuth}>
+          <form onSubmit={submitAuth} noValidate>
             <h2 id="auth-title">
               {mode === 'signup' ? 'Create account' : mode === 'verify' ? 'Verify email' : 'Log in'}
             </h2>

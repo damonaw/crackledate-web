@@ -59,6 +59,27 @@ describe('SettingsPanel', () => {
     expect(markup).not.toContain('settings-support-action');
   });
 
+  test('keeps signed-in account details reachable from settings', () => {
+    const markup = renderToStaticMarkup(
+      <SettingsPanel
+        themePreference="system"
+        difficultyMode="easy"
+        gameMode="classic"
+        authUser={{ email: 'player@example.com', emailVerified: false }}
+        onThemePreferenceChange={() => {}}
+        onDifficultyModeChange={() => {}}
+        onGameModeChange={() => {}}
+        onClearData={() => {}}
+        onShowHowToPlay={() => {}}
+        onSupport={() => {}}
+      />,
+    );
+
+    expect(markup).toContain('Signed in as player@example.com. Verify email to sync.');
+    expect(markup).toContain('>Account</button>');
+    expect(markup).not.toContain('>Log out</button>');
+  });
+
   test('uses an in-app clear data confirmation modal instead of a browser confirm', () => {
     const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
 
@@ -67,5 +88,16 @@ describe('SettingsPanel', () => {
     expect(appSource).toContain('ClearDataConfirmModal');
     expect(appSource).toContain('Clear Data?');
     expect(appSource).toContain('This permanently deletes saved solutions, stats, and Crackle Date settings in this browser.');
+  });
+
+  test('auth modal keeps validation and verification success visible in app chrome', () => {
+    const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
+
+    expect(appSource).toContain('<form onSubmit={submitAuth} noValidate>');
+    expect(appSource).toContain("throw new Error('Enter a valid email address')");
+    expect(appSource).toContain("throw new Error('Enter your password')");
+    expect(appSource).toContain("throw new Error('Enter the 6-digit verification code')");
+    expect(appSource).toContain("setMessage('Email verified. Your account is ready.')");
+    expect(appSource).toContain('Account sync is on for settings and saved solutions.');
   });
 });

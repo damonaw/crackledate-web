@@ -29,6 +29,7 @@ import { EquationEmptyState } from './EquationEmptyState';
 import { EquationHelperRow } from './EquationHelperRow';
 import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
+import { feedbackMessageAfterPuzzleLoad } from './feedbackRetention';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
 import { nextVisibleHintStep, shouldGateFullSolutionHint } from './hintFlow';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
@@ -396,6 +397,7 @@ function GamePage() {
   } | null>(null);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
   const autocompleteIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preserveFeedbackOnNextPuzzleLoadRef = useRef(false);
   const [isAutocompleting, setIsAutocompleting] = useState(false);
   const [isSearchingAnother, setIsSearchingAnother] = useState(false);
   const todayId = useMemo(() => localDateIdentifier(new Date()), []);
@@ -683,7 +685,9 @@ function GamePage() {
         }
         setEditorState(emptyEditorState());
         setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
-        setMessage('');
+        const preserveCurrentMessage = preserveFeedbackOnNextPuzzleLoadRef.current;
+        preserveFeedbackOnNextPuzzleLoadRef.current = false;
+        setMessage((currentMessage) => feedbackMessageAfterPuzzleLoad(currentMessage, preserveCurrentMessage));
         setStartTime(null);
         setHintStep(0);
         setHintData(null);
@@ -691,6 +695,7 @@ function GamePage() {
         setConfettiActive(false);
       })
       .catch(() => {
+        preserveFeedbackOnNextPuzzleLoadRef.current = false;
         setMessageTone('error');
         setMessage('Could not load the puzzle date.');
       });
@@ -946,6 +951,7 @@ function GamePage() {
       clear();
       setMessageTone('success');
       setMessage(practiceSuccessMessage(result.leftValue ?? evaluation.left));
+      preserveFeedbackOnNextPuzzleLoadRef.current = true;
       const destination = practiceCompletionTarget(todayId);
       setSelectedDate(destination.selectedDate);
       setActiveView(destination.activeView);

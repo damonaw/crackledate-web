@@ -3022,7 +3022,14 @@ function CalendarPage({
           <h1 id="calendar-page-title">Choose Date</h1>
           <p>Saved days are marked in green.</p>
         </div>
-        <button className="calendar-today-button" type="button" onClick={onToday}>
+        <button
+          className="calendar-today-button"
+          type="button"
+          onClick={() => {
+            setVisibleMonth(startOfMonth(dateFromIdentifier(todayIdentifier)));
+            onToday();
+          }}
+        >
           Today
         </button>
       </div>

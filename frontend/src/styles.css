@@ -2930,6 +2930,9 @@ a {
   border-radius: 24px !important;
   padding: 0 !important;
   width: min(800px, 94vw) !important;
+  max-height: min(860px, calc(100dvh - 40px));
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   box-shadow: var(--shadow-soft), 0 20px 40px rgba(0, 0, 0, 0.15) !important;
   color: var(--ios-label);
@@ -2975,6 +2978,14 @@ a {
 
 .reward-portal-content {
   padding: 16px 24px 24px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.ad-playback-container,
+.ad-playback-completed {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .reward-subtitle {

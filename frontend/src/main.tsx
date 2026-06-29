@@ -813,6 +813,7 @@ function GamePage() {
         },
         onClose: () => {
           setSelectedDate(dateAfterCancelingFutureGate(todayId));
+          setActiveView('game');
         },
       });
     }
@@ -1425,6 +1426,7 @@ function GamePage() {
         },
         onClose: () => {
           setSelectedDate(dateAfterCancelingFutureGate(todayId));
+          setActiveView('game');
         },
       });
     } else {
@@ -2238,14 +2240,15 @@ function RewardModal({
   isLoggedIn: boolean;
 }) {
   const isHintUnlock = actionName === 'reveal a full solution' && claimLabel === 'Unlock Clue';
+  const isFutureUnlock = claimLabel === 'Play Date' || claimLabel === 'Play Tomorrow';
   const [status, setStatus] = useState<'ready' | 'playing' | 'completed'>('ready');
   const [timeLeft, setTimeLeft] = useState(adDurationSeconds);
 
   useEffect(() => {
-    if (!isHintUnlock || status !== 'ready') return;
+    if ((!isHintUnlock && !isFutureUnlock) || status !== 'ready') return;
     setStatus('playing');
     setTimeLeft(adDurationSeconds);
-  }, [isHintUnlock, status, adDurationSeconds]);
+  }, [isFutureUnlock, isHintUnlock, status, adDurationSeconds]);
 
   // Countdown timer effect for Ad Option
   useEffect(() => {
@@ -2303,7 +2306,9 @@ function RewardModal({
         onPointerUp={(e) => e.stopPropagation()}
       >
         <header className="reward-modal-header">
-          <h2 id="reward-title">{isHintUnlock ? 'Unlock Full Solution' : 'Support Crackle Date'}</h2>
+          <h2 id="reward-title">
+            {isHintUnlock ? 'Unlock Full Solution' : isFutureUnlock ? 'Unlock Future Date' : 'Support Crackle Date'}
+          </h2>
           <button 
             type="button" 
             className="reward-modal-close" 
@@ -2314,10 +2319,12 @@ function RewardModal({
           </button>
         </header>
 
-        {isHintUnlock && status !== 'ready' && (
+        {(isHintUnlock || isFutureUnlock) && status !== 'ready' && (
           <div className="hint-unlock-content">
             <p className="hint-unlock-message">
-              Watch a {adDurationSeconds}-second sponsor message to reveal a full solution.
+              {isHintUnlock
+                ? <>Watch a {adDurationSeconds}-second sponsor message to reveal a full solution.</>
+                : <>Watch a {adDurationSeconds}-second sponsor message to play this date early.</>}
             </p>
 
             <div className="hint-unlock-progress-card">
@@ -2346,13 +2353,13 @@ function RewardModal({
                 className="hint-unlock-secondary"
                 onClick={onClose}
               >
-                Keep Playing
+                {isFutureUnlock ? 'Back to Today' : 'Keep Playing'}
               </button>
             </div>
           </div>
         )}
 
-        {!isHintUnlock && status === 'ready' && (
+        {!isHintUnlock && !isFutureUnlock && status === 'ready' && (
           <div className="reward-portal-content">
             <p className="reward-subtitle">
               Choose how you'd like to unlock <strong>"{actionName}"</strong>:
@@ -2471,7 +2478,7 @@ function RewardModal({
           </div>
         )}
 
-        {!isHintUnlock && status === 'playing' && (
+        {!isHintUnlock && !isFutureUnlock && status === 'playing' && (
           <div className="ad-playback-container">
             <div className="ad-playback-header">
               <span className="ad-playback-badge">Sponsor Advertisement</span>
@@ -2506,7 +2513,7 @@ function RewardModal({
           </div>
         )}
 
-        {!isHintUnlock && status === 'completed' && (
+        {!isHintUnlock && !isFutureUnlock && status === 'completed' && (
           <div className="ad-playback-completed">
             <div className="completed-icon">✓</div>
             <h3>Reward Ready!</h3>

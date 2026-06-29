@@ -3172,6 +3172,81 @@ a {
   overflow-y: auto;
 }
 
+.hint-unlock-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 24px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.hint-unlock-message {
+  color: var(--ios-secondary-label);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  margin: 0;
+  text-align: center;
+}
+
+.hint-unlock-progress-card {
+  background: var(--card-fill);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  text-align: center;
+}
+
+.hint-unlock-count {
+  color: var(--ios-label);
+  font-size: 2rem;
+  font-weight: 800;
+}
+
+.hint-unlock-progress {
+  width: 100%;
+  height: 10px;
+  accent-color: var(--ios-orange);
+}
+
+.hint-unlock-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hint-unlock-primary,
+.hint-unlock-secondary {
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 800;
+  min-height: 46px;
+  padding: 0 18px;
+}
+
+.hint-unlock-primary {
+  background: var(--ios-green);
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgba(52, 199, 89, 0.24);
+}
+
+.hint-unlock-primary:disabled {
+  background: var(--ios-quaternary-fill);
+  box-shadow: none;
+  color: var(--ios-secondary-label);
+  cursor: not-allowed;
+}
+
+.hint-unlock-secondary {
+  background: transparent;
+  color: var(--ios-blue);
+}
+
 .reward-subtitle {
   font-size: 0.95rem;
   color: var(--ios-secondary-label);

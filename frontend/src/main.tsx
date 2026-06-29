@@ -2237,8 +2237,15 @@ function RewardModal({
   onSupporterUpgrade: () => void;
   isLoggedIn: boolean;
 }) {
+  const isHintUnlock = actionName === 'reveal a full solution' && claimLabel === 'Unlock Clue';
   const [status, setStatus] = useState<'ready' | 'playing' | 'completed'>('ready');
   const [timeLeft, setTimeLeft] = useState(adDurationSeconds);
+
+  useEffect(() => {
+    if (!isHintUnlock || status !== 'ready') return;
+    setStatus('playing');
+    setTimeLeft(adDurationSeconds);
+  }, [isHintUnlock, status, adDurationSeconds]);
 
   // Countdown timer effect for Ad Option
   useEffect(() => {
@@ -2260,7 +2267,7 @@ function RewardModal({
 
   // Dynamic Google AdSense injection
   useEffect(() => {
-    if (status === 'playing') {
+    if (status === 'playing' && !isHintUnlock) {
       const scriptId = 'adsense-sdk';
       let script = document.getElementById(scriptId) as HTMLScriptElement | null;
       if (!script) {
@@ -2279,7 +2286,7 @@ function RewardModal({
         console.warn('AdSense init error:', e);
       }
     }
-  }, [status]);
+  }, [status, isHintUnlock]);
 
   const startAd = () => {
     setStatus('playing');
@@ -2296,7 +2303,7 @@ function RewardModal({
         onPointerUp={(e) => e.stopPropagation()}
       >
         <header className="reward-modal-header">
-          <h2 id="reward-title">Support Crackle Date</h2>
+          <h2 id="reward-title">{isHintUnlock ? 'Unlock Full Solution' : 'Support Crackle Date'}</h2>
           <button 
             type="button" 
             className="reward-modal-close" 
@@ -2307,7 +2314,45 @@ function RewardModal({
           </button>
         </header>
 
-        {status === 'ready' && (
+        {isHintUnlock && status !== 'ready' && (
+          <div className="hint-unlock-content">
+            <p className="hint-unlock-message">
+              Watch a {adDurationSeconds}-second sponsor message to reveal a full solution.
+            </p>
+
+            <div className="hint-unlock-progress-card">
+              <strong className="hint-unlock-count">
+                {status === 'completed' ? 'Sponsor complete' : `${timeLeft}s`}
+              </strong>
+              <progress
+                className="hint-unlock-progress"
+                value={adDurationSeconds - timeLeft}
+                max={adDurationSeconds}
+                aria-label="Sponsor message progress"
+              />
+            </div>
+
+            <div className="hint-unlock-actions">
+              <button
+                type="button"
+                className="hint-unlock-primary"
+                disabled={status !== 'completed'}
+                onClick={onSuccess}
+              >
+                {status === 'completed' ? claimLabel : 'Sponsor Playing'}
+              </button>
+              <button
+                type="button"
+                className="hint-unlock-secondary"
+                onClick={onClose}
+              >
+                Keep Playing
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!isHintUnlock && status === 'ready' && (
           <div className="reward-portal-content">
             <p className="reward-subtitle">
               Choose how you'd like to unlock <strong>"{actionName}"</strong>:
@@ -2426,7 +2471,7 @@ function RewardModal({
           </div>
         )}
 
-        {status === 'playing' && (
+        {!isHintUnlock && status === 'playing' && (
           <div className="ad-playback-container">
             <div className="ad-playback-header">
               <span className="ad-playback-badge">Sponsor Advertisement</span>
@@ -2461,7 +2506,7 @@ function RewardModal({
           </div>
         )}
 
-        {status === 'completed' && (
+        {!isHintUnlock && status === 'completed' && (
           <div className="ad-playback-completed">
             <div className="completed-icon">✓</div>
             <h3>Reward Ready!</h3>

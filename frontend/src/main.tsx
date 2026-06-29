@@ -1494,6 +1494,9 @@ function GamePage() {
   );
   const feedbackMessage = message || (showEvaluationError ? evaluation.errorMessage ?? '' : '');
   const feedbackTone: FeedbackTone = message ? messageTone : 'error';
+  const inlineEquationFeedback =
+    (activeView === 'game' || activeView === 'practice') && feedbackTone === 'error' ? feedbackMessage : '';
+  const toastFeedbackMessage = inlineEquationFeedback ? '' : feedbackMessage;
 
   return (
     <main
@@ -1630,6 +1633,8 @@ function GamePage() {
                   gameMode={gameMode}
                   targetValue={(gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined}
                 />
+
+                <EquationFeedbackBanner message={inlineEquationFeedback} tone={feedbackTone} />
               </div>
 
               <div className="control-area">
@@ -1751,7 +1756,7 @@ function GamePage() {
         </section>
       )}
 
-      <StatusToast message={feedbackMessage} tone={feedbackTone} />
+      <StatusToast message={toastFeedbackMessage} tone={feedbackTone} />
 
       {activeView === 'calendar' && (
         <CalendarPage
@@ -1899,6 +1904,20 @@ function StatusToast({ message, tone }: { message: string; tone: FeedbackTone })
         <span className="status-toast-accent" aria-hidden="true" />
         <span>{message}</span>
       </button>
+    </div>
+  );
+}
+
+function EquationFeedbackBanner({ message, tone }: { message: string; tone: FeedbackTone }) {
+  if (!message) return null;
+
+  return (
+    <div
+      className={`equation-feedback ${tone === 'error' ? 'error' : 'success'}`}
+      role={tone === 'error' ? 'alert' : 'status'}
+      aria-live={tone === 'error' ? 'assertive' : 'polite'}
+    >
+      {message}
     </div>
   );
 }

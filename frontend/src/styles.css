@@ -1323,6 +1323,25 @@ a {
   gap: 12px;
 }
 
+.equation-feedback {
+  width: 100%;
+  border: 1px solid rgba(52, 199, 89, 0.28);
+  border-radius: 12px;
+  background: rgba(52, 199, 89, 0.1);
+  color: var(--ios-label);
+  padding: 10px 12px;
+  font-size: 0.92rem;
+  font-weight: 800;
+  line-height: 1.25;
+  text-align: left;
+}
+
+.equation-feedback.error {
+  border-color: rgba(255, 59, 48, 0.3);
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--ios-red);
+}
+
 .control-area {
   --keypad-button-size: 70px;
   display: grid;

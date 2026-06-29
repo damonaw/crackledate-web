@@ -1546,8 +1546,8 @@ a {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 32px;
-  padding: 5px 12px;
+  min-height: 44px;
+  padding: 8px 14px;
   font: inherit;
   font-weight: 800;
   line-height: 1.15;

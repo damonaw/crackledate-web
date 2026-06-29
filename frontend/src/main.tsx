@@ -1211,8 +1211,8 @@ function GamePage() {
       setMessageTone('error');
       if (equation.trim().length > 0) {
         const errMsg = gameMode === 'single_expr'
-          ? 'Could not quickly find a solution with what is currently entered.'
-          : 'Could not quickly find a solution to balance the sides with what is currently entered.';
+          ? 'Could not quickly find a solution with what is currently entered. Try backspacing or clearing.'
+          : 'Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.';
         setMessage(errMsg);
         setIsDeadEnd(true);
       } else {
@@ -1638,7 +1638,18 @@ function GamePage() {
               </div>
 
               <div className="control-area">
-                {hintStep > 0 && hintData && (
+                {hintLoading && (
+                  <div className="hint-panel hint-loading" role="status" aria-live="polite">
+                    <div className="hint-header">
+                      <strong>Hint</strong>
+                    </div>
+                    <div className="hint-body">
+                      <p>Finding a hint...</p>
+                    </div>
+                  </div>
+                )}
+
+                {!hintLoading && hintStep > 0 && hintData && (
                   <div className="hint-panel" aria-live="polite">
                     <div className="hint-header">
                       <strong>Hint (Step {hintStep}/3)</strong>

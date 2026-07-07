@@ -62,7 +62,6 @@ type Puzzle = {
   formattedDate: string;
   digits: number[];
   delimiterPositions: number[];
-  targetValue?: string;
 };
 
 type EvaluationResponse = {
@@ -88,8 +87,6 @@ type SavedSolution = {
   timestamp: string;
   seconds: number;
   value: string;
-  mode?: string;
-  targetValue?: string;
   solvedOnOtherDay?: boolean;
   usedHint?: boolean;
   difficulty?: 'easy' | 'hard';
@@ -98,7 +95,6 @@ type SavedSolution = {
 type StoredSolutions = Record<string, SavedSolution[]>;
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
-type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
 type FeedbackTone = 'success' | 'error';
 type ActiveView = 'start' | 'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules';
 
@@ -162,18 +158,6 @@ const keyboardInsertableOperators: Record<string, string> = {
   R: '√',
 };
 
-const gameModeKey = 'crackledate.web.gamemode.v1';
-const targetValueKey = 'crackledate.web.targetvalue.v1';
-const canonicalPublicGameMode = 'classic' as const;
-
-function loadGameMode(): GameMode {
-  return canonicalPublicGameMode;
-}
-
-function loadTargetValue(): string {
-  return localStorage.getItem(targetValueKey) || '10';
-}
-
 function Confetti() {
   const particles = useMemo(() => {
     const colors = ['#ff3b30', '#ff9500', '#34c759', '#007aff', '#af52de', '#ffcc00'];
@@ -217,6 +201,21 @@ function ShareIcon() {
       <line x1="12" y1="2" x2="12" y2="15" />
     </svg>
   );
+}
+
+async function shareTextWithBrowser(text: string): Promise<'shared' | 'copied'> {
+  if (navigator.share) {
+    try {
+      await navigator.share({ text });
+      return 'shared';
+    } catch {
+      await navigator.clipboard.writeText(text);
+      return 'copied';
+    }
+  }
+
+  await navigator.clipboard.writeText(text);
+  return 'copied';
 }
 
 function calculateStreaks(savedSolutions: StoredSolutions) {
@@ -376,8 +375,6 @@ function GamePage() {
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
   const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', middle: '', right: '?', equation: '' });
-  const [gameMode, setGameMode] = useState<GameMode>(loadGameMode);
-  const [targetValue, setTargetValue] = useState<string>(loadTargetValue);
   const [shakeActive, setShakeActive] = useState(false);
   const [confettiActive, setConfettiActive] = useState(false);
   const [hintStep, setHintStep] = useState(0);
@@ -421,35 +418,12 @@ function GamePage() {
     if (evaluation.errorMessage) return false;
 
     const eqParts = equation.split('=');
-    switch (gameMode) {
-      case 'double_equality':
-        return (
-          eqParts.length === 3 &&
-          evaluation.left !== '?' &&
-          evaluation.left === evaluation.middle &&
-          evaluation.middle === evaluation.right
-        );
-      case 'single_expr':
-        return (
-          eqParts.length === 1 &&
-          evaluation.left !== '?' &&
-          evaluation.left === targetValue
-        );
-      case 'target':
-        return (
-          eqParts.length === 2 &&
-          evaluation.left !== '?' &&
-          evaluation.left === targetValue &&
-          evaluation.right === targetValue
-        );
-      default: // classic
-        return (
-          eqParts.length === 2 &&
-          evaluation.left !== '?' &&
-          evaluation.left === evaluation.right
-        );
-    }
-  }, [puzzle, usedDigitIndices, evaluation, equation, gameMode, targetValue]);
+    return (
+      eqParts.length === 2 &&
+      evaluation.left !== '?' &&
+      evaluation.left === evaluation.right
+    );
+  }, [puzzle, usedDigitIndices, evaluation, equation]);
   const nextDigitIndex = useMemo(
     () => (puzzle ? firstUnusedDigitIndex(tokens, puzzle.digits) : null),
     [puzzle, tokens],
@@ -477,10 +451,10 @@ function GamePage() {
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const isEasyMode = difficultyMode === 'easy';
   const isLHSCompleteForHint = useMemo(() => {
-    if (!hintData || gameMode !== 'classic') return false;
+    if (!hintData) return false;
     const normalize = (str: string) => str.replace(/\s+/g, '').replace(/=+$/, '');
     return normalize(equation).startsWith(normalize(hintData.step2));
-  }, [equation, hintData, gameMode]);
+  }, [equation, hintData]);
   const mappedGlowKey = useMemo(() => {
     if (hintStep === 0 || !hintData) return null;
     if (isDeadEnd) {
@@ -530,20 +504,6 @@ function GamePage() {
   }, [difficultyMode]);
 
   useEffect(() => {
-    localStorage.setItem(gameModeKey, gameMode);
-    setHintStep(0);
-    setHintData(null);
-    setUsedHint(false);
-  }, [gameMode]);
-
-  useEffect(() => {
-    localStorage.setItem(targetValueKey, targetValue);
-    setHintStep(0);
-    setHintData(null);
-    setUsedHint(false);
-  }, [targetValue]);
-
-  useEffect(() => {
     if (isAutocompleting) return;
     setShakeHintButton(false);
 
@@ -554,7 +514,7 @@ function GamePage() {
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [equation, puzzle, gameMode, targetValue, isAutocompleting]);
+  }, [equation, puzzle, isAutocompleting]);
 
   useEffect(() => {
     if (isAutocompleting) return;
@@ -562,8 +522,7 @@ function GamePage() {
       const controller = new AbortController();
       const query = new URLSearchParams({
         date: puzzle.dateIdentifier,
-        mode: gameMode,
-        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : '',
+        mode: 'classic',
         prefix: equation,
       });
 
@@ -588,7 +547,7 @@ function GamePage() {
     } else {
       setIsDeadEnd(false);
     }
-  }, [equation, hintStep, gameMode, targetValue, puzzle, isAutocompleting]);
+  }, [equation, hintStep, puzzle, isAutocompleting]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -601,9 +560,6 @@ function GamePage() {
           autocompleteIntervalRef.current = null;
         }
         setPuzzle(nextPuzzle);
-        if (nextPuzzle.targetValue) {
-          setTargetValue(nextPuzzle.targetValue);
-        }
         setEditorState(emptyEditorState());
         setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
         const preserveCurrentMessage = preserveFeedbackOnNextPuzzleLoadRef.current;
@@ -652,15 +608,18 @@ function GamePage() {
   const shareSolutionText = useCallback((solution: SavedSolution) => {
     const text = savedSolutionSharePayload(puzzle?.displayDate || dateDisplayString(selectedDate), solution);
 
-    void navigator.clipboard
-      .writeText(text)
-      .then(() => {
+    void shareTextWithBrowser(text)
+      .then((result) => {
         setMessageTone('success');
-        setMessage('Result copied to clipboard!');
+        if (result === 'shared') {
+          setMessage('Shared!');
+        } else {
+          setMessage('Copied to clipboard!');
+        }
       })
       .catch(() => {
         setMessageTone('error');
-        setMessage('Failed to copy to clipboard.');
+        setMessage('Failed to share or copy.');
       });
   }, [puzzle, selectedDate]);
 
@@ -668,15 +627,18 @@ function GamePage() {
     if (!dailyDashboardSummary) return;
     const text = spoilerFreeDailySharePayload(dailyDashboardSummary);
 
-    void navigator.clipboard
-      .writeText(text)
-      .then(() => {
+    void shareTextWithBrowser(text)
+      .then((result) => {
         setMessageTone('success');
-        setMessage('Summary copied to clipboard!');
+        if (result === 'shared') {
+          setMessage('Shared!');
+        } else {
+          setMessage('Copied to clipboard!');
+        }
       })
       .catch(() => {
         setMessageTone('error');
-        setMessage('Failed to copy to clipboard.');
+        setMessage('Failed to share or copy.');
       });
   }, [dailyDashboardSummary]);
 
@@ -772,9 +734,6 @@ function GamePage() {
 
   const insertOperator = useCallback(
     (value: string) => {
-      if (value === '=' && gameMode === 'single_expr') {
-        return;
-      }
       if (value === '|') {
         insertAbsoluteDelimiter();
         return;
@@ -789,7 +748,7 @@ function GamePage() {
       }
       insertText(value);
     },
-    [insertAbsoluteDelimiter, insertClosingDelimiter, insertText, gameMode],
+    [insertAbsoluteDelimiter, insertClosingDelimiter, insertText],
   );
 
   const appendDigit = useCallback(() => {
@@ -836,8 +795,7 @@ function GamePage() {
       body: JSON.stringify({
         date: puzzle.dateIdentifier,
         equation: normalizedEquation,
-        mode: gameMode,
-        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
+        mode: 'classic',
       }),
     });
     const result = (await response.json()) as ValidationResponse;
@@ -873,8 +831,6 @@ function GamePage() {
       timestamp: new Date().toISOString(),
       seconds,
       value: result.leftValue ?? evaluation.left,
-      mode: gameMode,
-      targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
       difficulty: difficultyMode,
       solvedOnOtherDay,
       usedHint,
@@ -894,8 +850,6 @@ function GamePage() {
       difficulty: difficultyMode,
       platform: 'web',
       appVersion: webAppVersion,
-      mode: gameMode,
-      targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined,
     });
     if (guidedFirstWinActive) {
       localStorage.setItem(guidedFirstWinStorageKey, 'true');
@@ -904,16 +858,10 @@ function GamePage() {
     }
     setIsSearchingAnother(false);
     setMessageTone('success');
-    if (gameMode === 'double_equality') {
-      setMessage(`Solved. All sides equal ${solution.value}.`);
-    } else if (gameMode === 'single_expr') {
-      setMessage(`Solved. Expression equals ${solution.value}.`);
-    } else {
-      setMessage(`Solved. Both sides equal ${solution.value}.`);
-    }
+    setMessage(`Solved. Both sides equal ${solution.value}.`);
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, guidedFirstWinActive, isPracticeMode, puzzle, startTime, todayId, todaySolutions, gameMode, targetValue]);
+  }, [clear, difficultyMode, equation, evaluation.left, guidedFirstWinActive, isPracticeMode, puzzle, startTime, todayId, todaySolutions]);
 
   const applyHintStep = useCallback(
     (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
@@ -921,50 +869,27 @@ function GamePage() {
 
       if (step === 1) {
         const hasEquals = tokens.some((t) => t.value === '=');
-        if (!hasEquals && gameMode !== 'single_expr' && tokens.length > 0) {
-          const expectedCount = gameMode === 'double_equality' ? 2 : 1;
+        if (!hasEquals && tokens.length > 0) {
           applyEditorEdit((currentTokens, currentSelection) => {
-            let updatedTokens = [...currentTokens];
-            let updatedSelection = { ...currentSelection };
-            for (let i = 0; i < expectedCount; i++) {
-              const edit = insertTokensAtSelection(updatedTokens, updatedSelection, [createOperatorToken('=')]);
-              updatedTokens = edit.tokens;
-              updatedSelection = edit.selection;
-            }
-            return { tokens: updatedTokens, selection: updatedSelection };
+            return insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken('=')]);
           });
         }
       } else if (step === 2) {
-        const insertStr = gameMode === 'single_expr' ? data.step1 : data.step2;
+        const insertStr = data.step2;
         const hintTokens = stringToEquationTokens(insertStr, puzzle.digits);
         applyEditorEdit((currentTokens, currentSelection) => {
-          let updatedTokens = [...currentTokens];
-          let updatedSelection = { ...currentSelection };
-          const hasEqualsInEditor = updatedTokens.some((t) => t.value === '=');
+          const hasEqualsInEditor = currentTokens.some((t) => t.value === '=');
 
-          if (gameMode === 'classic' || gameMode === 'double_equality') {
-            if (hasEqualsInEditor) {
-              return { tokens: currentTokens, selection: currentSelection };
-            }
-            // Avoid duplicate LHS entry by checking if currentTokens already match the hintTokens.
-            // If they do, insert '=' instead.
-            const normEquation = currentTokens.map(t => t.value).join('').replace(/\s+/g, '');
-            const normHint = insertStr.replace(/\s+/g, '');
-            if (normEquation !== '' && (normEquation.startsWith(normHint) || normHint.startsWith(normEquation))) {
-              return insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken('=')]);
-            }
-            return insertTokensAtSelection(currentTokens, currentSelection, hintTokens);
+          if (hasEqualsInEditor) {
+            return { tokens: currentTokens, selection: currentSelection };
           }
-
-          if (gameMode === 'target') {
-            if (!hasEqualsInEditor) {
-              const edit = insertTokensAtSelection(updatedTokens, updatedSelection, [createOperatorToken('=')]);
-              updatedTokens = edit.tokens;
-              updatedSelection = edit.selection;
-            }
-            return insertTokensAtSelection(updatedTokens, updatedSelection, hintTokens);
+          // Avoid duplicate LHS entry by checking if currentTokens already match the hintTokens.
+          // If they do, insert '=' instead.
+          const normEquation = currentTokens.map(t => t.value).join('').replace(/\s+/g, '');
+          const normHint = insertStr.replace(/\s+/g, '');
+          if (normEquation !== '' && (normEquation.startsWith(normHint) || normHint.startsWith(normEquation))) {
+            return insertTokensAtSelection(currentTokens, currentSelection, [createOperatorToken('=')]);
           }
-
           return insertTokensAtSelection(currentTokens, currentSelection, hintTokens);
         });
       } else if (step === 3) {
@@ -1018,7 +943,7 @@ function GamePage() {
         }, 300);
       }
     },
-    [puzzle, tokens, gameMode, applyEditorEdit],
+    [puzzle, tokens, applyEditorEdit],
   );
 
   const fetchHint = useCallback(async () => {
@@ -1027,8 +952,7 @@ function GamePage() {
     try {
       const query = new URLSearchParams({
         date: puzzle.dateIdentifier,
-        mode: gameMode,
-        targetValue: (gameMode === 'target' || gameMode === 'single_expr') ? targetValue : '',
+        mode: 'classic',
         prefix: equation,
       });
       const response = await fetch(`/api/hint?${query.toString()}`);
@@ -1040,11 +964,6 @@ function GamePage() {
       const initialStep = nextVisibleHintStep({
         requestedStep: 1,
         currentHintStep: 0,
-        equation,
-        gameMode,
-        isEasyMode,
-        evaluatedLeft: evaluation.left,
-        data,
       });
       
       setHintStep(initialStep);
@@ -1054,10 +973,7 @@ function GamePage() {
     } catch {
       setMessageTone('error');
       if (equation.trim().length > 0) {
-        const errMsg = gameMode === 'single_expr'
-          ? 'Could not quickly find a solution with what is currently entered. Try backspacing or clearing.'
-          : 'Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.';
-        setMessage(errMsg);
+        setMessage('Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.');
         setIsDeadEnd(true);
       } else {
         setMessage('Could not find any solutions for this puzzle.');
@@ -1065,7 +981,7 @@ function GamePage() {
     } finally {
       setHintLoading(false);
     }
-  }, [puzzle, gameMode, targetValue, equation, applyHintStep, isEasyMode, evaluation.left]);
+  }, [puzzle, equation, applyHintStep]);
 
   const handleHintClick = useCallback(() => {
     if (hintStep === 0) {
@@ -1076,11 +992,6 @@ function GamePage() {
         nextStep = nextVisibleHintStep({
           requestedStep: nextStep,
           currentHintStep: hintStep,
-          equation,
-          gameMode,
-          isEasyMode,
-          evaluatedLeft: evaluation.left,
-          data: hintData,
         });
       }
 
@@ -1099,19 +1010,22 @@ function GamePage() {
         }
       }
     }
-  }, [hintStep, fetchHint, hintData, applyHintStep, isDeadEnd, equation, gameMode, isEasyMode, evaluation.left]);
+  }, [hintStep, fetchHint, hintData, applyHintStep, isDeadEnd]);
 
   const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
     const text = savedSolutionSharePayload(dateDisplayString(dateId), sol);
-    void navigator.clipboard
-      .writeText(text)
-      .then(() => {
+    void shareTextWithBrowser(text)
+      .then((result) => {
         setMessageTone('success');
-        setMessage('Result copied to clipboard!');
+        if (result === 'shared') {
+          setMessage('Shared!');
+        } else {
+          setMessage('Copied to clipboard!');
+        }
       })
       .catch(() => {
         setMessageTone('error');
-        setMessage('Failed to copy to clipboard.');
+        setMessage('Failed to share or copy.');
       });
   }, []);
 
@@ -1366,11 +1280,8 @@ function GamePage() {
                 <EquationHelperRow
                   showHelperValues={isEasyMode}
                   leftValue={<RepeatingDecimalValue value={evaluation.left || '?'} />}
-                  middleValue={<RepeatingDecimalValue value={evaluation.middle || '?'} />}
                   rightValue={<RepeatingDecimalValue value={evaluation.right || '?'} />}
                   onMove={moveSelectorFromControls}
-                  gameMode={gameMode}
-                  targetValue={(gameMode === 'target' || gameMode === 'single_expr') ? targetValue : undefined}
                 />
 
                 <EquationFeedbackBanner message={inlineEquationFeedback} tone={feedbackTone} />
@@ -1411,20 +1322,14 @@ function GamePage() {
                           </p>
                         ) : (
                           <p className="dead-end-message">
-                            ⚠️ {gameMode === 'single_expr' ? (
-                              <>Could not quickly find a solution with what is currently entered. Try backspacing or clearing.</>
-                            ) : (
-                              <>Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.</>
-                            )}
+                            ⚠️ Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.
                           </p>
                         )
                       ) : (
                         <>
                           {hintStep === 1 && (
                             <p>
-                              {gameMode === 'target' || gameMode === 'single_expr' ? (
-                                <>Left side could start with: <code>{hintData.step1}</code></>
-                              ) : isLHSCompleteForHint && hintData.balancingHint ? (
+                              {isLHSCompleteForHint && hintData.balancingHint ? (
                                 <>{hintData.balancingHint}</>
                               ) : (
                                 <>Target value of all parts is: <strong>{hintData.step1}</strong></>
@@ -1433,13 +1338,7 @@ function GamePage() {
                           )}
                           {hintStep === 2 && (
                             <p>
-                              {gameMode === 'single_expr' ? (
-                                <>Expression is almost complete: <code>{hintData.step2}</code></>
-                              ) : gameMode === 'target' ? (
-                                <>Right side could start with: <code>{hintData.step2}</code></>
-                              ) : gameMode === 'double_equality' ? (
-                                <>First two parts could be: <code>{hintData.step2}</code></>
-                              ) : isLHSCompleteForHint && hintData.balancingHint ? (
+                              {isLHSCompleteForHint && hintData.balancingHint ? (
                                 <>{hintData.mathTip || "Tip: remember that x^0 = 1"}</>
                               ) : (
                                 <>Left side could be: <code>{hintData.step2}</code></>
@@ -1491,12 +1390,10 @@ function GamePage() {
                   <button className={`warning ${activeGlowKey === 'Backspace' ? 'glow' : ''}`.trim()} type="button" onClick={backspace} aria-label="Backspace">
                     ⌫
                   </button>
-                  {gameMode !== 'single_expr' && (
-                    <button className={`wide ${activeGlowKey === '=' ? 'glow' : ''}`.trim()} type="button" onClick={() => insertText('=')}>
-                      =
-                    </button>
-                  )}
-                  <button className={`${gameMode === 'single_expr' ? 'wide submit' : 'submit'} ${activeGlowKey === 'Submit' ? 'glow' : ''}`.trim()} type="button" onClick={submit}>
+                  <button className={`wide ${activeGlowKey === '=' ? 'glow' : ''}`.trim()} type="button" onClick={() => insertText('=')}>
+                    =
+                  </button>
+                  <button className={`submit ${activeGlowKey === 'Submit' ? 'glow' : ''}`.trim()} type="button" onClick={submit}>
                     Submit
                   </button>
                 </div>
@@ -1534,10 +1431,8 @@ function GamePage() {
         <SettingsPanel
           themePreference={themePreference}
           difficultyMode={difficultyMode}
-          gameMode={gameMode}
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
-          onGameModeChange={setGameMode}
           onClearData={() => setClearDataConfirmVisible(true)}
           onShowHowToPlay={showHowToPlay}
           onPractice={showPractice}
@@ -1721,16 +1616,6 @@ function VictoryPanel({
         <h3>Your Solutions</h3>
         <ul className="victory-sol-list">
           {solutions.map((sol, index) => {
-            const solMode = sol.mode || 'classic';
-            const modeLabel =
-              solMode === 'classic'
-                ? 'Classic'
-                : solMode === 'double_equality'
-                ? 'Double ='
-                : solMode === 'target'
-                ? `Target (${sol.targetValue || '10'})`
-                : `Single (${sol.targetValue || '10'})`;
-
             return (
               <li className="victory-sol-item" key={index}>
                 <div className="victory-sol-main">
@@ -1738,7 +1623,7 @@ function VictoryPanel({
                     <MathEquation equation={sol.equation} />
                   </span>
                   <div className="victory-sol-metadata">
-                    <span className="victory-badge-mode">{modeLabel}</span>
+                    <span className="victory-badge-mode">Classic</span>
                     <span>⏱ {formatTime(sol.seconds)}</span>
                     <span className={`victory-badge-diff difficulty-${sol.difficulty || 'easy'}`}>
                       {sol.difficulty || 'easy'}
@@ -1948,16 +1833,6 @@ function SolutionsList({ solutions, onShare }: { solutions: SavedSolution[]; onS
   return (
     <ol className="solutions-list">
       {solutions.map((solution) => {
-        const solutionMode = solution.mode ?? 'classic';
-        const modeLabel =
-          solutionMode === 'classic'
-            ? 'Classic'
-            : solutionMode === 'double_equality'
-            ? 'Double Equality'
-            : solutionMode === 'target'
-            ? `Target (${solution.targetValue ?? '?'})`
-            : `Single Expr (${solution.targetValue ?? '?'})`;
-
         return (
           <li key={`${solution.equation}-${solution.timestamp}`}>
             <div className="solution-row-content">
@@ -1965,7 +1840,7 @@ function SolutionsList({ solutions, onShare }: { solutions: SavedSolution[]; onS
                 <MathEquation equation={solution.equation} className="solution-equation" />
               </strong>
               <span className="solution-meta-row">
-                <span className="solution-mode">{modeLabel}</span>
+                <span className="solution-mode">Classic</span>
                 <span className="solution-divider">·</span>
                 <span>{formatTime(solution.seconds)}</span>
                 <span className="solution-divider">·</span>

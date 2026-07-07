@@ -1600,23 +1600,6 @@ a {
   justify-self: center;
 }
 
-.target-badge-mini {
-  background: var(--ios-blue);
-  color: #ffffff;
-  min-width: 44px;
-  height: 44px;
-  padding: 0 12px;
-  border-radius: 10px;
-  font-size: 1.15rem;
-  font-weight: 800;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 4px 10px rgba(0, 122, 255, 0.2);
-  white-space: nowrap;
-  box-sizing: border-box;
-}
-
 .selector-arrow-button {
   width: 44px;
   height: 44px;
@@ -2661,81 +2644,6 @@ a {
 
 .next-hint-button:hover {
   opacity: 0.9;
-}
-
-/* Target Picker Area */
-.target-picker-area {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: var(--glass-fill);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  padding: 8px 14px;
-  margin-bottom: 12px;
-  width: 100%;
-}
-
-.target-picker-label {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--ios-secondary-label);
-}
-
-.target-display-value {
-  background: var(--ios-blue);
-  color: #ffffff;
-  padding: 4px 14px;
-  border-radius: 999px;
-  font-size: 1rem;
-  font-weight: 800;
-  box-shadow: 0 4px 10px rgba(0, 122, 255, 0.15);
-}
-
-.target-picker-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.target-btn-adjust {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1px solid var(--glass-border);
-  background: var(--ios-tertiary-background);
-  color: var(--ios-label);
-  font-size: 1.1rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
-  transition: transform 0.1s ease;
-}
-
-.target-btn-adjust:active {
-  transform: scale(0.92);
-}
-
-.target-input-value {
-  width: 54px;
-  height: 32px;
-  border: 1px solid var(--glass-border);
-  border-radius: 8px;
-  background: var(--ios-tertiary-background);
-  color: var(--ios-label);
-  text-align: center;
-  font-weight: 750;
-  font-size: 0.95rem;
-  -moz-appearance: textfield;
-}
-
-.target-input-value::-webkit-outer-spin-button,
-.target-input-value::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
 }
 
 /* Stats Dashboard & Widgets */

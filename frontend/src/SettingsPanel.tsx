@@ -1,6 +1,5 @@
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
-type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
 
 export function SettingsPanel({
   themePreference,
@@ -15,10 +14,8 @@ export function SettingsPanel({
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
-  gameMode: GameMode;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
-  onGameModeChange: (mode: GameMode) => void;
   onClearData: () => void;
   onShowHowToPlay: () => void;
   onPractice?: () => void;

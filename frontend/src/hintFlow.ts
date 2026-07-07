@@ -1,5 +1,3 @@
-export type HintGameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
-
 export type HintFlowData = {
   solution: string;
   step1: string;
@@ -15,11 +13,6 @@ export function nextVisibleHintStep({
 }: {
   requestedStep: number;
   currentHintStep: number;
-  equation: string;
-  gameMode: HintGameMode;
-  isEasyMode: boolean;
-  evaluatedLeft: string;
-  data: HintFlowData;
 }): 1 | 2 | 3 {
   const boundedStep = Math.min(Math.max(requestedStep, 1), 3);
 

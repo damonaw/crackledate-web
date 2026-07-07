@@ -10,10 +10,8 @@ describe('SettingsPanel', () => {
       <SettingsPanel
         themePreference="system"
         difficultyMode="easy"
-        gameMode="classic"
         onThemePreferenceChange={() => {}}
         onDifficultyModeChange={() => {}}
-        onGameModeChange={() => {}}
         onClearData={() => {}}
         onShowHowToPlay={() => {}}
       />,

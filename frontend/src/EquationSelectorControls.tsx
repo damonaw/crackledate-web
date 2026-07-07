@@ -4,10 +4,9 @@ export type SelectorDirection = -1 | 1;
 
 type EquationSelectorControlsProps = {
   onMove: (direction: SelectorDirection) => void;
-  targetValue?: string;
 };
 
-export function EquationSelectorControls({ onMove, targetValue }: EquationSelectorControlsProps) {
+export function EquationSelectorControls({ onMove }: EquationSelectorControlsProps) {
   return (
     <div className="selector-arrow-controls" aria-label="Move equation selector">
       <button
@@ -18,11 +17,6 @@ export function EquationSelectorControls({ onMove, targetValue }: EquationSelect
       >
         ←
       </button>
-      {targetValue && (
-        <div className="target-badge-mini" aria-label={`Target value is ${targetValue}`}>
-          {targetValue}
-        </div>
-      )}
       <button
         className="selector-arrow-button"
         type="button"

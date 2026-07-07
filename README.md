@@ -15,7 +15,7 @@ This is the deployable web version of Crackle Date for `crackledate.com`.
 - React + Vite frontend for the playable browser board.
 - Go backend for puzzle date metadata, expression evaluation, and equation validation.
 - A single Docker image serves the React build and `/api/*` routes.
-- Guided First Crack onboarding, optional accounts, local saves, no ads or in-app purchases, open date access, a Practice sandbox, and written Rules.
+- Guided First Crack onboarding, local saves, no ads or in-app purchases, open date access, a Practice sandbox, and written Rules.
 
 This keeps the runtime small and simple: the single container can sit behind any HTTPS reverse proxy or tunnel, while React handles the equation-builder interaction.
 
@@ -56,11 +56,8 @@ The Vite dev server proxies `/api` to `http://localhost:8080`.
 ## Environment
 
 - `PORT`: backend HTTP port; defaults to `8080`.
-- `SUBMISSIONS_PATH`: storage target for submission attempts and accounts. `.db`/`.sqlite`/`.sqlite3` enables SQLite rows and account features. Defaults to `data/submissions.db` locally and `/data/submissions.db` in Docker.
+- `SUBMISSIONS_PATH`: storage target for anonymous submission attempts. `.db`/`.sqlite`/`.sqlite3` enables SQLite rows. Defaults to `data/submissions.db` locally and `/data/submissions.db` in Docker.
 - `CLIENT_HASH_SECRET`: optional salt for rotating request-log client hashes. Set this in production so daily and weekly client hashes cannot be compared across deployments.
-- `PUBLIC_BASE_URL`: public site origin used in verification emails, for example `https://crackledate.com`.
-- `SESSION_COOKIE_SECURE`: set to `true` in production so auth cookies are marked Secure behind HTTPS.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`: SMTP settings for verification emails. If SMTP is not configured, verification links/codes are logged to stderr for development.
 
 ## Docker
 
@@ -81,16 +78,6 @@ The compose file binds the container to loopback so it is intended to be reached
 - `/api/evaluate`
 - `/api/validate`
 - `/api/submissions`
-- `/api/auth/signup`
-- `/api/auth/login`
-- `/api/auth/logout`
-- `/api/auth/me`
-- `/api/auth/verify`
-- `/api/auth/verify-code`
-- `/api/auth/resend-verification`
-- `/api/me/preferences`
-- `/api/me/solutions`
-- `/api/me/solutions/import`
 
 Web attempts are posted to `/api/submissions`. The backend validates the equation and stores each attempt
 in `SUBMISSIONS_PATH` with `submissionStatus` (`accepted` or `rejected`) and `rejectionReason` for failures.
@@ -102,11 +89,6 @@ so submitted data survive rebuilds.
 JSON API request bodies are capped at 32 KiB. POST requests are also rate-limited per client IP for the
 submission, validation, and evaluation routes to reduce spam and resource-exhaustion attempts.
 
-Accounts are optional. Email/password accounts require email verification by either clicking the emailed
-link or entering the emailed 6-digit code. Passwords must be at least 8 characters and are stored with
-Argon2id hashes. Verified accounts can sync saved solutions, submission attempts, theme preference, and
-difficulty mode.
-
 Crackle Date does not show ads or offer in-app purchases. Past, current, and future dates
 open without paid unlocks.
 
@@ -115,8 +97,8 @@ Android/iOS route policy and starts the Practice Round guided tutorial, which hi
 next step until the full sample solution is submitted.
 
 Practice is a sandbox reachable from Settings and is also the guided tutorial. It uses the shared
-June 19, 2026 sample round and validates equations without saving progress, syncing account data,
-or submitting the attempt to the backend.
+June 19, 2026 sample round and validates equations without saving progress or submitting the
+attempt to the backend.
 
 Rules is a written Settings destination separate from Cracked Instructions. It documents
 digit order, the leading-zero rule, the equals-sign requirement, practice boundaries,

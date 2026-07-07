@@ -480,21 +480,6 @@ a {
   border-top: 1px solid var(--ios-separator);
 }
 
-.account-row {
-  cursor: default;
-}
-
-.account-row button {
-  min-height: 36px;
-  border: 1px solid var(--glass-border);
-  border-radius: 999px;
-  background: var(--glass-fill);
-  color: var(--ios-blue);
-  padding: 8px 14px;
-  font-weight: 750;
-  cursor: pointer;
-}
-
 .settings-row legend {
   width: 96px;
   color: var(--ios-secondary-label);
@@ -1808,7 +1793,7 @@ a {
   backdrop-filter: blur(18px);
 }
 
-.auth-modal {
+.modal-card {
   position: relative;
   width: min(420px, 100%);
   border: 1px solid var(--glass-border);
@@ -1819,44 +1804,17 @@ a {
   box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
 }
 
-.auth-modal h2 {
+.modal-card h2 {
   margin: 0 0 14px;
   font-size: 1.45rem;
   line-height: 1.12;
 }
 
-.auth-modal p {
+.modal-card p {
   margin: 0 0 16px;
   color: var(--ios-secondary-label);
   font-weight: 650;
   line-height: 1.35;
-}
-
-.auth-modal form,
-.auth-modal label {
-  display: grid;
-  gap: 10px;
-}
-
-.auth-modal form {
-  gap: 14px;
-}
-
-.auth-modal label {
-  color: var(--ios-secondary-label);
-  font-size: 0.9rem;
-  font-weight: 750;
-}
-
-.auth-modal input {
-  width: 100%;
-  min-height: 46px;
-  border: 1px solid var(--ios-separator);
-  border-radius: 12px;
-  background: var(--ios-tertiary-background);
-  color: var(--ios-label);
-  padding: 10px 12px;
-  font: inherit;
 }
 
 .modal-close {
@@ -1874,9 +1832,8 @@ a {
   cursor: pointer;
 }
 
-.auth-primary,
-.auth-secondary,
-.auth-switch {
+.modal-primary,
+.modal-secondary {
   width: 100%;
   min-height: 44px;
   border-radius: 12px;
@@ -1884,14 +1841,13 @@ a {
   cursor: pointer;
 }
 
-.auth-primary {
+.modal-primary {
   border: 1px solid rgba(0, 122, 255, 0.42);
   background: var(--ios-blue);
   color: #ffffff;
 }
 
-.auth-secondary,
-.auth-switch {
+.modal-secondary {
   border: 1px solid var(--glass-border);
   background: var(--glass-fill);
   color: var(--ios-blue);
@@ -1907,49 +1863,10 @@ a {
   background: var(--ios-red);
 }
 
-.auth-switch {
-  border-color: transparent;
-  background: transparent;
-}
-
-.auth-primary:disabled,
-.auth-secondary:disabled {
+.modal-primary:disabled,
+.modal-secondary:disabled {
   cursor: progress;
   opacity: 0.62;
-}
-
-.auth-error,
-.auth-notice,
-.password-note {
-  margin: 0;
-  font-size: 0.88rem;
-  font-weight: 750;
-}
-
-.auth-error {
-  color: var(--ios-red);
-}
-
-.auth-notice,
-.password-note.ok,
-.auth-status.verified {
-  color: var(--ios-green);
-}
-
-.password-note,
-.auth-status {
-  color: var(--ios-secondary-label);
-}
-
-.auth-status {
-  display: inline-flex;
-  width: fit-content;
-  margin-bottom: 16px;
-  border: 1px solid var(--ios-separator);
-  border-radius: 999px;
-  padding: 7px 11px;
-  font-size: 0.86rem;
-  font-weight: 800;
 }
 
 @keyframes toast-in {
@@ -3335,7 +3252,7 @@ a {
   width: 100%;
 }
 
-.victory-secondary-row .auth-secondary {
+.victory-secondary-row .modal-secondary {
   min-height: 44px;
   border-radius: 12px;
   font-weight: 700;

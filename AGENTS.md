@@ -62,4 +62,4 @@ Open `http://localhost:5173/` for the local app.
 - Keep the Go backend and Vite frontend as separate local dev processes.
 - Do not commit `frontend/node_modules/`, `frontend/dist/`, `data/`, or local log files.
 - Prefer small, focused changes and run the relevant checks before committing.
-- Keep privacy/support copy aligned when changing account, access, or submission behavior.
+- Keep privacy/support copy aligned when changing local data, access, or submission behavior.

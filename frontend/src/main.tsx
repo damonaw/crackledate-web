@@ -3,20 +3,6 @@ import { createRoot, type Root } from 'react-dom/client';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
 import {
-  countStoredSolutions,
-  fetchAccountPreferences,
-  fetchAccountSolutions,
-  fetchCurrentUser,
-  importAccountSolutions,
-  login,
-  logout,
-  resendVerification,
-  saveAccountPreferences,
-  signup,
-  verifyCode,
-  type AuthUser,
-} from './auth';
-import {
   deleteAtSelection,
   insertTokensAtSelection,
   nextAbsoluteDelimiterRole,
@@ -114,7 +100,6 @@ type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
 type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
 type FeedbackTone = 'success' | 'error';
-type AuthModalMode = 'login' | 'signup' | 'verify' | 'account';
 type ActiveView = 'start' | 'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules';
 
 type EquationToken = EquationLatexToken & {
@@ -407,12 +392,7 @@ function GamePage() {
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
-  const [authUser, setAuthUser] = useState<AuthUser | null>(null);
-  const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
   const [clearDataConfirmVisible, setClearDataConfirmVisible] = useState(false);
-  const [showImportPrompt, setShowImportPrompt] = useState(false);
-  const [pendingImportSolutions, setPendingImportSolutions] = useState<StoredSolutions>({});
-  const [accountPreferencesLoaded, setAccountPreferencesLoaded] = useState(false);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
   const autocompleteIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preserveFeedbackOnNextPuzzleLoadRef = useRef(false);
@@ -501,9 +481,6 @@ function GamePage() {
     const normalize = (str: string) => str.replace(/\s+/g, '').replace(/=+$/, '');
     return normalize(equation).startsWith(normalize(hintData.step2));
   }, [equation, hintData, gameMode]);
-  const isVerifiedAccount = Boolean(authUser?.emailVerified);
-  const accountImportKey = authUser ? `crackledate.web.import-offered.${authUser.email}` : '';
-
   const mappedGlowKey = useMemo(() => {
     if (hintStep === 0 || !hintData) return null;
     if (isDeadEnd) {
@@ -538,65 +515,6 @@ function GamePage() {
     return null;
   }, [hintStep, hintData, isDeadEnd, equation]);
   const activeGlowKey = guidedPracticeGlowKey(guidedPracticeStep) ?? mappedGlowKey;
-
-  const syncAccountData = useCallback(async (user: AuthUser, options: { promptImport?: boolean } = {}) => {
-    if (!user.emailVerified) {
-      setAccountPreferencesLoaded(false);
-      return;
-    }
-
-    const localSolutions = loadSolutions();
-    const hasLocalSolutions = countStoredSolutions(localSolutions) > 0;
-    const [preferences, accountSolutions] = await Promise.all([
-      fetchAccountPreferences(),
-      fetchAccountSolutions(),
-    ]);
-
-    setThemePreference(preferences.themePreference);
-    setDifficultyMode(preferences.difficultyMode);
-    setAccountPreferencesLoaded(true);
-    setSavedSolutions(accountSolutions);
-    localStorage.setItem(storageKey, JSON.stringify(accountSolutions));
-
-    const importKey = `crackledate.web.import-offered.${user.email}`;
-    if (options.promptImport && hasLocalSolutions && localStorage.getItem(importKey) !== 'true') {
-      setPendingImportSolutions(localSolutions);
-      setShowImportPrompt(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    let isCurrent = true;
-    fetchCurrentUser()
-      .then((user) => {
-        if (!isCurrent) return;
-        setAuthUser(user);
-        if (user?.emailVerified) {
-          void syncAccountData(user, { promptImport: true });
-        } else {
-          setAccountPreferencesLoaded(false);
-        }
-
-        const params = new URLSearchParams(window.location.search);
-        if (params.get('verified') === '1') {
-          setMessageTone('success');
-          setMessage('Email verified. Your account is ready.');
-          window.history.replaceState({}, '', window.location.pathname);
-        }
-        if (params.get('verified') === '0') {
-          setMessageTone('error');
-          setMessage('Verification link expired or was already used.');
-          window.history.replaceState({}, '', window.location.pathname);
-        }
-      })
-      .catch(() => {
-        if (!isCurrent) return;
-        setAccountPreferencesLoaded(false);
-      });
-    return () => {
-      isCurrent = false;
-    };
-  }, [syncAccountData]);
 
   useEffect(() => {
     if (themePreference === 'system') {
@@ -671,12 +589,6 @@ function GamePage() {
       setIsDeadEnd(false);
     }
   }, [equation, hintStep, gameMode, targetValue, puzzle, isAutocompleting]);
-
-  useEffect(() => {
-    if (isVerifiedAccount && accountPreferencesLoaded) {
-      void saveAccountPreferences({ themePreference, difficultyMode });
-    }
-  }, [accountPreferencesLoaded, difficultyMode, isVerifiedAccount, themePreference]);
 
   useEffect(() => {
     let isCurrent = true;
@@ -1316,57 +1228,6 @@ function GamePage() {
     setSelectedDate(localDateIdentifier(new Date()));
   }, []);
 
-  const openLogin = useCallback(() => {
-    setAuthModalMode(authUser ? 'account' : 'login');
-  }, [authUser]);
-
-  const handleAuthenticated = useCallback(
-    (user: AuthUser) => {
-      const wasVerifying = authModalMode === 'verify';
-      setAuthUser(user);
-      if (user.emailVerified) {
-        setAuthModalMode(null);
-        if (wasVerifying) {
-          setMessageTone('success');
-          setMessage('Email verified. Your account is ready.');
-        }
-        void syncAccountData(user, { promptImport: true });
-      } else {
-        setAuthModalMode('verify');
-        setAccountPreferencesLoaded(false);
-      }
-    },
-    [authModalMode, syncAccountData],
-  );
-
-  const handleLogout = useCallback(async () => {
-    await logout();
-    setAuthUser(null);
-    setAuthModalMode(null);
-    setShowImportPrompt(false);
-    setPendingImportSolutions({});
-    setAccountPreferencesLoaded(false);
-  }, []);
-
-  const importLocalSolutions = useCallback(async () => {
-    if (!authUser?.emailVerified || !accountImportKey) return;
-    const imported = await importAccountSolutions(pendingImportSolutions);
-    localStorage.setItem(accountImportKey, 'true');
-    setShowImportPrompt(false);
-    setPendingImportSolutions({});
-    await syncAccountData(authUser);
-    setMessageTone('success');
-    setMessage(imported === 1 ? 'Imported 1 local solution.' : `Imported ${imported} local solutions.`);
-  }, [accountImportKey, authUser, pendingImportSolutions, syncAccountData]);
-
-  const skipLocalImport = useCallback(() => {
-    if (accountImportKey) {
-      localStorage.setItem(accountImportKey, 'true');
-    }
-    setShowImportPrompt(false);
-    setPendingImportSolutions({});
-  }, [accountImportKey]);
-
   const showEvaluationError = shouldSurfaceEvaluationError(
     tokens,
     nextDigitIndex,
@@ -1674,11 +1535,9 @@ function GamePage() {
           themePreference={themePreference}
           difficultyMode={difficultyMode}
           gameMode={gameMode}
-          authUser={authUser}
           onThemePreferenceChange={setThemePreference}
           onDifficultyModeChange={setDifficultyMode}
           onGameModeChange={setGameMode}
-          onLogin={openLogin}
           onClearData={() => setClearDataConfirmVisible(true)}
           onShowHowToPlay={showHowToPlay}
           onPractice={showPractice}
@@ -1708,31 +1567,10 @@ function GamePage() {
         />
       )}
 
-      {authModalMode && (
-        <AuthModal
-          mode={authModalMode}
-          user={authUser}
-          themePreference={themePreference}
-          difficultyMode={difficultyMode}
-          onModeChange={setAuthModalMode}
-          onAuthenticated={handleAuthenticated}
-          onLogout={handleLogout}
-          onClose={() => setAuthModalMode(null)}
-        />
-      )}
-
       {clearDataConfirmVisible && (
         <ClearDataConfirmModal
           onCancel={() => setClearDataConfirmVisible(false)}
           onClear={clearBrowserData}
-        />
-      )}
-
-      {showImportPrompt && (
-        <ImportPrompt
-          count={countStoredSolutions(pendingImportSolutions)}
-          onImport={importLocalSolutions}
-          onSkip={skipLocalImport}
         />
       )}
     </main>
@@ -1796,221 +1634,17 @@ function ClearDataConfirmModal({
 }) {
   return (
     <div className="modal-backdrop" role="presentation">
-      <section className="auth-modal clear-data-modal" role="dialog" aria-modal="true" aria-labelledby="clear-data-title">
+      <section className="modal-card clear-data-modal" role="dialog" aria-modal="true" aria-labelledby="clear-data-title">
         <h2 id="clear-data-title">Clear Data?</h2>
         <p>This permanently deletes saved solutions, stats, and Crackle Date settings in this browser.</p>
         <div className="clear-data-modal-actions">
-          <button className="auth-secondary" type="button" onClick={onCancel}>
+          <button className="modal-secondary" type="button" onClick={onCancel}>
             Cancel
           </button>
-          <button className="auth-primary clear-data-confirm-action" type="button" onClick={onClear}>
+          <button className="modal-primary clear-data-confirm-action" type="button" onClick={onClear}>
             Clear
           </button>
         </div>
-      </section>
-    </div>
-  );
-}
-
-function AuthModal({
-  mode,
-  user,
-  themePreference,
-  difficultyMode,
-  onModeChange,
-  onAuthenticated,
-  onLogout,
-  onClose,
-}: {
-  mode: AuthModalMode;
-  user: AuthUser | null;
-  themePreference: ThemePreference;
-  difficultyMode: DifficultyMode;
-  onModeChange: (mode: AuthModalMode) => void;
-  onAuthenticated: (user: AuthUser) => void;
-  onLogout: () => void;
-  onClose: () => void;
-}) {
-  const [email, setEmail] = useState(user?.email ?? '');
-  const [password, setPassword] = useState('');
-  const [code, setCode] = useState('');
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [isBusy, setIsBusy] = useState(false);
-
-  useEffect(() => {
-    if (user?.email) {
-      setEmail(user.email);
-    }
-    setError('');
-    setNotice('');
-  }, [mode, user]);
-
-  const submitAuth = useCallback(
-    async (event: React.FormEvent) => {
-      event.preventDefault();
-      setError('');
-      setNotice('');
-      setIsBusy(true);
-      try {
-        const normalizedEmail = email.trim();
-        if (!normalizedEmail) {
-          throw new Error('Enter a valid email address');
-        }
-        if (mode !== 'verify' && !password) {
-          throw new Error('Enter your password');
-        }
-        if (mode === 'verify' && code.length !== 6) {
-          throw new Error('Enter the 6-digit verification code');
-        }
-        if (mode === 'signup') {
-          if (password.length < 8) {
-            throw new Error('Password must be at least 8 characters');
-          }
-          const nextUser = await signup(normalizedEmail, password, { themePreference, difficultyMode });
-          onAuthenticated(nextUser);
-          setNotice('Verification email sent. Click the link or enter the code.');
-          return;
-        }
-        if (mode === 'login') {
-          const nextUser = await login(normalizedEmail, password);
-          onAuthenticated(nextUser);
-          if (!nextUser.emailVerified) {
-            setNotice('Verify your email before account syncing turns on.');
-          }
-          return;
-        }
-        if (mode === 'verify') {
-          const nextUser = await verifyCode(normalizedEmail, code);
-          onAuthenticated(nextUser);
-        }
-      } catch (authError) {
-        setError(authError instanceof Error ? authError.message : 'Account request failed');
-      } finally {
-        setIsBusy(false);
-      }
-    },
-    [code, difficultyMode, email, mode, onAuthenticated, password, themePreference],
-  );
-
-  const resend = useCallback(async () => {
-    setError('');
-    setNotice('');
-    setIsBusy(true);
-    try {
-      await resendVerification(email);
-      setNotice('Verification email sent.');
-    } catch (resendError) {
-      setError(resendError instanceof Error ? resendError.message : 'Could not send verification email');
-    } finally {
-      setIsBusy(false);
-    }
-  }, [email]);
-
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-        <button className="modal-close" type="button" aria-label="Close" onClick={onClose}>
-          x
-        </button>
-
-        {mode === 'account' ? (
-          <>
-            <h2 id="auth-title">Account</h2>
-            <p>{user?.email}</p>
-            {user?.emailVerified ? (
-              <>
-                <span className="auth-status verified">Verified</span>
-                <p className="auth-notice">Account sync is on for settings and saved solutions.</p>
-              </>
-            ) : (
-              <span className="auth-status">Email not verified</span>
-            )}
-            {!user?.emailVerified && (
-              <button className="auth-primary" type="button" onClick={() => onModeChange('verify')}>
-                Enter verification code
-              </button>
-            )}
-            {!user?.emailVerified && (
-              <button className="auth-secondary" type="button" disabled={isBusy} onClick={resend}>
-                Resend email
-              </button>
-            )}
-            <button className="auth-secondary" type="button" onClick={onLogout}>
-              Log out
-            </button>
-          </>
-        ) : (
-          <form onSubmit={submitAuth} noValidate>
-            <h2 id="auth-title">
-              {mode === 'signup' ? 'Create account' : mode === 'verify' ? 'Verify email' : 'Log in'}
-            </h2>
-            <label>
-              Email
-              <input
-                type="email"
-                value={email}
-                autoComplete="email"
-                required
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </label>
-            {mode !== 'verify' && (
-              <label>
-                Password
-                <input
-                  type="password"
-                  value={password}
-                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
-                  minLength={8}
-                  maxLength={128}
-                  required
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </label>
-            )}
-            {mode === 'signup' && (
-              <p className={`password-note ${password.length >= 8 ? 'ok' : ''}`}>
-                Minimum 8 characters.
-              </p>
-            )}
-            {mode === 'verify' && (
-              <label>
-                Verification code
-                <input
-                  type="text"
-                  value={code}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  minLength={6}
-                  maxLength={6}
-                  required
-                  onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
-                />
-              </label>
-            )}
-            {error && <p className="auth-error">{error}</p>}
-            {notice && <p className="auth-notice">{notice}</p>}
-            <button className="auth-primary" type="submit" disabled={isBusy}>
-              {isBusy ? 'Working...' : mode === 'signup' ? 'Create account' : mode === 'verify' ? 'Verify' : 'Log in'}
-            </button>
-            {mode === 'verify' && (
-              <button className="auth-secondary" type="button" disabled={isBusy} onClick={resend}>
-                Resend email
-              </button>
-            )}
-            {mode === 'login' && (
-              <button className="auth-switch" type="button" onClick={() => onModeChange('signup')}>
-                Create an account
-              </button>
-            )}
-            {mode === 'signup' && (
-              <button className="auth-switch" type="button" onClick={() => onModeChange('login')}>
-                I already have an account
-              </button>
-            )}
-          </form>
-        )}
       </section>
     </div>
   );
@@ -2127,7 +1761,7 @@ function VictoryPanel({
       </div>
 
       <div className="victory-cta-actions">
-        <button className="auth-primary victory-main-share-btn" type="button" onClick={onShare}>
+        <button className="modal-primary victory-main-share-btn" type="button" onClick={onShare}>
           <span className="share-icon-inline">
             <ShareIcon />
           </span>
@@ -2135,26 +1769,26 @@ function VictoryPanel({
         </button>
 
         <div className="victory-secondary-row">
-          <button className="auth-secondary" type="button" onClick={onPlayAnother}>
+          <button className="modal-secondary" type="button" onClick={onPlayAnother}>
             Keep Playing
           </button>
 
-          <button className="auth-secondary" type="button" onClick={onShowSavedSolutions}>
+          <button className="modal-secondary" type="button" onClick={onShowSavedSolutions}>
             Saved Solutions
           </button>
 
-          <button className="auth-secondary" type="button" onClick={onShowCalendar}>
+          <button className="modal-secondary" type="button" onClick={onShowCalendar}>
             Calendar
           </button>
 
           {isArchived && (
-            <button className="auth-secondary" type="button" onClick={onGoToToday}>
+            <button className="modal-secondary" type="button" onClick={onGoToToday}>
               Play Today's Puzzle
             </button>
           )}
 
           {hasTomorrow && onUnlockTomorrow && (
-            <button className="auth-secondary" type="button" onClick={onUnlockTomorrow}>
+            <button className="modal-secondary" type="button" onClick={onUnlockTomorrow}>
               Play Tomorrow's Puzzle
             </button>
           )}
@@ -2180,35 +1814,6 @@ function DailyDashboardStats({ summary }: { summary: DailyDashboardSummary }) {
         <strong>{monthProgressText(summary.monthSolvedCount, summary.monthAvailableCount)}</strong>
       </article>
     </section>
-  );
-}
-
-function ImportPrompt({
-  count,
-  onImport,
-  onSkip,
-}: {
-  count: number;
-  onImport: () => void;
-  onSkip: () => void;
-}) {
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section className="auth-modal" role="dialog" aria-modal="true" aria-labelledby="import-title">
-        <h2 id="import-title">Import local solutions?</h2>
-        <p>
-          {count === 1
-            ? 'Attach 1 saved browser solution to this account.'
-            : `Attach ${count} saved browser solutions to this account.`}
-        </p>
-        <button className="auth-primary" type="button" onClick={onImport}>
-          Import
-        </button>
-        <button className="auth-secondary" type="button" onClick={onSkip}>
-          Not now
-        </button>
-      </section>
-    </div>
   );
 }
 
@@ -3367,7 +2972,7 @@ function PrivacyPage() {
     <DocumentShell
       currentPage="privacy"
       title="Privacy"
-      subtitle="Crackle Date is built to be played with local saves, optional accounts, no ads, in-app purchases, or public profile."
+      subtitle="Crackle Date is built to be played with local saves, no remote profile, no ads, in-app purchases, or public profile."
       meta="Last updated June 25, 2026"
     >
       <DocumentSection
@@ -3375,7 +2980,7 @@ function PrivacyPage() {
         rows={[
           {
             label: 'On this device',
-            body: 'When signed out, saved solutions, settings, theme choice, difficulty mode, and whether you have started playing are stored locally on your device or in this browser.',
+            body: 'Saved solutions, settings, theme choice, difficulty mode, and whether you have started playing are stored locally on your device or in this browser.',
           },
           {
             label: 'Clearing data',
@@ -3385,33 +2990,19 @@ function PrivacyPage() {
       />
 
       <DocumentSection
-        title="Optional Accounts"
-        rows={[
-          {
-            label: 'Email login',
-            body: 'If you create an account, Crackle Date stores your email address, password hash, email verification status, sessions, preferences, and saved solutions.',
-          },
-          {
-            label: 'Verification',
-            body: 'New accounts must verify their email address by link or code before account syncing is enabled.',
-          },
-        ]}
-      />
-
-      <DocumentSection
         title="Anonymous Web Submissions"
         rows={[
           {
             label: 'What is sent',
-            body: 'When you submit a web solution, Crackle Date sends the puzzle date, equation, solve time, difficulty mode, platform, app version, and submission time. If you are signed in and verified, the attempt is linked to your account.',
+            body: 'When you submit a web solution, Crackle Date sends the puzzle date, equation, solve time, difficulty mode, platform, app version, and submission time.',
           },
           {
             label: 'What is not sent',
-            body: 'Submitted records do not include your name, email address, account ID, passwords, payment information, advertising identifier, or the contents of browser storage.',
+            body: 'Submitted records do not include contact details, payment information, advertising identifier, or the contents of browser storage.',
           },
           {
             label: 'Server logs',
-            body: 'The server may keep basic operational request logs needed to run and secure the site. Solution records are only tied to an account when you are signed in with a verified email.',
+            body: 'The server may keep basic operational request logs needed to run and secure the site. Solution records are not tied to a remote profile.',
           },
         ]}
       />
@@ -3439,7 +3030,7 @@ function PrivacyPage() {
           },
           {
             label: 'No public profile',
-            body: 'Accounts are only for saving your own puzzle history and settings; there is no public profile, leaderboard, or user-generated content feed.',
+            body: 'Your puzzle history and settings stay local. There is no public profile, leaderboard, or user-generated content feed.',
           },
         ]}
       />
@@ -3462,10 +3053,6 @@ function SupportPage() {
             label: 'Date access',
             body: 'Past, current, and future dates are playable without ads, purchases, or paid unlocks.',
           },
-          {
-            label: 'Account optional',
-            body: 'Accounts are only for syncing settings and saved solutions. Gameplay remains available while signed out.',
-          },
         ]}
       />
 
@@ -3482,7 +3069,7 @@ function SupportPage() {
           },
           {
             label: 'Missing history',
-            body: 'If you are signed out, saved solutions and badges are local to this browser. Sign in and verify your email to sync history across visits.',
+            body: 'Saved solutions and badges are local to this browser. Clearing site data or switching browsers can remove local history.',
           },
         ]}
       />
@@ -3509,8 +3096,8 @@ function SupportPage() {
         title="Privacy Reminder"
         rows={[
           {
-            label: 'Account optional',
-            body: 'Do not send passwords, payment details, private identifiers, or unrelated personal information. Crackle Date does not need those details for support.',
+            label: 'Keep it minimal',
+            body: 'Do not send payment details, private identifiers, or unrelated personal information. Crackle Date does not need those details for support.',
           },
         ]}
       />

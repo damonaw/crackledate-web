@@ -47,27 +47,13 @@ func main() {
 		log.Fatal(err)
 	}
 	defer submissions.close()
-	auth, err := newAuthService(submissions.db, emailConfigFromEnvironment(), time.Now)
-	if err != nil {
-		log.Fatal(err)
-	}
 
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/puzzle", handlePuzzle)
 	mux.HandleFunc("/api/evaluate", handleEvaluate)
 	mux.HandleFunc("/api/validate", handleValidate)
-	mux.HandleFunc("/api/submissions", handleSubmitSolution(submissions, auth, time.Now))
+	mux.HandleFunc("/api/submissions", handleSubmitSolution(submissions, time.Now))
 	mux.HandleFunc("/api/hint", handleHint)
-	mux.HandleFunc("/api/auth/signup", auth.handleSignup)
-	mux.HandleFunc("/api/auth/login", auth.handleLogin)
-	mux.HandleFunc("/api/auth/logout", auth.handleLogout)
-	mux.HandleFunc("/api/auth/me", auth.handleMe)
-	mux.HandleFunc("/api/auth/verify", auth.handleVerifyLink)
-	mux.HandleFunc("/api/auth/verify-code", auth.handleVerifyCode)
-	mux.HandleFunc("/api/auth/resend-verification", auth.handleResendVerification)
-	mux.HandleFunc("/api/me/preferences", auth.handlePreferences)
-	mux.HandleFunc("/api/me/solutions", auth.handleSolutions)
-	mux.HandleFunc("/api/me/solutions/import", auth.handleImportSolutions)
 	mux.HandleFunc("/", handleStatic(publicFiles))
 
 	port := os.Getenv("PORT")
@@ -332,15 +318,9 @@ func defaultRateLimitConfig() rateLimitConfig {
 	return rateLimitConfig{
 		window: time.Minute,
 		limits: map[string]int{
-			"/api/evaluate":                 240,
-			"/api/validate":                 120,
-			"/api/submissions":              20,
-			"/api/auth/signup":              5,
-			"/api/auth/login":               10,
-			"/api/auth/verify-code":         10,
-			"/api/auth/resend-verification": 3,
-			"/api/me/preferences":           60,
-			"/api/me/solutions/import":      5,
+			"/api/evaluate":    240,
+			"/api/validate":    120,
+			"/api/submissions": 20,
 		},
 		now: time.Now,
 	}
@@ -629,4 +609,3 @@ func computeBalancingHintAndTip(sol string, mode string, prefix string, digits [
 
 	return hint, tip
 }
-

@@ -42,7 +42,6 @@ type submittedSolutionRecord struct {
 	AppVersion       string `json:"appVersion,omitempty"`
 	SubmissionStatus string `json:"submissionStatus"`
 	RejectionReason  string `json:"rejectionReason,omitempty"`
-	UserID           *int64 `json:"userId,omitempty"`
 }
 
 type submissionStore struct {
@@ -85,20 +84,15 @@ func newSubmissionStore(path string) (*submissionStore, error) {
 		platform TEXT NOT NULL,
 		app_version TEXT,
 		submission_status TEXT NOT NULL,
-		rejection_reason TEXT,
-		user_id INTEGER
+		rejection_reason TEXT
 	);
 	`
 	if _, err := store.db.Exec(createTable); err != nil {
 		return nil, fmt.Errorf("create submissions table: %w", err)
 	}
-	if err := addSQLiteColumnIfMissing(store.db, "submission_attempts", "user_id", "INTEGER"); err != nil {
-		return nil, fmt.Errorf("migrate submissions table: %w", err)
-	}
 	const createIndexes = `
 	CREATE INDEX IF NOT EXISTS submission_attempts_submitted_at_idx ON submission_attempts (submitted_at);
 	CREATE INDEX IF NOT EXISTS submission_attempts_puzzle_status_idx ON submission_attempts (puzzle_date, submission_status);
-	CREATE INDEX IF NOT EXISTS submission_attempts_user_id_idx ON submission_attempts (user_id);
 	`
 	if _, err := store.db.Exec(createIndexes); err != nil {
 		return nil, fmt.Errorf("create submissions indexes: %w", err)
@@ -114,20 +108,16 @@ func submissionsPathFromEnvironment() string {
 	return defaultSubmissionsPath
 }
 
-func handleSubmitSolution(store *submissionStore, auth *authService, now func() time.Time) http.HandlerFunc {
+func handleSubmitSolution(store *submissionStore, now func() time.Time) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodPost {
 			writer.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		user := auth.currentVerifiedUser(request)
 
 		var payload submitSolutionRequest
 		if err := decodeJSONBody(writer, request, &payload); err != nil {
 			record := rejectedSubmissionRecord("Invalid request body", now)
-			if user != nil {
-				record.UserID = &user.ID
-			}
 			if appendErr := store.append(record); appendErr != nil {
 				logServerError("store submission attempt", appendErr)
 				writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "Could not save submission"})
@@ -138,9 +128,6 @@ func handleSubmitSolution(store *submissionStore, auth *authService, now func() 
 		}
 
 		record, err := submittedSolutionRecordFromRequest(payload, now)
-		if user != nil {
-			record.UserID = &user.ID
-		}
 		if err != nil {
 			if appendErr := store.append(record); appendErr != nil {
 				logServerError("store submission attempt", appendErr)
@@ -311,9 +298,8 @@ func (store *submissionStore) appendToDatabase(record submittedSolutionRecord) e
 		platform,
 		app_version,
 		submission_status,
-		rejection_reason,
-		user_id
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		rejection_reason
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := store.db.Exec(
@@ -329,18 +315,7 @@ func (store *submissionStore) appendToDatabase(record submittedSolutionRecord) e
 		record.AppVersion,
 		record.SubmissionStatus,
 		record.RejectionReason,
-		record.UserID,
 	)
-	if err != nil {
-		return err
-	}
-	if record.UserID != nil && record.SubmissionStatus == acceptedSubmission {
-		seconds := 0
-		if record.SolveTimeSeconds != nil {
-			seconds = *record.SolveTimeSeconds
-		}
-		_, err = insertUserSolution(store.db, *record.UserID, record.PuzzleDate, record.Equation, record.Value, seconds, record.SubmittedAt, "submission")
-	}
 	return err
 }
 

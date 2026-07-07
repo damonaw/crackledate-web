@@ -62,13 +62,14 @@ describe('SettingsPanel', () => {
     expect(markup).not.toContain('settings-support-action');
   });
 
-  test('keeps signed-in account details reachable from settings', () => {
+  test('keeps settings local-only without login or account controls', () => {
+    const source = readFileSync(new URL('./SettingsPanel.tsx', import.meta.url), 'utf8');
+    const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
     const markup = renderToStaticMarkup(
       <SettingsPanel
         themePreference="system"
         difficultyMode="easy"
         gameMode="classic"
-        authUser={{ email: 'player@example.com', emailVerified: false }}
         onThemePreferenceChange={() => {}}
         onDifficultyModeChange={() => {}}
         onGameModeChange={() => {}}
@@ -77,9 +78,19 @@ describe('SettingsPanel', () => {
       />,
     );
 
-    expect(markup).toContain('Signed in as player@example.com. Verify email to sync.');
-    expect(markup).toContain('>Account</button>');
+    expect(markup).toContain('Saved on this browser');
+    expect(markup).not.toContain('Signed in as player@example.com. Verify email to sync.');
+    expect(markup).not.toContain('Account');
+    expect(markup).not.toContain('Log in');
     expect(markup).not.toContain('>Log out</button>');
+    expect(source).not.toContain('AuthUser');
+    expect(source).not.toContain('authUser');
+    expect(source).not.toContain('onLogin');
+    expect(source).not.toContain('account-row');
+    expect(appSource).not.toContain('AuthModal');
+    expect(appSource).not.toContain('./auth');
+    expect(appSource).not.toContain('importAccountSolutions');
+    expect(appSource).not.toContain('crackledate.web.import-offered');
   });
 
   test('uses an in-app clear data confirmation modal instead of a browser confirm', () => {
@@ -95,11 +106,11 @@ describe('SettingsPanel', () => {
   test('auth modal keeps validation and verification success visible in app chrome', () => {
     const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
 
-    expect(appSource).toContain('<form onSubmit={submitAuth} noValidate>');
-    expect(appSource).toContain("throw new Error('Enter a valid email address')");
-    expect(appSource).toContain("throw new Error('Enter your password')");
-    expect(appSource).toContain("throw new Error('Enter the 6-digit verification code')");
-    expect(appSource).toContain("setMessage('Email verified. Your account is ready.')");
-    expect(appSource).toContain('Account sync is on for settings and saved solutions.');
+    expect(appSource).not.toContain('<form onSubmit={submitAuth} noValidate>');
+    expect(appSource).not.toContain("throw new Error('Enter a valid email address')");
+    expect(appSource).not.toContain("throw new Error('Enter your password')");
+    expect(appSource).not.toContain("throw new Error('Enter the 6-digit verification code')");
+    expect(appSource).not.toContain("setMessage('Email verified. Your account is ready.')");
+    expect(appSource).not.toContain('Account sync is on for settings and saved solutions.');
   });
 });

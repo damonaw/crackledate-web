@@ -1,18 +1,12 @@
 type ThemePreference = 'system' | 'light' | 'dark';
 type DifficultyMode = 'easy' | 'hard';
 type GameMode = 'classic' | 'double_equality' | 'target' | 'single_expr';
-type AuthUser = {
-  email: string;
-  emailVerified: boolean;
-};
 
 export function SettingsPanel({
   themePreference,
   difficultyMode,
-  authUser = null,
   onThemePreferenceChange,
   onDifficultyModeChange,
-  onLogin = () => undefined,
   onClearData,
   onShowHowToPlay,
   onPractice = () => undefined,
@@ -22,11 +16,9 @@ export function SettingsPanel({
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
   gameMode: GameMode;
-  authUser?: AuthUser | null;
   onThemePreferenceChange: (preference: ThemePreference) => void;
   onDifficultyModeChange: (mode: DifficultyMode) => void;
   onGameModeChange: (mode: GameMode) => void;
-  onLogin?: () => void;
   onClearData: () => void;
   onShowHowToPlay: () => void;
   onPractice?: () => void;
@@ -38,24 +30,11 @@ export function SettingsPanel({
       <div className="settings-page-header">
         <div>
           <h1 id="settings-title">Settings</h1>
-          <p>
-            {authUser
-              ? authUser.emailVerified
-                ? `Synced as ${authUser.email}`
-                : `Signed in as ${authUser.email}. Verify email to sync.`
-              : 'Saved on this browser'}
-          </p>
+          <p>Saved on this browser</p>
         </div>
       </div>
 
       <div className="settings-group">
-        <div className="settings-row account-row">
-          <span>Account</span>
-          <button type="button" onClick={onLogin}>
-            {authUser ? 'Account' : 'Log in'}
-          </button>
-        </div>
-
         <fieldset className="settings-row">
           <legend>Appearance</legend>
           <div className="segmented-control">

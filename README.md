@@ -15,7 +15,7 @@ This is the deployable web version of Crackle Date for `crackledate.com`.
 - React + Vite frontend for the playable browser board.
 - Go backend for puzzle date metadata, expression evaluation, and equation validation.
 - A single Docker image serves the React build and `/api/*` routes.
-- Guided First Crack onboarding, optional accounts, local saves, a `$1.99` supporter option, sponsor banners for past dates and repeat current-date solves, a 30-second sponsor unlock for future dates, a Practice sandbox, and written Rules.
+- Guided First Crack onboarding, optional accounts, local saves, no ads or in-app purchases, open date access, a Practice sandbox, and written Rules.
 
 This keeps the runtime small and simple: the single container can sit behind any HTTPS reverse proxy or tunnel, while React handles the equation-builder interaction.
 
@@ -107,9 +107,8 @@ link or entering the emailed 6-digit code. Passwords must be at least 8 characte
 Argon2id hashes. Verified accounts can sync saved solutions, submission attempts, theme preference, and
 difficulty mode.
 
-Monetization is date-based and limited: the supporter option is `$1.99` and removes
-date-based ads in the current browser. Non-supporters can see a banner on past dates, a banner
-after one current-date saved solution, and a 30-second sponsor unlock before future-date play.
+Crackle Date does not show ads or offer in-app purchases. Past, current, and future dates
+open without paid unlocks.
 
 Guided First Crack is the first-time web onboarding path. It uses the shared
 Android/iOS route policy and starts the Practice Round guided tutorial, which highlights each
@@ -121,7 +120,7 @@ or submitting the attempt to the backend.
 
 Rules is a written Settings destination separate from Cracked Instructions. It documents
 digit order, the leading-zero rule, the equals-sign requirement, practice boundaries,
-and date-based ad boundaries.
+and open date access without ads or purchases.
 
 Share payloads follow the shared Android contract: daily shares include progress without
 revealing the equation, while saved-solution shares include the equation, value, and solve time.

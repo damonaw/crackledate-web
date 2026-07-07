@@ -31,7 +31,7 @@ import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { feedbackMessageAfterPuzzleLoad } from './feedbackRetention';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
-import { nextVisibleHintStep, shouldGateFullSolutionHint } from './hintFlow';
+import { nextVisibleHintStep } from './hintFlow';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
 import { practiceCompletionTarget } from './practiceCompletion';
@@ -66,16 +66,9 @@ import {
   guidedPracticeStepForTokens,
 } from './guidedPractice';
 import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
-import {
-  FUTURE_DATE_AD_DURATION_SECONDS,
-  bannerPlacementForDate,
-  dateAccessDecisionFor,
-  dateAfterCancelingFutureGate,
-} from './dateAccessPolicy';
+import { dateAccessDecisionFor } from './dateAccessPolicy';
 import { initialActiveView } from './startScreenRouting';
 import './styles.css';
-
-const HINT_REWARD_AD_DURATION_SECONDS = 15;
 
 type Puzzle = {
   dateIdentifier: string;
@@ -371,7 +364,6 @@ const storageKey = 'crackledate.web.solutions.v1';
 const playStartedKey = 'crackledate.web.play-started.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
 const difficultyModeKey = 'crackledate.web.difficulty.v1';
-const supporterEntitlementKey = 'crackledate.web.supporter.v1';
 const emptyDigitIndices = new Set<number>();
 
 function App() {
@@ -415,22 +407,12 @@ function GamePage() {
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
   const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
-  const [isSupporter, setIsSupporter] = useState(() => localStorage.getItem(supporterEntitlementKey) === 'true');
   const [authUser, setAuthUser] = useState<AuthUser | null>(null);
   const [authModalMode, setAuthModalMode] = useState<AuthModalMode | null>(null);
   const [clearDataConfirmVisible, setClearDataConfirmVisible] = useState(false);
   const [showImportPrompt, setShowImportPrompt] = useState(false);
   const [pendingImportSolutions, setPendingImportSolutions] = useState<StoredSolutions>({});
   const [accountPreferencesLoaded, setAccountPreferencesLoaded] = useState(false);
-  const [unlockedFutureDates, setUnlockedFutureDates] = useState<Set<string>>(() => new Set());
-  const [unlockedAutocompleteDates, setUnlockedAutocompleteDates] = useState<Set<string>>(() => new Set());
-  const [rewardModalAction, setRewardModalAction] = useState<{
-    actionName: string;
-    adDurationSeconds: number;
-    claimLabel: string;
-    onSuccess: () => void;
-    onClose?: () => void;
-  } | null>(null);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
   const autocompleteIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preserveFeedbackOnNextPuzzleLoadRef = useRef(false);
@@ -513,15 +495,6 @@ function GamePage() {
     });
   }, [isPracticeMode, puzzle, savedSolutions, todayId]);
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
-  const gameAdBannerPlacement = isPracticeMode
-    ? 'none'
-    : bannerPlacementForDate({
-        selectedDate,
-        today: todayId,
-        savedSolutionCount: todaySolutions.length,
-        removesAds: isSupporter,
-      });
-  const gameAdBannerReason = gameAdBannerPlacement === 'none' ? null : gameAdBannerPlacement;
   const isEasyMode = difficultyMode === 'easy';
   const isLHSCompleteForHint = useMemo(() => {
     if (!hintData || gameMode !== 'classic') return false;
@@ -796,28 +769,8 @@ function GamePage() {
   }, [dailyDashboardSummary]);
 
   const handleUnlockTomorrow = useCallback(() => {
-    if (isSupporter || unlockedFutureDates.has(tomorrowId)) {
-      setSelectedDate(tomorrowId);
-    } else {
-      setRewardModalAction({
-        actionName: `play tomorrow's puzzle (${tomorrowId})`,
-        adDurationSeconds: FUTURE_DATE_AD_DURATION_SECONDS,
-        claimLabel: 'Play Tomorrow',
-        onSuccess: () => {
-          setUnlockedFutureDates((prev) => {
-            const next = new Set(prev);
-            next.add(tomorrowId);
-            return next;
-          });
-          setSelectedDate(tomorrowId);
-        },
-        onClose: () => {
-          setSelectedDate(dateAfterCancelingFutureGate(todayId));
-          setActiveView('game');
-        },
-      });
-    }
-  }, [isSupporter, todayId, tomorrowId, unlockedFutureDates]);
+    setSelectedDate(tomorrowId);
+  }, [tomorrowId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1182,32 +1135,10 @@ function GamePage() {
         data,
       });
       
-      if (initialStep === 3 && shouldGateFullSolutionHint({
-        isSupporter,
-        isDateUnlocked: unlockedAutocompleteDates.has(puzzle.dateIdentifier),
-      })) {
-        setRewardModalAction({
-          actionName: 'reveal a full solution',
-          adDurationSeconds: HINT_REWARD_AD_DURATION_SECONDS,
-          claimLabel: 'Unlock Clue',
-          onSuccess: () => {
-            setUnlockedAutocompleteDates((prev) => {
-              const next = new Set(prev);
-              next.add(puzzle.dateIdentifier);
-              return next;
-            });
-            setHintStep(3);
-            applyHintStep(3, data);
-          },
-        });
-        setIsDeadEnd(false);
-        setUsedHint(true);
-      } else {
-        setHintStep(initialStep);
-        setIsDeadEnd(false);
-        setUsedHint(true);
-        applyHintStep(initialStep, data);
-      }
+      setHintStep(initialStep);
+      setIsDeadEnd(false);
+      setUsedHint(true);
+      applyHintStep(initialStep, data);
     } catch {
       setMessageTone('error');
       if (equation.trim().length > 0) {
@@ -1222,7 +1153,7 @@ function GamePage() {
     } finally {
       setHintLoading(false);
     }
-  }, [puzzle, gameMode, targetValue, equation, applyHintStep, unlockedAutocompleteDates, isSupporter, isEasyMode, evaluation.left]);
+  }, [puzzle, gameMode, targetValue, equation, applyHintStep, isEasyMode, evaluation.left]);
 
   const handleHintClick = useCallback(() => {
     if (hintStep === 0) {
@@ -1245,31 +1176,9 @@ function GamePage() {
         if (isDeadEnd || !hintData || !hintData.solution) {
           return;
         }
-        if (puzzle && shouldGateFullSolutionHint({
-          isSupporter,
-          isDateUnlocked: unlockedAutocompleteDates.has(puzzle.dateIdentifier),
-        })) {
-          setRewardModalAction({
-            actionName: 'reveal a full solution',
-            adDurationSeconds: HINT_REWARD_AD_DURATION_SECONDS,
-            claimLabel: 'Unlock Clue',
-            onSuccess: () => {
-              setUnlockedAutocompleteDates((prev) => {
-                const next = new Set(prev);
-                next.add(puzzle.dateIdentifier);
-                return next;
-              });
-              setHintStep(3);
-              if (hintData) {
-                applyHintStep(3, hintData);
-              }
-            },
-          });
-        } else {
-          setHintStep(3);
-          if (hintData) {
-            applyHintStep(3, hintData);
-          }
+        setHintStep(3);
+        if (hintData) {
+          applyHintStep(3, hintData);
         }
       } else {
         setHintStep(nextStep);
@@ -1278,7 +1187,7 @@ function GamePage() {
         }
       }
     }
-  }, [hintStep, fetchHint, hintData, applyHintStep, puzzle, unlockedAutocompleteDates, isDeadEnd, equation, gameMode, isEasyMode, evaluation.left, isSupporter]);
+  }, [hintStep, fetchHint, hintData, applyHintStep, isDeadEnd, equation, gameMode, isEasyMode, evaluation.left]);
 
   const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
     const text = savedSolutionSharePayload(dateDisplayString(dateId), sol);
@@ -1365,12 +1274,10 @@ function GamePage() {
     localStorage.removeItem(guidedFirstWinStorageKey);
     localStorage.removeItem(themePreferenceKey);
     localStorage.removeItem(difficultyModeKey);
-    localStorage.removeItem(supporterEntitlementKey);
     setSavedSolutions({});
     setPlayStarted(false);
     setGuidedFirstWinCompleted(false);
     setGuidedFirstWinActive(false);
-    setIsSupporter(false);
     setThemePreference('light');
     setDifficultyMode('easy');
     setEditorState(emptyEditorState());
@@ -1380,14 +1287,6 @@ function GamePage() {
     setClearDataConfirmVisible(false);
     setMessageTone('success');
     setMessage('Local data cleared.');
-  }, []);
-
-  const supportApp = useCallback(() => {
-    localStorage.setItem(supporterEntitlementKey, 'true');
-    setIsSupporter(true);
-    setRewardModalAction(null);
-    setMessageTone('success');
-    setMessage('Thanks for supporting Crackle Date. Sponsor ads are removed on this device.');
   }, []);
 
   const showCalendar = useCallback(() => {
@@ -1403,36 +1302,15 @@ function GamePage() {
   }, []);
 
   const playCalendarDate = useCallback(() => {
-    const todayId = localDateIdentifier(new Date());
     const decision = dateAccessDecisionFor({
       selectedDate,
-      today: todayId,
-      unlockedFutureDates,
-      removesAds: isSupporter,
+      today: localDateIdentifier(new Date()),
     });
 
-    if (decision.kind === 'future_unlock') {
-      setRewardModalAction({
-        actionName: `play a puzzle in the future (${decision.selectedDate})`,
-        adDurationSeconds: FUTURE_DATE_AD_DURATION_SECONDS,
-        claimLabel: 'Play Date',
-        onSuccess: () => {
-          setUnlockedFutureDates((prev) => {
-            const next = new Set(prev);
-            next.add(decision.selectedDate);
-            return next;
-          });
-          setActiveView('game');
-        },
-        onClose: () => {
-          setSelectedDate(dateAfterCancelingFutureGate(todayId));
-          setActiveView('game');
-        },
-      });
-    } else {
+    if (decision.kind === 'open') {
       setActiveView('game');
     }
-  }, [isSupporter, selectedDate, unlockedFutureDates]);
+  }, [selectedDate]);
 
   const chooseToday = useCallback(() => {
     setSelectedDate(localDateIdentifier(new Date()));
@@ -1582,7 +1460,6 @@ function GamePage() {
               <small>{practiceRound.coach}</small>
             </div>
           )}
-          {gameAdBannerReason && <GameAdBanner reason={gameAdBannerReason} />}
           {todaySolutions.length > 0 && !isSearchingAnother ? (
             <VictoryPanel
               displayDate={puzzle?.displayDate ?? selectedDate}
@@ -1599,7 +1476,6 @@ function GamePage() {
               onShareIndividual={shareSolutionText}
               onShowSavedSolutions={showSolutions}
               onShowCalendar={showCalendar}
-              isFutureUnlocked={unlockedFutureDates.has(tomorrowId)}
               hasTomorrow={selectedDate === todayId}
               isArchived={selectedDate < todayId}
               onGoToToday={chooseToday}
@@ -1808,8 +1684,6 @@ function GamePage() {
           onPractice={showPractice}
           onShowRules={showRules}
           onRestartTutorial={restartTutorial}
-          onSupport={supportApp}
-          isSupporter={isSupporter}
         />
       )}
 
@@ -1844,28 +1718,6 @@ function GamePage() {
           onAuthenticated={handleAuthenticated}
           onLogout={handleLogout}
           onClose={() => setAuthModalMode(null)}
-        />
-      )}
-
-      {rewardModalAction && (
-        <RewardModal
-          actionName={rewardModalAction.actionName}
-          adDurationSeconds={rewardModalAction.adDurationSeconds}
-          claimLabel={rewardModalAction.claimLabel}
-          onSuccess={() => {
-            rewardModalAction.onSuccess();
-            setRewardModalAction(null);
-          }}
-          onClose={() => {
-            rewardModalAction.onClose?.();
-            setRewardModalAction(null);
-          }}
-          onOpenAuth={() => {
-            setRewardModalAction(null);
-            setAuthModalMode('signup');
-          }}
-          onSupporterUpgrade={supportApp}
-          isLoggedIn={!!authUser}
         />
       )}
 
@@ -2164,374 +2016,6 @@ function AuthModal({
   );
 }
 
-function CircularTimer({ timeLeft, total = 5, onClick, active }: { timeLeft: number; total: number; onClick: () => void; active: boolean }) {
-  const radius = 18;
-  const stroke = 3;
-  const normalizedRadius = radius - stroke;
-  const circumference = normalizedRadius * 2 * Math.PI;
-  const strokeDashoffset = circumference - (timeLeft / total) * circumference;
-
-  return (
-    <button
-      className={`playable-ad-close-btn ${active ? 'active animate-bounce' : 'disabled'}`}
-      type="button"
-      onClick={active ? onClick : undefined}
-      disabled={!active}
-      aria-label={active ? "Close and claim reward" : `Close disabled. Ad ends in ${timeLeft} seconds`}
-    >
-      <svg height={radius * 2} width={radius * 2} className="timer-svg">
-        <circle
-          stroke="rgba(255, 255, 255, 0.15)"
-          fill="rgba(0, 0, 0, 0.5)"
-          strokeWidth={stroke}
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-        />
-        <circle
-          stroke={active ? "var(--ios-green)" : "#ff007f"}
-          fill="transparent"
-          strokeWidth={stroke}
-          strokeDasharray={`${circumference} ${circumference}`}
-          style={{ strokeDashoffset, transition: 'stroke-dashoffset 1s linear' }}
-          strokeLinecap="round"
-          r={normalizedRadius}
-          cx={radius}
-          cy={radius}
-        />
-      </svg>
-      <span className="timer-text">
-        {active ? '×' : timeLeft}
-      </span>
-    </button>
-  );
-}
-
-function GameAdBanner({ reason }: { reason: 'past' | 'current_solution' }) {
-  const copy = reason === 'past'
-    ? 'Archive play is supported by a sponsor banner.'
-    : 'Additional solves for today are supported by a sponsor banner.';
-
-  return (
-    <aside className="game-ad-banner" aria-label="Sponsor banner">
-      <span className="game-ad-label">Ad</span>
-      <span>{copy}</span>
-    </aside>
-  );
-}
-
-function RewardModal({
-  actionName,
-  adDurationSeconds,
-  claimLabel,
-  onSuccess,
-  onClose,
-  onOpenAuth,
-  onSupporterUpgrade,
-  isLoggedIn,
-}: {
-  actionName: string;
-  adDurationSeconds: number;
-  claimLabel: string;
-  onSuccess: () => void;
-  onClose: () => void;
-  onOpenAuth: () => void;
-  onSupporterUpgrade: () => void;
-  isLoggedIn: boolean;
-}) {
-  const isHintUnlock = actionName === 'reveal a full solution' && claimLabel === 'Unlock Clue';
-  const isFutureUnlock = claimLabel === 'Play Date' || claimLabel === 'Play Tomorrow';
-  const [status, setStatus] = useState<'ready' | 'playing' | 'completed'>('ready');
-  const [timeLeft, setTimeLeft] = useState(adDurationSeconds);
-
-  useEffect(() => {
-    if ((!isHintUnlock && !isFutureUnlock) || status !== 'ready') return;
-    setStatus('playing');
-    setTimeLeft(adDurationSeconds);
-  }, [isFutureUnlock, isHintUnlock, status, adDurationSeconds]);
-
-  // Countdown timer effect for Ad Option
-  useEffect(() => {
-    if (status !== 'playing') return;
-
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          setStatus('completed');
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [status]);
-
-  // Dynamic Google AdSense injection
-  useEffect(() => {
-    if (status === 'playing' && !isHintUnlock) {
-      const scriptId = 'adsense-sdk';
-      let script = document.getElementById(scriptId) as HTMLScriptElement | null;
-      if (!script) {
-        script = document.createElement('script');
-        script.id = scriptId;
-        script.src = 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-demo';
-        script.async = true;
-        script.crossOrigin = 'anonymous';
-        document.body.appendChild(script);
-      }
-
-      // Initialize ads
-      try {
-        ((window as any).adsbygoogle = (window as any).adsbygoogle || []).push({});
-      } catch (e) {
-        console.warn('AdSense init error:', e);
-      }
-    }
-  }, [status, isHintUnlock]);
-
-  const startAd = () => {
-    setStatus('playing');
-    setTimeLeft(adDurationSeconds);
-  };
-
-  return (
-    <div className="modal-backdrop" role="presentation">
-      <section 
-        className={`auth-modal reward-modal-wrapper ${status === 'playing' ? 'ad-playing' : ''} ${status === 'completed' ? 'ad-completed' : ''}`} 
-        role="dialog" 
-        aria-modal="true" 
-        aria-labelledby="reward-title"
-        onPointerUp={(e) => e.stopPropagation()}
-      >
-        <header className="reward-modal-header">
-          <h2 id="reward-title">
-            {isHintUnlock ? 'Unlock Full Solution' : isFutureUnlock ? 'Unlock Future Date' : 'Support Crackle Date'}
-          </h2>
-          <button 
-            type="button" 
-            className="reward-modal-close" 
-            onClick={onClose}
-            aria-label="Close modal"
-          >
-            ×
-          </button>
-        </header>
-
-        {(isHintUnlock || isFutureUnlock) && status !== 'ready' && (
-          <div className="hint-unlock-content">
-            <p className="hint-unlock-message">
-              {isHintUnlock
-                ? <>Watch a {adDurationSeconds}-second sponsor message to reveal a full solution.</>
-                : <>Watch a {adDurationSeconds}-second sponsor message to play this date early.</>}
-            </p>
-
-            <div className="hint-unlock-progress-card">
-              <strong className="hint-unlock-count">
-                {status === 'completed' ? 'Sponsor complete' : `${timeLeft}s`}
-              </strong>
-              <progress
-                className="hint-unlock-progress"
-                value={adDurationSeconds - timeLeft}
-                max={adDurationSeconds}
-                aria-label="Sponsor message progress"
-              />
-            </div>
-
-            <div className="hint-unlock-actions">
-              <button
-                type="button"
-                className="hint-unlock-primary"
-                disabled={status !== 'completed'}
-                onClick={onSuccess}
-              >
-                {status === 'completed' ? claimLabel : 'Sponsor Playing'}
-              </button>
-              <button
-                type="button"
-                className="hint-unlock-secondary"
-                onClick={onClose}
-              >
-                {isFutureUnlock ? 'Back to Today' : 'Keep Playing'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {!isHintUnlock && !isFutureUnlock && status === 'ready' && (
-          <div className="reward-portal-content">
-            <p className="reward-subtitle">
-              Choose how you'd like to unlock <strong>"{actionName}"</strong>:
-            </p>
-            
-            <div className={`reward-options-grid ${isLoggedIn ? 'two-cols' : 'three-cols'}`}>
-              
-              {/* Card 1: Supporter Option */}
-              <div className="reward-option-card premium-card">
-                <div className="card-badge">SUPPORTER</div>
-                <div className="card-icon">$</div>
-                <h3 className="card-title">Supporter Option</h3>
-                <div className="card-price">$1.99</div>
-                
-                <ul className="card-features">
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>Support Crackle Date development</span>
-                  </li>
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>Removes sponsor banners</span>
-                  </li>
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>Keeps saves and stats unchanged</span>
-                  </li>
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>Future dates open without sponsor gates</span>
-                  </li>
-                </ul>
-
-                <button 
-                  type="button" 
-                  className="reward-option-btn premium-btn"
-                  onClick={onSupporterUpgrade}
-                >
-                  Support for $1.99
-                </button>
-              </div>
-
-              {/* Card 2: Sync Account (only if NOT logged in) */}
-              {!isLoggedIn && (
-                <div className="reward-option-card sync-card">
-                  <div className="card-badge sync-badge">RECOMMENDED</div>
-                  <div className="card-icon">🔑</div>
-                  <h3 className="card-title">Sync Progress</h3>
-                  <div className="card-price">Free</div>
-                  
-                  <ul className="card-features">
-                    <li>
-                      <span className="check-icon">✓</span>
-                      <span>Track streaks & solve stats</span>
-                    </li>
-                    <li>
-                      <span className="check-icon">✓</span>
-                      <span>Sync seamlessly across devices</span>
-                    </li>
-                    <li>
-                      <span className="check-icon">✓</span>
-                      <span>Save custom puzzle settings</span>
-                    </li>
-                    <li>
-                      <span className="check-icon">✓</span>
-                      <span>Permanent progress backup</span>
-                    </li>
-                  </ul>
-
-                  <button 
-                    type="button" 
-                    className="reward-option-btn sync-btn"
-                    onClick={onOpenAuth}
-                  >
-                    Create Free Account
-                  </button>
-                </div>
-              )}
-
-              {/* Card 3: Free with Ads */}
-              <div className="reward-option-card ad-option-card">
-                <div className="card-badge free-badge">FREE</div>
-                <div className="card-icon">📺</div>
-                <h3 className="card-title">Watch Ad</h3>
-                <div className="card-price">{adDurationSeconds} Seconds</div>
-                
-                <ul className="card-features">
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>Quick {adDurationSeconds}-second countdown</span>
-                  </li>
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>No subscription required</span>
-                  </li>
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>Supports independent developer</span>
-                  </li>
-                  <li>
-                    <span className="check-icon">✓</span>
-                    <span>Unlock instantly</span>
-                  </li>
-                </ul>
-
-                <button 
-                  type="button" 
-                  className="reward-option-btn ad-btn"
-                  onClick={startAd}
-                >
-                  Watch Sponsor Ad
-                </button>
-              </div>
-
-            </div>
-          </div>
-        )}
-
-        {!isHintUnlock && !isFutureUnlock && status === 'playing' && (
-          <div className="ad-playback-container">
-            <div className="ad-playback-header">
-              <span className="ad-playback-badge">Sponsor Advertisement</span>
-              <CircularTimer
-                timeLeft={timeLeft}
-                total={adDurationSeconds}
-                onClick={() => setStatus('completed')}
-                active={timeLeft === 0}
-              />
-            </div>
-
-            <div className="adsense-slot-container">
-              {/* Google AdSense ins container */}
-              <ins 
-                className="adsbygoogle"
-                style={{ display: 'block', width: '300px', height: '250px', margin: '0 auto' }}
-                data-ad-client="ca-pub-demo"
-                data-ad-slot="1234567890"
-              />
-              
-              {/* Fallback visual container that matches state of the art */}
-              <div className="adsense-fallback-placeholder">
-                <div className="spinner"></div>
-                <p className="placeholder-brand">Crackle Date Sponsor</p>
-                <p className="placeholder-sub">Ad loading or blocked by extension...</p>
-              </div>
-            </div>
-            
-            <p className="ad-playback-footer">
-              Your unlock will be available after the timer completes. Thank you for supporting Crackle Date.
-            </p>
-          </div>
-        )}
-
-        {!isHintUnlock && !isFutureUnlock && status === 'completed' && (
-          <div className="ad-playback-completed">
-            <div className="completed-icon">✓</div>
-            <h3>Reward Ready!</h3>
-            <p>Sponsor advertisement complete. Continue below.</p>
-            <button 
-              type="button" 
-              className="reward-claim-btn"
-              onClick={onSuccess}
-            >
-              {claimLabel}
-            </button>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
 function VictoryPanel({
   displayDate,
   summary,
@@ -2544,7 +2028,6 @@ function VictoryPanel({
   onShareIndividual,
   onShowSavedSolutions,
   onShowCalendar,
-  isFutureUnlocked,
   hasTomorrow,
   isArchived,
   onGoToToday,
@@ -2560,7 +2043,6 @@ function VictoryPanel({
   onShareIndividual: (sol: SavedSolution) => void;
   onShowSavedSolutions: () => void;
   onShowCalendar: () => void;
-  isFutureUnlocked: boolean;
   hasTomorrow: boolean;
   isArchived: boolean;
   onGoToToday: () => void;
@@ -2672,8 +2154,8 @@ function VictoryPanel({
           )}
 
           {hasTomorrow && onUnlockTomorrow && (
-            <button className="auth-secondary unlock-tomorrow-btn-ad" type="button" onClick={onUnlockTomorrow}>
-              {isFutureUnlocked ? "Play Tomorrow's Puzzle" : "Unlock Tomorrow's Puzzle (30s Ad)"}
+            <button className="auth-secondary" type="button" onClick={onUnlockTomorrow}>
+              Play Tomorrow's Puzzle
             </button>
           )}
         </div>
@@ -3885,7 +3367,7 @@ function PrivacyPage() {
     <DocumentShell
       currentPage="privacy"
       title="Privacy"
-      subtitle="Crackle Date is built to be played with local saves, optional accounts, limited sponsor ads, and no public profile."
+      subtitle="Crackle Date is built to be played with local saves, optional accounts, no ads, in-app purchases, or public profile."
       meta="Last updated June 25, 2026"
     >
       <DocumentSection
@@ -3935,19 +3417,15 @@ function PrivacyPage() {
       />
 
       <DocumentSection
-        title="Ads"
+        title="Ads and Purchases"
         rows={[
           {
-            label: 'Date-based sponsor ads',
-            body: 'Past dates can show a banner ad. The current date can show a banner ad after you already have one saved solution for that date. Future dates can ask you to watch a 30-second sponsor ad before opening that date.',
+            label: 'No ads or purchases',
+            body: 'Crackle Date does not show ads or offer in-app purchases. Past, current, and future dates open without paid unlocks.',
           },
           {
-            label: 'Ad technology',
-            body: 'Web sponsor ads may be served through a browser ad provider. Depending on the provider and your browser settings, ad delivery can process device, browser, approximate location, and ad interaction signals.',
-          },
-          {
-            label: '$1.99 supporter option',
-            body: 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.',
+            label: 'No tracking ads',
+            body: 'The web app does not load an advertising SDK or use advertising identifiers.',
           },
         ]}
       />
@@ -3974,19 +3452,19 @@ function SupportPage() {
     <DocumentShell
       currentPage="support"
       title="Support"
-      subtitle="Quick checks for gameplay, saved data, ads, paid support, display issues, and details to include when something does not behave as expected."
+      subtitle="Quick checks for gameplay, saved data, display issues, and details to include when something does not behave as expected."
       meta="Last updated June 25, 2026"
     >
       <DocumentSection
-        title="Paid Support"
+        title="Gameplay Support"
         rows={[
           {
-            label: '$1.99 Supporter Option',
-            body: 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.',
+            label: 'Date access',
+            body: 'Past, current, and future dates are playable without ads, purchases, or paid unlocks.',
           },
           {
-            label: 'Future date unlocks',
-            body: 'Future dates can use a 30-second sponsor ad before play. Past dates and extra current-date solves can show a banner ad unless the supporter option is active.',
+            label: 'Account optional',
+            body: 'Accounts are only for syncing settings and saved solutions. Gameplay remains available while signed out.',
           },
         ]}
       />

@@ -33,13 +33,3 @@ export function nextVisibleHintStep({
 
   return boundedStep === 1 ? 1 : 2;
 }
-
-export function shouldGateFullSolutionHint({
-  isSupporter,
-  isDateUnlocked,
-}: {
-  isSupporter: boolean;
-  isDateUnlocked: boolean;
-}): boolean {
-  return !isSupporter && !isDateUnlocked;
-}

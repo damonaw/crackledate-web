@@ -37,11 +37,7 @@ describe('stylesheet regressions', () => {
     expect(declarations).toContain('clip: rect(0, 0, 0, 0);');
   });
 
-  test('styles the settings support action instead of falling back to a native button', () => {
-    const declarations = declarationsFor('.settings-support-action');
-
-    expect(declarations).toContain('border: 0;');
-    expect(declarations).toContain('background: var(--ios-blue);');
-    expect(declarations).toContain('border-radius: 12px;');
+  test('does not keep settings purchase button styles after monetization removal', () => {
+    expect(declarationsFor('.settings-support-action')).toBe('');
   });
 });

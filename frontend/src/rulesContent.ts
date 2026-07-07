@@ -21,13 +21,9 @@ export const RULES_SECTIONS: RuleSection[] = [
     ],
   },
   {
-    title: 'Ads',
+    title: 'Access',
     rows: [
-      'Archive, extra current-date solves, and future dates may use ads.',
-      'Past dates can show a banner ad.',
-      'The current date can show a banner ad after one saved solution.',
-      'Future dates can ask for a 30-second sponsor ad.',
-      'The supporter option removes date-based ads on this device.',
+      'Past, current, and future dates open without ads or purchases.',
     ],
   },
 ];

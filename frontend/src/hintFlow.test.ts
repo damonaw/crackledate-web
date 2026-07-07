@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import { nextVisibleHintStep, shouldGateFullSolutionHint } from './hintFlow';
+import { readFileSync } from 'node:fs';
+import { nextVisibleHintStep } from './hintFlow';
 
 const classicHint = {
   solution: '6+2+5=|2^0|+2*6',
@@ -51,9 +52,11 @@ describe('hintFlow', () => {
     ).toBe(3);
   });
 
-  test('supporters bypass the full-solution reward gate', () => {
-    expect(shouldGateFullSolutionHint({ isSupporter: true, isDateUnlocked: false })).toBe(false);
-    expect(shouldGateFullSolutionHint({ isSupporter: false, isDateUnlocked: true })).toBe(false);
-    expect(shouldGateFullSolutionHint({ isSupporter: false, isDateUnlocked: false })).toBe(true);
+  test('full-solution hints do not expose a purchase or unlock gate policy', () => {
+    const source = readFileSync(new URL('./hintFlow.ts', import.meta.url), 'utf8');
+
+    expect(source).not.toContain('shouldGateFullSolutionHint');
+    expect(source).not.toContain('isSupporter');
+    expect(source).not.toContain('isDateUnlocked');
   });
 });

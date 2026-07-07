@@ -18,8 +18,6 @@ export function SettingsPanel({
   onPractice = () => undefined,
   onShowRules = () => undefined,
   onRestartTutorial = () => undefined,
-  onSupport = () => undefined,
-  isSupporter = false,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
@@ -34,8 +32,6 @@ export function SettingsPanel({
   onPractice?: () => void;
   onShowRules?: () => void;
   onRestartTutorial?: () => void;
-  onSupport?: () => void;
-  isSupporter?: boolean;
 }) {
   return (
     <section className="settings-page" aria-labelledby="settings-title">
@@ -117,19 +113,6 @@ export function SettingsPanel({
         </button>
       </nav>
 
-      <div className="settings-support-card" aria-label="$1.99 Supporter Option">
-        <strong>$1.99 Supporter Option</strong>
-        <span>
-          {isSupporter
-            ? 'Supporter ads are removed on this browser.'
-            : 'The supporter option is for supporting Crackle Date and removes date-based sponsor ads on this browser.'}
-        </span>
-        {!isSupporter && (
-          <button className="settings-support-action" type="button" onClick={onSupport}>
-            Support for $1.99
-          </button>
-        )}
-      </div>
     </section>
   );
 }

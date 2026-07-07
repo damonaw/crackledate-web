@@ -5,7 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { SettingsPanel } from './SettingsPanel';
 
 describe('SettingsPanel', () => {
-  test('renders help links and removes the Ouroborialis footer from settings', () => {
+  test('renders help links without paid supporter or ad controls', () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         themePreference="system"
@@ -16,7 +16,6 @@ describe('SettingsPanel', () => {
         onGameModeChange={() => {}}
         onClearData={() => {}}
         onShowHowToPlay={() => {}}
-        onSupport={() => {}}
       />,
     );
 
@@ -25,10 +24,11 @@ describe('SettingsPanel', () => {
     expect(markup).toContain('Rules');
     expect(markup).toContain('Restart Practice Round');
     expect(markup).toContain('settings-link-button');
-    expect(markup).toContain('$1.99');
-    expect(markup).toContain('removes date-based sponsor ads');
-    expect(markup).toContain('Support for $1.99');
-    expect(markup).toContain('settings-support-action');
+    expect(markup).not.toContain('$1.99');
+    expect(markup).not.toContain('Support for $1.99');
+    expect(markup).not.toContain('settings-support-action');
+    expect(markup).not.toContain('supporter option');
+    expect(markup).not.toContain('date-based sponsor ads');
     expect(markup).not.toContain('Game Mode');
     expect(markup).not.toContain('Double =');
     expect(markup).not.toContain('Single');
@@ -38,7 +38,12 @@ describe('SettingsPanel', () => {
     expect(markup).not.toContain('Ad-Free');
   });
 
-  test('does not show the supporter purchase action when already supported', () => {
+  test('does not accept legacy supporter purchase controls', () => {
+    const source = readFileSync(new URL('./SettingsPanel.tsx', import.meta.url), 'utf8');
+
+    expect(source).not.toContain('onSupport');
+    expect(source).not.toContain('isSupporter');
+
     const markup = renderToStaticMarkup(
       <SettingsPanel
         themePreference="system"
@@ -49,12 +54,10 @@ describe('SettingsPanel', () => {
         onGameModeChange={() => {}}
         onClearData={() => {}}
         onShowHowToPlay={() => {}}
-        onSupport={() => {}}
-        isSupporter={true}
       />,
     );
 
-    expect(markup).toContain('Supporter ads are removed on this browser.');
+    expect(markup).not.toContain('Supporter ads are removed on this browser.');
     expect(markup).not.toContain('Support for $1.99');
     expect(markup).not.toContain('settings-support-action');
   });
@@ -71,7 +74,6 @@ describe('SettingsPanel', () => {
         onGameModeChange={() => {}}
         onClearData={() => {}}
         onShowHowToPlay={() => {}}
-        onSupport={() => {}}
       />,
     );
 

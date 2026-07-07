@@ -1,104 +1,31 @@
 import { describe, expect, test } from 'vitest';
-import {
-  FUTURE_DATE_AD_DURATION_SECONDS,
-  bannerPlacementForDate,
-  dateAccessDecisionFor,
-  dateAfterCancelingFutureGate,
-  dateAfterDecliningFutureGate,
-} from './dateAccessPolicy';
+import { dateAccessDecisionFor } from './dateAccessPolicy';
 
 describe('dateAccessPolicy', () => {
-  test('today opens clean before the first saved solution', () => {
+  test('today opens without ad banners even after saved solutions', () => {
     expect(
       dateAccessDecisionFor({
         selectedDate: '2026-06-25',
         today: '2026-06-25',
-        unlockedFutureDates: new Set(),
       }),
-    ).toEqual({ kind: 'open', showPastDateBanner: false });
-
-    expect(bannerPlacementForDate({
-      selectedDate: '2026-06-25',
-      today: '2026-06-25',
-      savedSolutionCount: 0,
-    })).toBe('none');
+    ).toEqual({ kind: 'open' });
   });
 
-  test('current date shows a banner after one saved solution', () => {
-    expect(bannerPlacementForDate({
-      selectedDate: '2026-06-25',
-      today: '2026-06-25',
-      savedSolutionCount: 1,
-    })).toBe('current_solution');
-  });
-
-  test('past dates open with a banner', () => {
+  test('past dates open without ad banners', () => {
     expect(
       dateAccessDecisionFor({
         selectedDate: '2026-06-24',
         today: '2026-06-25',
-        unlockedFutureDates: new Set(),
       }),
-    ).toEqual({ kind: 'open', showPastDateBanner: true });
-
-    expect(bannerPlacementForDate({
-      selectedDate: '2026-06-24',
-      today: '2026-06-25',
-      savedSolutionCount: 0,
-    })).toBe('past');
+    ).toEqual({ kind: 'open' });
   });
 
-  test('locked future dates require the sponsor unlock', () => {
+  test('future dates open without a sponsor unlock', () => {
     expect(
       dateAccessDecisionFor({
         selectedDate: '2026-06-26',
         today: '2026-06-25',
-        unlockedFutureDates: new Set(),
       }),
-    ).toEqual({ kind: 'future_unlock', selectedDate: '2026-06-26' });
-  });
-
-  test('supporters bypass future unlocks and date banners', () => {
-    expect(
-      dateAccessDecisionFor({
-        selectedDate: '2026-06-26',
-        today: '2026-06-25',
-        unlockedFutureDates: new Set(),
-        removesAds: true,
-      }),
-    ).toEqual({ kind: 'open', showPastDateBanner: false });
-
-    expect(bannerPlacementForDate({
-      selectedDate: '2026-06-24',
-      today: '2026-06-25',
-      savedSolutionCount: 0,
-      removesAds: true,
-    })).toBe('none');
-
-    expect(bannerPlacementForDate({
-      selectedDate: '2026-06-25',
-      today: '2026-06-25',
-      savedSolutionCount: 2,
-      removesAds: true,
-    })).toBe('none');
-  });
-
-  test('unlocked future dates open cleanly', () => {
-    expect(
-      dateAccessDecisionFor({
-        selectedDate: '2026-06-26',
-        today: '2026-06-25',
-        unlockedFutureDates: new Set(['2026-06-26']),
-      }),
-    ).toEqual({ kind: 'open', showPastDateBanner: false });
-  });
-
-  test('future date unlock ads last thirty seconds', () => {
-    expect(FUTURE_DATE_AD_DURATION_SECONDS).toBe(30);
-  });
-
-  test('declining or canceling the future gate returns to today', () => {
-    expect(dateAfterDecliningFutureGate('2026-06-25')).toBe('2026-06-25');
-    expect(dateAfterCancelingFutureGate('2026-06-25')).toBe('2026-06-25');
+    ).toEqual({ kind: 'open' });
   });
 });

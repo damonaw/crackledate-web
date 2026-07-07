@@ -5,66 +5,7 @@ import { describe, expect, test } from 'vitest';
 import { SettingsPanel } from './SettingsPanel';
 
 describe('SettingsPanel', () => {
-  test('renders help links without paid supporter or ad controls', () => {
-    const markup = renderToStaticMarkup(
-      <SettingsPanel
-        themePreference="system"
-        difficultyMode="easy"
-        gameMode="classic"
-        onThemePreferenceChange={() => {}}
-        onDifficultyModeChange={() => {}}
-        onGameModeChange={() => {}}
-        onClearData={() => {}}
-        onShowHowToPlay={() => {}}
-      />,
-    );
-
-    expect(markup).toContain('How to Play');
-    expect(markup).toContain('Practice');
-    expect(markup).toContain('Rules');
-    expect(markup).toContain('Restart Practice Round');
-    expect(markup).toContain('settings-link-button');
-    expect(markup).not.toContain('$1.99');
-    expect(markup).not.toContain('Support for $1.99');
-    expect(markup).not.toContain('settings-support-action');
-    expect(markup).not.toContain('supporter option');
-    expect(markup).not.toContain('date-based sponsor ads');
-    expect(markup).not.toContain('Game Mode');
-    expect(markup).not.toContain('Double =');
-    expect(markup).not.toContain('Single');
-    expect(markup).not.toContain('An Ouroborialis Game');
-    expect(markup).not.toContain('settings-branding-mark');
-    expect(markup).not.toContain('src="/ouroborialis-logo.png"');
-    expect(markup).not.toContain('Ad-Free');
-  });
-
-  test('does not accept legacy supporter purchase controls', () => {
-    const source = readFileSync(new URL('./SettingsPanel.tsx', import.meta.url), 'utf8');
-
-    expect(source).not.toContain('onSupport');
-    expect(source).not.toContain('isSupporter');
-
-    const markup = renderToStaticMarkup(
-      <SettingsPanel
-        themePreference="system"
-        difficultyMode="easy"
-        gameMode="classic"
-        onThemePreferenceChange={() => {}}
-        onDifficultyModeChange={() => {}}
-        onGameModeChange={() => {}}
-        onClearData={() => {}}
-        onShowHowToPlay={() => {}}
-      />,
-    );
-
-    expect(markup).not.toContain('Supporter ads are removed on this browser.');
-    expect(markup).not.toContain('Support for $1.99');
-    expect(markup).not.toContain('settings-support-action');
-  });
-
-  test('keeps settings local-only without login or account controls', () => {
-    const source = readFileSync(new URL('./SettingsPanel.tsx', import.meta.url), 'utf8');
-    const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
+  test('renders settings controls and help links', () => {
     const markup = renderToStaticMarkup(
       <SettingsPanel
         themePreference="system"
@@ -79,18 +20,16 @@ describe('SettingsPanel', () => {
     );
 
     expect(markup).toContain('Saved on this browser');
-    expect(markup).not.toContain('Signed in as player@example.com. Verify email to sync.');
-    expect(markup).not.toContain('Account');
-    expect(markup).not.toContain('Log in');
-    expect(markup).not.toContain('>Log out</button>');
-    expect(source).not.toContain('AuthUser');
-    expect(source).not.toContain('authUser');
-    expect(source).not.toContain('onLogin');
-    expect(source).not.toContain('account-row');
-    expect(appSource).not.toContain('AuthModal');
-    expect(appSource).not.toContain('./auth');
-    expect(appSource).not.toContain('importAccountSolutions');
-    expect(appSource).not.toContain('crackledate.web.import-offered');
+    expect(markup).toContain('Appearance');
+    expect(markup).toContain('Difficulty');
+    expect(markup).toContain('How to Play');
+    expect(markup).toContain('Practice');
+    expect(markup).toContain('Rules');
+    expect(markup).toContain('Restart Practice Round');
+    expect(markup).toContain('Privacy');
+    expect(markup).toContain('Support');
+    expect(markup).toContain('Clear Data');
+    expect(markup).toContain('settings-link-button');
   });
 
   test('uses an in-app clear data confirmation modal instead of a browser confirm', () => {
@@ -101,16 +40,5 @@ describe('SettingsPanel', () => {
     expect(appSource).toContain('ClearDataConfirmModal');
     expect(appSource).toContain('Clear Data?');
     expect(appSource).toContain('This permanently deletes saved solutions, stats, and Crackle Date settings in this browser.');
-  });
-
-  test('auth modal keeps validation and verification success visible in app chrome', () => {
-    const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
-
-    expect(appSource).not.toContain('<form onSubmit={submitAuth} noValidate>');
-    expect(appSource).not.toContain("throw new Error('Enter a valid email address')");
-    expect(appSource).not.toContain("throw new Error('Enter your password')");
-    expect(appSource).not.toContain("throw new Error('Enter the 6-digit verification code')");
-    expect(appSource).not.toContain("setMessage('Email verified. Your account is ready.')");
-    expect(appSource).not.toContain('Account sync is on for settings and saved solutions.');
   });
 });

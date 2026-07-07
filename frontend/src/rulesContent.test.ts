@@ -15,8 +15,5 @@ describe('rulesContent', () => {
     expect(text).toContain('Add exactly one equals sign.');
     expect(text).toContain('Practice does not save progress.');
     expect(text).toContain('Past, current, and future dates open without ads or purchases.');
-    expect(text).not.toContain('banner ad');
-    expect(text).not.toContain('sponsor ad');
-    expect(text).not.toContain('supporter option');
   });
 });

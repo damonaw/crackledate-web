@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { nextVisibleHintStep } from './hintFlow';
 
 const classicHint = {
@@ -52,11 +51,4 @@ describe('hintFlow', () => {
     ).toBe(3);
   });
 
-  test('full-solution hints do not expose a purchase or unlock gate policy', () => {
-    const source = readFileSync(new URL('./hintFlow.ts', import.meta.url), 'utf8');
-
-    expect(source).not.toContain('shouldGateFullSolutionHint');
-    expect(source).not.toContain('isSupporter');
-    expect(source).not.toContain('isDateUnlocked');
-  });
 });

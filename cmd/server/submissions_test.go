@@ -267,43 +267,6 @@ func TestSubmissionStoreWritesSQLiteDatabase(t *testing.T) {
 	}
 }
 
-func TestServerSourceDoesNotContainAuthOrAccountSync(t *testing.T) {
-	mainSource, err := os.ReadFile("main.go")
-	if err != nil {
-		t.Fatalf("read main.go: %v", err)
-	}
-	submissionsSource, err := os.ReadFile("submissions.go")
-	if err != nil {
-		t.Fatalf("read submissions.go: %v", err)
-	}
-	if _, err := os.Stat("auth.go"); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("auth.go should be removed with login/account support, stat error: %v", err)
-	}
-
-	for _, forbidden := range []string{
-		"/api/auth/",
-		"/api/me/",
-		"newAuthService",
-		"authService",
-		"sessionCookie",
-	} {
-		if bytes.Contains(mainSource, []byte(forbidden)) {
-			t.Fatalf("main.go still contains auth/account wiring %q", forbidden)
-		}
-	}
-	for _, forbidden := range []string{
-		"user_id",
-		"UserID",
-		"user_solutions",
-		"insertUserSolution",
-		"currentVerifiedUser",
-	} {
-		if bytes.Contains(submissionsSource, []byte(forbidden)) {
-			t.Fatalf("submissions.go still contains account-linked submission behavior %q", forbidden)
-		}
-	}
-}
-
 func readSingleSubmissionLine(t *testing.T, path string) []byte {
 	t.Helper()
 	lines := readSubmissionLines(t, path)

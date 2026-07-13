@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
+  advanceOnboardingTransition,
+  canApplyPracticeValidation,
+  capturePracticeValidation,
+  createOnboardingTransitionState,
+  difficultyModeStorageKey,
   FirstRunOnboardingPhase as Phase,
   firstRunOnboardingStorageKey,
   homeDestinationForPhase,
@@ -7,13 +12,45 @@ import {
   launchDestinationForPhase,
   legacyGuidedFirstWinCompletedStorageKey,
   legacyPlayStartedStorageKey,
+  loadWebOnboardingBootstrap,
+  onboardingStorageError,
   phaseAfterDailySuccess,
   phaseAfterPracticeSuccess,
   playDestinationForPhase,
+  persistOnboardingPhase,
+  persistWebPreference,
   practiceEntryForPhase,
   resetOnboardingPhase,
   resolveFirstRunOnboarding,
+  themePreferenceStorageKey,
+  type WebStorage,
 } from './firstRunOnboarding';
+
+function storageDouble({
+  initial = {},
+  throwOnGet = new Set<string>(),
+  throwOnSet = new Set<string>(),
+}: {
+  initial?: Record<string, string>;
+  throwOnGet?: Set<string>;
+  throwOnSet?: Set<string>;
+} = {}): WebStorage & { values: Map<string, string> } {
+  const values = new Map(Object.entries(initial));
+  return {
+    values,
+    getItem(key) {
+      if (throwOnGet.has(key)) throw new DOMException('Blocked', 'SecurityError');
+      return values.get(key) ?? null;
+    },
+    setItem(key, value) {
+      if (throwOnSet.has(key)) throw new DOMException('Blocked', 'SecurityError');
+      values.set(key, value);
+    },
+    removeItem(key) {
+      values.delete(key);
+    },
+  };
+}
 
 describe('first-run onboarding migration', () => {
   test('uses the exact versioned keys', () => {
@@ -124,5 +161,113 @@ describe('first-run onboarding routing and transitions', () => {
       phase: Phase.InProgress,
       activeView: 'start',
     })).toBe(false);
+  });
+});
+
+describe('web onboarding runtime recovery', () => {
+  test('onboarding read SecurityError fails closed with recoverable feedback', () => {
+    const storage = storageDouble({
+      throwOnGet: new Set([firstRunOnboardingStorageKey]),
+    });
+
+    expect(loadWebOnboardingBootstrap(storage)).toEqual({
+      phase: Phase.NotStarted,
+      themePreference: 'light',
+      difficultyMode: 'easy',
+      errorMessage: onboardingStorageError,
+    });
+  });
+
+  test.each([themePreferenceStorageKey, difficultyModeStorageKey])(
+    'settings read SecurityError for %s cannot retain completed onboarding',
+    (blockedKey) => {
+      const storage = storageDouble({
+        initial: {
+          [firstRunOnboardingStorageKey]: Phase.Completed,
+        },
+        throwOnGet: new Set([blockedKey]),
+      });
+
+      expect(loadWebOnboardingBootstrap(storage)).toEqual({
+        phase: Phase.NotStarted,
+        themePreference: 'light',
+        difficultyMode: 'easy',
+        errorMessage: onboardingStorageError,
+      });
+    },
+  );
+
+  test('bootstrap migration write SecurityError remains required onboarding', () => {
+    const storage = storageDouble({
+      throwOnSet: new Set([firstRunOnboardingStorageKey]),
+    });
+
+    expect(loadWebOnboardingBootstrap(storage)).toEqual({
+      phase: Phase.NotStarted,
+      themePreference: 'light',
+      difficultyMode: 'easy',
+      errorMessage: onboardingStorageError,
+    });
+  });
+
+  test('completed users and valid settings retain their established state', () => {
+    const storage = storageDouble({
+      initial: {
+        [firstRunOnboardingStorageKey]: Phase.Completed,
+        [themePreferenceStorageKey]: 'dark',
+        [difficultyModeStorageKey]: 'hard',
+      },
+    });
+
+    expect(loadWebOnboardingBootstrap(storage)).toEqual({
+      phase: Phase.Completed,
+      themePreference: 'dark',
+      difficultyMode: 'hard',
+      errorMessage: '',
+    });
+  });
+
+  test('settings write SecurityError reports failure instead of throwing', () => {
+    const storage = storageDouble({
+      throwOnSet: new Set([themePreferenceStorageKey]),
+    });
+
+    expect(persistWebPreference(themePreferenceStorageKey, 'dark', storage)).toBe(false);
+  });
+});
+
+describe('web onboarding validation race guard', () => {
+  test('reset invalidates delayed optional-Practice validation', async () => {
+    let state = createOnboardingTransitionState(Phase.Completed);
+    const ticket = capturePracticeValidation(state);
+    const response = Promise.resolve({ valid: true });
+
+    state = advanceOnboardingTransition(state, Phase.NotStarted);
+    await response;
+
+    expect(canApplyPracticeValidation(ticket, state)).toBe(false);
+  });
+
+  test('an unchanged required-Practice validation remains applicable', async () => {
+    const state = createOnboardingTransitionState(Phase.InProgress);
+    const ticket = capturePracticeValidation(state);
+    await Promise.resolve({ valid: true });
+
+    expect(canApplyPracticeValidation(ticket, state)).toBe(true);
+  });
+
+  test('storage bootstrap and transition guard compose across reset', async () => {
+    const storage = storageDouble();
+
+    expect(loadWebOnboardingBootstrap(storage).phase).toBe(Phase.NotStarted);
+    expect(persistOnboardingPhase(Phase.InProgress, false, storage)).toBe(true);
+    expect(loadWebOnboardingBootstrap(storage).phase).toBe(Phase.InProgress);
+
+    let state = createOnboardingTransitionState(Phase.InProgress);
+    const ticket = capturePracticeValidation(state);
+    state = advanceOnboardingTransition(state, Phase.NotStarted);
+    await Promise.resolve({ valid: true });
+
+    expect(canApplyPracticeValidation(ticket, state)).toBe(false);
   });
 });

@@ -43,18 +43,27 @@ import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
 import {
+  advanceOnboardingTransition,
+  canApplyPracticeValidation,
+  capturePracticeValidation,
+  clearOnboardingStorage,
+  createOnboardingTransitionState,
+  difficultyModeStorageKey,
   FirstRunOnboardingPhase,
-  firstRunOnboardingStorageKey,
   homeDestinationForPhase,
   isRequiredOnboardingPractice,
   launchDestinationForPhase,
-  legacyGuidedFirstWinCompletedStorageKey,
-  legacyPlayStartedStorageKey,
+  loadWebOnboardingBootstrap,
+  onboardingStorageError,
   phaseAfterPracticeSuccess,
   playDestinationForPhase,
+  persistOnboardingPhase,
+  persistWebPreference,
   practiceEntryForPhase,
   resetOnboardingPhase,
-  resolveFirstRunOnboarding,
+  themePreferenceStorageKey,
+  type DifficultyMode,
+  type ThemePreference,
 } from './firstRunOnboarding';
 import {
   guidedPracticeGlowKey,
@@ -101,8 +110,6 @@ type SavedSolution = {
 };
 
 type StoredSolutions = Record<string, SavedSolution[]>;
-type ThemePreference = 'system' | 'light' | 'dark';
-type DifficultyMode = 'easy' | 'hard';
 type FeedbackTone = 'success' | 'error';
 type ActiveView = 'start' | 'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules';
 
@@ -353,66 +360,7 @@ function savedSolutionsSummary(savedSolutions: StoredSolutions) {
 }
 
 const storageKey = 'crackledate.web.solutions.v1';
-const themePreferenceKey = 'crackledate.web.theme.v1';
-const difficultyModeKey = 'crackledate.web.difficulty.v1';
 const emptyDigitIndices = new Set<number>();
-const onboardingStorageError =
-  'Could not save Practice Round progress. Please try again.';
-
-function persistOnboardingPhase(
-  phase: FirstRunOnboardingPhase,
-  mirrorLegacyCompletion = false,
-): boolean {
-  try {
-    if (mirrorLegacyCompletion) {
-      localStorage.setItem(legacyGuidedFirstWinCompletedStorageKey, 'true');
-      localStorage.setItem(legacyPlayStartedStorageKey, 'true');
-    }
-    localStorage.setItem(firstRunOnboardingStorageKey, phase);
-    return localStorage.getItem(firstRunOnboardingStorageKey) === phase;
-  } catch {
-    return false;
-  }
-}
-
-function loadFirstRunOnboarding(): {
-  phase: FirstRunOnboardingPhase;
-  errorMessage: string;
-} {
-  try {
-    const resolution = resolveFirstRunOnboarding({
-      storedPhase: localStorage.getItem(firstRunOnboardingStorageKey),
-      legacyGuidedFirstWinCompleted:
-        localStorage.getItem(legacyGuidedFirstWinCompletedStorageKey) === 'true',
-      legacyPlayStarted:
-        localStorage.getItem(legacyPlayStartedStorageKey) === 'true',
-    });
-    if (resolution.shouldPersist &&
-        !persistOnboardingPhase(resolution.phase)) {
-      return {
-        phase: FirstRunOnboardingPhase.NotStarted,
-        errorMessage: onboardingStorageError,
-      };
-    }
-    return { phase: resolution.phase, errorMessage: '' };
-  } catch {
-    return {
-      phase: FirstRunOnboardingPhase.NotStarted,
-      errorMessage: onboardingStorageError,
-    };
-  }
-}
-
-function clearOnboardingStorage(): boolean {
-  try {
-    localStorage.removeItem(legacyPlayStartedStorageKey);
-    localStorage.removeItem(legacyGuidedFirstWinCompletedStorageKey);
-    localStorage.removeItem(firstRunOnboardingStorageKey);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function App() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -426,7 +374,7 @@ function App() {
 }
 
 function GamePage() {
-  const [onboardingBootstrap] = useState(loadFirstRunOnboarding);
+  const [onboardingBootstrap] = useState(loadWebOnboardingBootstrap);
   const [onboardingPhase, setOnboardingPhase] =
     useState(onboardingBootstrap.phase);
   const [activeView, setActiveView] = useState<ActiveView>(
@@ -451,12 +399,17 @@ function GamePage() {
   );
   const [startTime, setStartTime] = useState<number | null>(null);
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
-  const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
-  const [difficultyMode, setDifficultyMode] = useState<DifficultyMode>(loadDifficultyMode);
+  const [themePreference, setThemePreference] =
+    useState<ThemePreference>(onboardingBootstrap.themePreference);
+  const [difficultyMode, setDifficultyMode] =
+    useState<DifficultyMode>(onboardingBootstrap.difficultyMode);
   const [clearDataConfirmVisible, setClearDataConfirmVisible] = useState(false);
   const selectorMoveRef = useRef<SelectorMoveHandler | null>(null);
   const autocompleteIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const preserveFeedbackOnNextPuzzleLoadRef = useRef(false);
+  const onboardingTransitionRef = useRef(
+    createOnboardingTransitionState(onboardingBootstrap.phase),
+  );
   const [isAutocompleting, setIsAutocompleting] = useState(false);
   const [isSearchingAnother, setIsSearchingAnother] = useState(false);
   const todayId = useMemo(() => localDateIdentifier(new Date()), []);
@@ -556,18 +509,40 @@ function GamePage() {
   }, [hintStep, hintData, isDeadEnd, equation]);
   const activeGlowKey = guidedPracticeGlowKey(guidedPracticeStep) ?? mappedGlowKey;
 
+  const transitionOnboardingPhase = useCallback(
+    (phase: FirstRunOnboardingPhase) => {
+      onboardingTransitionRef.current = advanceOnboardingTransition(
+        onboardingTransitionRef.current,
+        phase,
+      );
+      setOnboardingPhase(phase);
+    },
+    [],
+  );
+
+  const recoverFromOnboardingStorageFailure = useCallback(() => {
+    transitionOnboardingPhase(FirstRunOnboardingPhase.NotStarted);
+    setActiveView('start');
+    setMessageTone('error');
+    setMessage(onboardingStorageError);
+  }, [transitionOnboardingPhase]);
+
   useEffect(() => {
     if (themePreference === 'system') {
       document.documentElement.removeAttribute('data-theme');
     } else {
       document.documentElement.dataset.theme = themePreference;
     }
-    localStorage.setItem(themePreferenceKey, themePreference);
-  }, [themePreference]);
+    if (!persistWebPreference(themePreferenceStorageKey, themePreference)) {
+      recoverFromOnboardingStorageFailure();
+    }
+  }, [recoverFromOnboardingStorageFailure, themePreference]);
 
   useEffect(() => {
-    localStorage.setItem(difficultyModeKey, difficultyMode);
-  }, [difficultyMode]);
+    if (!persistWebPreference(difficultyModeStorageKey, difficultyMode)) {
+      recoverFromOnboardingStorageFailure();
+    }
+  }, [difficultyMode, recoverFromOnboardingStorageFailure]);
 
   useEffect(() => {
     if (isAutocompleting) return;
@@ -630,7 +605,11 @@ function GamePage() {
         setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
         const preserveCurrentMessage = preserveFeedbackOnNextPuzzleLoadRef.current;
         preserveFeedbackOnNextPuzzleLoadRef.current = false;
-        setMessage((currentMessage) => feedbackMessageAfterPuzzleLoad(currentMessage, preserveCurrentMessage));
+        setMessage((currentMessage) => feedbackMessageAfterPuzzleLoad(
+          currentMessage,
+          preserveCurrentMessage,
+          onboardingStorageError,
+        ));
         setStartTime(null);
         setHintStep(0);
         setHintData(null);
@@ -851,10 +830,10 @@ function GamePage() {
       return;
     }
     clear();
-    setOnboardingPhase(entry.phase);
+    transitionOnboardingPhase(entry.phase);
     setActiveView(entry.destination);
     setMessage('');
-  }, [clear, onboardingPhase]);
+  }, [clear, onboardingPhase, transitionOnboardingPhase]);
 
   const moveSelectorFromControls = useCallback((direction: SelectorDirection) => {
     selectorMoveRef.current?.(direction);
@@ -862,6 +841,9 @@ function GamePage() {
 
   const submit = useCallback(async () => {
     if (!puzzle) return;
+    const practiceValidationTicket = isPracticeMode
+      ? capturePracticeValidation(onboardingTransitionRef.current)
+      : null;
     const normalizedEquation = equation.trim();
     if (!isPracticeMode && todaySolutions.some((solution) => solution.equation === normalizedEquation)) {
       setMessageTone('error');
@@ -879,6 +861,13 @@ function GamePage() {
       }),
     });
     const result = (await response.json()) as ValidationResponse;
+    if (practiceValidationTicket &&
+        !canApplyPracticeValidation(
+          practiceValidationTicket,
+          onboardingTransitionRef.current,
+        )) {
+      return;
+    }
     if (!result.valid) {
       setMessageTone('error');
       setMessage(result.errorMessage ?? 'That equation is not valid.');
@@ -900,7 +889,7 @@ function GamePage() {
       setMessage(practiceSuccessMessage(result.leftValue ?? evaluation.left));
       preserveFeedbackOnNextPuzzleLoadRef.current = true;
       const destination = practiceCompletionTarget(todayId);
-      setOnboardingPhase(nextOnboardingPhase);
+      transitionOnboardingPhase(nextOnboardingPhase);
       setSelectedDate(destination.selectedDate);
       setActiveView(destination.activeView);
       return;
@@ -939,7 +928,7 @@ function GamePage() {
     setMessage(`Solved. Both sides equal ${solution.value}.`);
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, onboardingPhase, puzzle, startTime, todayId, todaySolutions]);
+  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, onboardingPhase, puzzle, startTime, todayId, todaySolutions, transitionOnboardingPhase]);
 
   const applyHintStep = useCallback(
     (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
@@ -1154,15 +1143,15 @@ function GamePage() {
       return;
     }
     clear();
-    setOnboardingPhase(resetOnboardingPhase());
+    transitionOnboardingPhase(resetOnboardingPhase());
     setActiveView('start');
-  }, [clear]);
+  }, [clear, transitionOnboardingPhase]);
 
   const clearBrowserData = useCallback(() => {
     try {
       localStorage.removeItem(storageKey);
-      localStorage.removeItem(themePreferenceKey);
-      localStorage.removeItem(difficultyModeKey);
+      localStorage.removeItem(themePreferenceStorageKey);
+      localStorage.removeItem(difficultyModeStorageKey);
     } catch {
       setClearDataConfirmVisible(false);
       setMessageTone('error');
@@ -1176,7 +1165,7 @@ function GamePage() {
       return;
     }
     setSavedSolutions({});
-    setOnboardingPhase(resetOnboardingPhase());
+    transitionOnboardingPhase(resetOnboardingPhase());
     setThemePreference('light');
     setDifficultyMode('easy');
     setEditorState(emptyEditorState());
@@ -1186,7 +1175,7 @@ function GamePage() {
     setClearDataConfirmVisible(false);
     setMessageTone('success');
     setMessage('Local data cleared.');
-  }, []);
+  }, [transitionOnboardingPhase]);
 
   const showCalendar = useCallback(() => {
     setActiveView('calendar');
@@ -3138,15 +3127,6 @@ function loadSolutions(): StoredSolutions {
   } catch {
     return {};
   }
-}
-
-function loadThemePreference(): ThemePreference {
-  const value = localStorage.getItem(themePreferenceKey);
-  return value === 'light' || value === 'dark' || value === 'system' ? value : 'light';
-}
-
-function loadDifficultyMode(): DifficultyMode {
-  return localStorage.getItem(difficultyModeKey) === 'hard' ? 'hard' : 'easy';
 }
 
 function emptyEditorState(): EquationEditorState {

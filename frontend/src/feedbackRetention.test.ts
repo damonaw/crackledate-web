@@ -11,4 +11,10 @@ describe('feedbackMessageAfterPuzzleLoad', () => {
       'Practice solved. Both sides equal 16.',
     );
   });
+
+  test('keeps protected onboarding storage feedback after background puzzle load', () => {
+    const storageError = 'Could not save Practice Round progress. Please try again.';
+
+    expect(feedbackMessageAfterPuzzleLoad(storageError, false, storageError)).toBe(storageError);
+  });
 });

@@ -63,4 +63,11 @@ describe('first-run onboarding wiring', () => {
       'onShowDetailedInstructions={onboardingCompleted ? showDetailedHowToPlay : showRules}',
     );
   });
+
+  test('wires executable storage recovery and validation race guards', () => {
+    expect(source).toContain('loadWebOnboardingBootstrap');
+    expect(source).toContain('persistWebPreference(');
+    expect(source).toContain('recoverFromOnboardingStorageFailure');
+    expect(source).toContain('canApplyPracticeValidation(');
+  });
 });

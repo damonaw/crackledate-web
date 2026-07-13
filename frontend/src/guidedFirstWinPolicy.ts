@@ -1,8 +1,3 @@
-export enum GuidedFirstWinRoute {
-  GuidedFirstWin = 'guided_first_win',
-  TodayGame = 'today_game',
-}
-
 export type GuidedFirstWinCopy = {
   title: string;
   body: string;
@@ -14,26 +9,12 @@ export type GuidedFirstWinToken = {
   value: string;
 };
 
-export const guidedFirstWinStorageKey = 'crackledate.web.guidedFirstWinCompleted.v1';
-
 export const guidedFirstWinCopy: GuidedFirstWinCopy = {
   title: 'Practice Round',
   body: 'The practice round is the guided tutorial. Follow one complete solved example, then play the daily puzzle on your own.',
   primaryAction: 'Start practice round',
   secondaryAction: 'Read rules',
 };
-
-export function routeForGuidedFirstWin({
-  playStarted,
-  guidedFirstWinCompleted,
-}: {
-  playStarted: boolean;
-  guidedFirstWinCompleted: boolean;
-}): GuidedFirstWinRoute {
-  return !playStarted && !guidedFirstWinCompleted
-    ? GuidedFirstWinRoute.GuidedFirstWin
-    : GuidedFirstWinRoute.TodayGame;
-}
 
 export function guidedFirstWinCoachMessageFor({
   tokens,

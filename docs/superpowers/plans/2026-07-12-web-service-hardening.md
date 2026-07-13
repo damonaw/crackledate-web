@@ -327,64 +327,123 @@ Commit: fix(server): expire retired session cookies
 
 ## Task 6: Retire unlinked legacy account schema safely
 
-Interface: consumes a newly opened submission store plus validated activation
-state and produces either an unchanged store, a verified retired schema, or a
-startup-blocking error before traffic.
+Interface: parses retirement configuration before store open, opens SQLite
+without schema writes, and produces either an unchanged store, a verified
+retired schema, or a startup-blocking error before traffic. This revision
+supersedes the original Task 6 after live-source preflight proved that
+newSubmissionStore could run CREATE TABLE/INDEX before linked-data refusal.
 
 Files:
 
 - Create cmd/server/legacy_retirement.go and its test
 - Modify cmd/server/submissions.go
-- Modify cmd/server/main.go
+- Modify cmd/server/runtime_config.go and the smallest existing startup tests
+- Modify cmd/server/main.go only if initialization cannot contain all wiring
 
 All tests use temporary SQLite fixtures, never data/submissions.db.
 
+Strict startup and open ordering:
+
+- RETIRE_LEGACY_ACCOUNT_DATA empty means disabled; exact byte-for-byte
+  confirmed means enabled; every other nonempty value is a startup error.
+- Parse proxy, concurrency, and retirement configuration before opening any
+  store. Confirmed plus an NDJSON/non-SQLite path refuses before the opener.
+- Split raw SQLite open from current-schema ensure. Runtime order is config,
+  raw open, optional retirement, then ensure. Disabled behavior stays current.
+- Close the raw database on every retirement/ensure error and return no store.
+
+Supported preflight shapes:
+
+- Empty database and canonical current schema are idempotent no-ops.
+- Migrate only the two semantically known full historical construction paths:
+  fresh CREATE TABLE with user_id, and the older anonymous table upgraded by
+  the historical ALTER TABLE ADD COLUMN user_id. Build fixtures through both
+  real sequences and prove migration plus confirmed rerun for each.
+- Both historical variants must include the exact known account tables,
+  explicit indexes, foreign keys, unique constraints/autoindexes, user-id
+  column/index, and sequence participation from 617681b^.
+- Before DDL, every retired account table and explicit index must match its
+  exact known sqlite_schema.sql; known autoindexes must have NULL SQL. Only
+  submission_attempts gets a whitespace-tolerant semantic fingerprint for its
+  two historical and native-DROP current forms.
+- Reject every other main-schema object, including unrelated tables, views,
+  triggers, virtual tables, indexes, sqlite_stat*, and other internals. Permit
+  only known application objects, known autoindexes, and sqlite_sequence.
+  Unknown/orphan sequence rows refuse.
+- Partial legacy shapes, changed structural columns/defaults/constraints,
+  renamed/expression/partial indexes, and any unknown/dependent object refuse
+  before DDL with a named unsupported-variant error.
+
+Final preflight and preservation evidence:
+
+- Use one dedicated database/sql connection and explicit BEGIN IMMEDIATE.
+  Recheck schema and links on that same connection before any DDL. A
+  two-connection test proves a concurrent writer cannot race final preflight.
+- Refuse if user_solutions contains any row or any submission_attempts.user_id
+  is non-null. Account-only rows may be deleted only under exact confirmed;
+  logs/errors expose counts and object names, never row values.
+- Capture submission count plus SHA-256 digest in id order over the explicit
+  retained columns id, submitted_at, puzzle_date, equation, value,
+  solve_time_seconds, difficulty, hard_mode, platform, app_version,
+  submission_status, and rejection_reason. Encode SQLite storage-class tags,
+  explicit NULL markers, and length-prefixed bytes.
+- Capture semantic table_xinfo/foreign keys plus indexes keyed by name with
+  unique/origin/partial/sql/index_xinfo. Ignore volatile index_list.seq and
+  sqlite_schema.rootpage. Capture every sqlite_sequence row keyed by name.
+- Raw sqlite_schema.sql equality is required after migration for every
+  unchanged retained object.
+
+Transactional retirement:
+
+- Drop child account tables before users, remove only the known user-id index,
+  and use native ALTER TABLE submission_attempts DROP COLUMN user_id after
+  dependency checks. Never rebuild through CREATE TABLE AS, VACUUM at startup,
+  or insert a synthetic production row.
+- A test-only failure point after destructive DDL must roll back to a
+  canonical-snapshot-equivalent logical schema, rows, and sequences.
+- Before manual COMMIT on the same dedicated connection, require the original
+  retained count/digest, expected semantic current table/index form, exact
+  retained allowlisted objects/sequences, no retired objects, zero
+  foreign_key_check rows, and quick_check=ok.
+- A second confirmed run is a no-op. Only a temporary-fixture test appends
+  afterward and proves its ID exceeds the preserved sequence high-water.
+
 RED coverage:
 
-- Disabled/unrecognized activation changes nothing.
-- Exact confirmed activation is required.
-- Absent objects are an idempotent no-op.
-- Any user_solutions rows refuse and roll back.
-- Any non-null submission_attempts.user_id refuses and rolls back.
-- An unlinked fixture drops email_verifications, sessions, user_preferences,
-  user_solutions, and users; removes legacy user-id index/column; preserves
-  every retained submission field.
-- Current PRAGMA table_info constraints/defaults, required current indexes, and
-  AUTOINCREMENT/sqlite_sequence high-water state remain equivalent; only the
-  retired user-id column/index may disappear.
-- Partial legacy variants (some tables/indexes absent, nullable user_id present,
-  and a high sequence with sparse rows) either migrate safely or refuse before
-  mutation with a named unsupported variant.
-- Running twice succeeds.
-- Forced mid-transaction error fully rolls back.
-- New submissions append afterward.
-- NDJSON is unaffected.
+- Strict activation and config-before-open, including invalid values and
+  confirmed+NDJSON refusal; disabled NDJSON remains unchanged.
+- Raw-open/ensure separation and database close on every failure.
+- Empty/current no-op plus both full historical construction paths and reruns.
+- Populated but unlinked account rows retire without secret sentinel leakage.
+- Any linked row refuses with canonical-snapshot-equivalent rows/schema/sequence.
+- Every partial/changed/extra/dependent object and orphan sequence refuses
+  unchanged with a named variant.
+- All 12 retained fields preserve storage class, NULL/empty distinctions,
+  value, count, digest, sparse IDs, and sequence high-water.
+- Index fingerprints ignore only volatile enumeration/rootpage fields and
+  preserve every semantic property keyed by name.
+- BEGIN IMMEDIATE blocks/fails a second-connection writer safely.
+- Injected mid-DDL failure fully rolls back; integrity checks pass.
+- Existing SQLite/NDJSON behavior stays green; no test opens production data.
 
 ~~~bash
-go test ./cmd/server -run 'TestLegacy(Account|Database|Retirement)' -count=1
+go test ./cmd/server -run 'TestLegacy(Account|Database|Retirement|Runtime)' -count=1
 ~~~
 
-GREEN:
-
-- Run only for SQLite and exact activation.
-- Log counts only, never values.
-- Refuse before mutation if linked data exists.
-- For unlinked schema, record count plus a canonical digest in id order using
-  explicit NULL markers and length-prefixed field encodings for every retained
-  submission field. Inspect PRAGMA table_info, index_list/index_info, and
-  sqlite_sequence before mutation. Prefer native transactional column drop;
-  verify retained constraints/indexes/sequence and the same count/digest before
-  commit. Only temporary-fixture tests append a post-migration row; production
-  retirement never inserts a synthetic submission.
-- Never VACUUM at startup.
-- Surface enabled retirement errors before serving traffic.
-
 ~~~bash
-go test ./cmd/server -run 'TestLegacy(Account|Database|Retirement)' -count=1
+go test ./cmd/server -run 'TestLegacy(Account|Database|Retirement|Runtime)' -count=1
+go test -race ./cmd/server -run 'TestLegacy(Account|Database|Retirement|Runtime)' -count=1
 go test ./...
+go vet ./...
 gofmt -w cmd/server/*.go
 git diff --check
 ~~~
+
+Scan changed tests/source for data/submissions.db, secret sentinel leakage,
+accidental repository/Compose activation, VACUUM, and synthetic production
+inserts. Task 7 still owns real volume inventory, encrypted backup/checksum,
+restore drill, production counts/schema, deletion approval, maintenance window,
+rollback, and one-shot flag removal. Repository defaults must never set confirmed.
 
 Commit: fix(server): retire unlinked legacy account data
 

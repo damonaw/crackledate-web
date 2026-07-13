@@ -47,7 +47,7 @@ describe('first-run onboarding wiring', () => {
     expect(source.slice(dailyBranch)).not.toContain('persistOnboardingPhase(');
   });
 
-  test('Rules Back to Game returns incomplete players through phase-aware Home', () => {
+  test('Home stays phase-aware while Rules Play uses its canonical transition', () => {
     const showGameStart = source.indexOf('const showGame = useCallback(');
     const showGameEnd = source.indexOf('const chooseCalendarDate', showGameStart);
     const showGameCallback = source.slice(showGameStart, showGameEnd);
@@ -55,7 +55,9 @@ describe('first-run onboarding wiring', () => {
     expect(showGameCallback).toContain(
       'setActiveView(homeDestinationForPhase(onboardingPhase))',
     );
-    expect(openingTag('WrittenRulesView')).toContain('onPlay={showGame}');
+    expect(source).toContain('const playFromRules = useCallback(');
+    expect(source).toContain('rulesPlayDestinationForPhase(onboardingPhase)');
+    expect(openingTag('WrittenRulesView')).toContain('onPlay={playFromRules}');
   });
 
   test('required Practice instructions detour to Rules and completed players keep details', () => {
@@ -69,5 +71,21 @@ describe('first-run onboarding wiring', () => {
     expect(source).toContain('persistWebPreference(');
     expect(source).toContain('recoverFromOnboardingStorageFailure');
     expect(source).toContain('canApplyPracticeValidation(');
+  });
+
+  test('durably persists daily solutions before state and success effects', () => {
+    expect(source).toContain('const savedSolutionsRef = useRef(savedSolutions)');
+    expect(source).toContain('const currentSavedSolutions = savedSolutionsRef.current');
+    const persistence = source.indexOf('if (!persistSavedSolutions(nextSavedSolutions))');
+    const refUpdate = source.indexOf('savedSolutionsRef.current = nextSavedSolutions', persistence);
+    const stateUpdate = source.indexOf('setSavedSolutions(nextSavedSolutions)', persistence);
+    const remoteSubmission = source.indexOf('void submitSolutionRecord(', persistence);
+
+    expect(persistence).toBeGreaterThanOrEqual(0);
+    expect(refUpdate).toBeGreaterThan(persistence);
+    expect(stateUpdate).toBeGreaterThan(refUpdate);
+    expect(remoteSubmission).toBeGreaterThan(stateUpdate);
+    expect(source.slice(persistence, stateUpdate)).toContain('setMessage(solutionStorageError)');
+    expect(source).not.toContain('localStorage.setItem(storageKey');
   });
 });

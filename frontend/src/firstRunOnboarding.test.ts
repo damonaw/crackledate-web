@@ -22,6 +22,7 @@ import {
   practiceEntryForPhase,
   resetOnboardingPhase,
   resolveFirstRunOnboarding,
+  rulesPlayDestinationForPhase,
   themePreferenceStorageKey,
   type WebStorage,
 } from './firstRunOnboarding';
@@ -134,6 +135,14 @@ describe('first-run onboarding routing and transitions', () => {
     expect(homeDestinationForPhase(Phase.NotStarted)).toBe('start');
     expect(homeDestinationForPhase(Phase.InProgress)).toBe('start');
     expect(homeDestinationForPhase(Phase.Completed)).toBe('game');
+  });
+
+  test.each([
+    { phase: Phase.NotStarted, destination: 'start' },
+    { phase: Phase.InProgress, destination: 'practice' },
+    { phase: Phase.Completed, destination: 'game' },
+  ])('Rules Play routes $phase to $destination', ({ phase, destination }) => {
+    expect(rulesPlayDestinationForPhase(phase)).toBe(destination);
   });
 
   test('only in-progress Practice success completes onboarding', () => {

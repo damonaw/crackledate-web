@@ -23,7 +23,12 @@ import { statusToastDismissMs } from './notificationTiming';
 import { practiceCompletionTarget } from './practiceCompletion';
 import { practiceRound, practiceSuccessMessage } from './practiceRound';
 import { RULES_SECTIONS } from './rulesContent';
-import { savedSolutionDateSet } from './savedSolutionDates';
+import {
+  persistSavedSolutions,
+  savedSolutionDateSet,
+  savedSolutionsStorageKey,
+  solutionStorageError,
+} from './savedSolutionDates';
 import { SettingsPanel } from './SettingsPanel';
 import { StartScreen } from './StartScreen';
 import {
@@ -61,6 +66,7 @@ import {
   persistWebPreference,
   practiceEntryForPhase,
   resetOnboardingPhase,
+  rulesPlayDestinationForPhase,
   themePreferenceStorageKey,
   type DifficultyMode,
   type ThemePreference,
@@ -359,7 +365,6 @@ function savedSolutionsSummary(savedSolutions: StoredSolutions) {
   };
 }
 
-const storageKey = 'crackledate.web.solutions.v1';
 const emptyDigitIndices = new Set<number>();
 
 function App() {
@@ -399,6 +404,7 @@ function GamePage() {
   );
   const [startTime, setStartTime] = useState<number | null>(null);
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
+  const savedSolutionsRef = useRef(savedSolutions);
   const [themePreference, setThemePreference] =
     useState<ThemePreference>(onboardingBootstrap.themePreference);
   const [difficultyMode, setDifficultyMode] =
@@ -907,14 +913,21 @@ function GamePage() {
       solvedOnOtherDay,
       usedHint,
     };
-    setSavedSolutions((current) => {
-      const next = {
-        ...current,
-        [puzzle.dateIdentifier]: [...(current[puzzle.dateIdentifier] ?? []), solution],
-      };
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      return next;
-    });
+    const currentSavedSolutions = savedSolutionsRef.current;
+    const nextSavedSolutions = {
+      ...currentSavedSolutions,
+      [puzzle.dateIdentifier]: [
+        ...(currentSavedSolutions[puzzle.dateIdentifier] ?? []),
+        solution,
+      ],
+    };
+    if (!persistSavedSolutions(nextSavedSolutions)) {
+      setMessageTone('error');
+      setMessage(solutionStorageError);
+      return;
+    }
+    savedSolutionsRef.current = nextSavedSolutions;
+    setSavedSolutions(nextSavedSolutions);
     void submitSolutionRecord({
       date: puzzle.dateIdentifier,
       equation: normalizedEquation,
@@ -1136,6 +1149,15 @@ function GamePage() {
     setActiveView('howToPlay');
   }, []);
 
+  const playFromRules = useCallback(() => {
+    const destination = rulesPlayDestinationForPhase(onboardingPhase);
+    if (destination === 'practice') {
+      enterPractice();
+      return;
+    }
+    setActiveView(destination);
+  }, [enterPractice, onboardingPhase]);
+
   const restartTutorial = useCallback(() => {
     if (!clearOnboardingStorage()) {
       setMessageTone('error');
@@ -1149,7 +1171,7 @@ function GamePage() {
 
   const clearBrowserData = useCallback(() => {
     try {
-      localStorage.removeItem(storageKey);
+      localStorage.removeItem(savedSolutionsStorageKey);
       localStorage.removeItem(themePreferenceStorageKey);
       localStorage.removeItem(difficultyModeStorageKey);
     } catch {
@@ -1164,6 +1186,7 @@ function GamePage() {
       setMessage(onboardingStorageError);
       return;
     }
+    savedSolutionsRef.current = {};
     setSavedSolutions({});
     transitionOnboardingPhase(resetOnboardingPhase());
     setThemePreference('light');
@@ -1518,7 +1541,7 @@ function GamePage() {
 
       {activeView === 'rules' && (
         <WrittenRulesView
-          onPlay={showGame}
+          onPlay={playFromRules}
           onHowToPlay={onboardingCompleted ? showHowToPlay : showRules}
           showHowToPlay={onboardingCompleted}
         />
@@ -3122,7 +3145,7 @@ function PageNav({ currentPage }: { currentPage: 'privacy' | 'support' }) {
 
 function loadSolutions(): StoredSolutions {
   try {
-    const value = localStorage.getItem(storageKey);
+    const value = localStorage.getItem(savedSolutionsStorageKey);
     return value ? (JSON.parse(value) as StoredSolutions) : {};
   } catch {
     return {};

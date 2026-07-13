@@ -225,6 +225,14 @@ export function homeDestinationForPhase(
   return phase === FirstRunOnboardingPhase.Completed ? 'game' : 'start';
 }
 
+export function rulesPlayDestinationForPhase(
+  phase: FirstRunOnboardingPhase,
+): 'start' | 'practice' | 'game' {
+  if (phase === FirstRunOnboardingPhase.InProgress) return 'practice';
+  if (phase === FirstRunOnboardingPhase.Completed) return 'game';
+  return 'start';
+}
+
 export function practiceEntryForPhase(
   phase: FirstRunOnboardingPhase,
 ): PracticeEntry {

@@ -62,7 +62,9 @@ func main() {
 
 	server := newHTTPServer(
 		":"+port,
-		securityHeaders(requestLogger(rateLimitAPI(mux, defaultRateLimitConfig(runtimeConfig.resolver)), defaultAnalyticsConfig(), runtimeConfig.resolver)),
+		expireLegacySessionCookie(
+			securityHeaders(requestLogger(rateLimitAPI(mux, defaultRateLimitConfig(runtimeConfig.resolver)), defaultAnalyticsConfig(), runtimeConfig.resolver)),
+		),
 	)
 
 	log.Printf("crackledate web listening on :%s", port)

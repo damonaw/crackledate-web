@@ -11,12 +11,10 @@ import (
 	"io/fs"
 	"log"
 	"mime"
-	"net"
 	"net/http"
 	"os"
 	"path"
 	"strings"
-	"sync"
 	"time"
 
 	"crackledate-web/internal/game"
@@ -40,20 +38,21 @@ type validateRequest struct {
 const maxAPIJSONBodyBytes int64 = 32 * 1024
 
 func main() {
-	mux := http.NewServeMux()
-	publicFiles := mustPublicFS()
-	submissions, err := newSubmissionStore(submissionsPathFromEnvironment())
+	runtimeConfig, submissions, err := initializeRuntime(os.Getenv, newSubmissionStore)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer submissions.close()
+
+	mux := http.NewServeMux()
+	publicFiles := mustPublicFS()
 
 	mux.HandleFunc("/api/health", handleHealth)
 	mux.HandleFunc("/api/puzzle", handlePuzzle)
 	mux.HandleFunc("/api/evaluate", handleEvaluate)
 	mux.HandleFunc("/api/validate", handleValidate)
 	mux.HandleFunc("/api/submissions", handleSubmitSolution(submissions, time.Now))
-	mux.HandleFunc("/api/hint", handleHint)
+	mux.Handle("/api/hint", newHintHandler(game.SolvePuzzle, runtimeConfig.maxConcurrentHintSolves))
 	mux.HandleFunc("/", handleStatic(publicFiles))
 
 	port := os.Getenv("PORT")
@@ -63,7 +62,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              ":" + port,
-		Handler:           securityHeaders(requestLogger(rateLimitAPI(mux, defaultRateLimitConfig()), defaultAnalyticsConfig())),
+		Handler:           securityHeaders(requestLogger(rateLimitAPI(mux, defaultRateLimitConfig(runtimeConfig.resolver)), defaultAnalyticsConfig(), runtimeConfig.resolver)),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -116,70 +115,6 @@ func handleValidate(writer http.ResponseWriter, request *http.Request) {
 	}
 	puzzle := game.PuzzleForDate(date)
 	writeJSON(writer, http.StatusOK, game.ValidateEquation(payload.Equation, puzzle.Digits, payload.Mode, payload.TargetValue))
-}
-
-func handleHint(writer http.ResponseWriter, request *http.Request) {
-	dateStr := request.URL.Query().Get("date")
-	mode := request.URL.Query().Get("mode")
-	targetValue := request.URL.Query().Get("targetValue")
-
-	prefix := request.URL.Query().Get("prefix")
-
-	date, err := game.ParsePuzzleDate(dateStr, time.Now())
-	if err != nil {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "Invalid date"})
-		return
-	}
-	puzzle := game.PuzzleForDate(date)
-
-	sol, err := game.SolvePuzzle(puzzle.Digits, mode, targetValue, prefix)
-	if err != nil {
-		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "No solution found"})
-		return
-	}
-
-	var step1, step2, step3 string
-	step3 = sol
-
-	switch mode {
-	case "double_equality":
-		parts := strings.Split(sol, "=")
-		evalRes := game.RunningValues(sol)
-		step1 = evalRes.Left
-		if len(parts) >= 2 {
-			step2 = parts[0] + "=" + parts[1]
-		} else {
-			step2 = parts[0]
-		}
-	case "target":
-		parts := strings.Split(sol, "=")
-		if len(parts) >= 2 {
-			step1 = parts[0]
-			step2 = getSmartPrefix(parts[1])
-		} else {
-			step1 = parts[0]
-			step2 = parts[0]
-		}
-	case "single_expr":
-		step1 = getSmartHalfPrefix(sol)
-		step2 = getSmartAlmostPrefix(sol)
-	default: // classic
-		parts := strings.Split(sol, "=")
-		evalRes := game.RunningValues(sol)
-		step1 = evalRes.Left
-		step2 = parts[0]
-	}
-
-	balancingHint, mathTip := computeBalancingHintAndTip(sol, mode, prefix, puzzle.Digits)
-
-	writeJSON(writer, http.StatusOK, map[string]string{
-		"solution":      sol,
-		"step1":         step1,
-		"step2":         step2,
-		"step3":         step3,
-		"balancingHint": balancingHint,
-		"mathTip":       mathTip,
-	})
 }
 
 func getSmartPrefix(s string) string {
@@ -288,24 +223,6 @@ type statusRecorder struct {
 	status int
 }
 
-type rateLimitConfig struct {
-	window time.Duration
-	limits map[string]int
-	now    func() time.Time
-}
-
-type rateLimitEntry struct {
-	windowStart time.Time
-	count       int
-	lastSeen    time.Time
-}
-
-type rateLimiter struct {
-	mu      sync.Mutex
-	config  rateLimitConfig
-	clients map[string]rateLimitEntry
-}
-
 func defaultAnalyticsConfig() analyticsConfig {
 	return analyticsConfig{
 		hashSecret: strings.TrimSpace(os.Getenv("CLIENT_HASH_SECRET")),
@@ -313,19 +230,6 @@ func defaultAnalyticsConfig() analyticsConfig {
 		output:     os.Stdout,
 	}
 }
-
-func defaultRateLimitConfig() rateLimitConfig {
-	return rateLimitConfig{
-		window: time.Minute,
-		limits: map[string]int{
-			"/api/evaluate":    240,
-			"/api/validate":    120,
-			"/api/submissions": 20,
-		},
-		now: time.Now,
-	}
-}
-
 func (config analyticsConfig) timeNow() time.Time {
 	if config.now != nil {
 		return config.now()
@@ -339,92 +243,6 @@ func (config analyticsConfig) logOutput() io.Writer {
 	}
 	return os.Stdout
 }
-
-func (config rateLimitConfig) timeNow() time.Time {
-	if config.now != nil {
-		return config.now()
-	}
-	return time.Now()
-}
-
-func rateLimitAPI(next http.Handler, config rateLimitConfig) http.Handler {
-	limiter := &rateLimiter{
-		config:  config,
-		clients: make(map[string]rateLimitEntry),
-	}
-
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if isMutatingMethod(request.Method) && !limiter.allow(request) {
-			writer.Header().Set("Retry-After", fmt.Sprintf("%.0f", config.window.Seconds()))
-			writeJSON(writer, http.StatusTooManyRequests, map[string]string{"error": "Too many requests"})
-			return
-		}
-		next.ServeHTTP(writer, request)
-	})
-}
-
-func isMutatingMethod(method string) bool {
-	return method == http.MethodPost || method == http.MethodPut || method == http.MethodPatch || method == http.MethodDelete
-}
-
-func (limiter *rateLimiter) allow(request *http.Request) bool {
-	limit, ok := limiter.config.limits[request.URL.Path]
-	if !ok || limit <= 0 {
-		return true
-	}
-
-	clientIP, _ := clientAddress(request)
-	if clientIP == "" {
-		clientIP = "unknown"
-	}
-
-	now := limiter.config.timeNow()
-	key := request.URL.Path + "\x00" + clientIP
-
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-
-	entry := limiter.clients[key]
-	if entry.windowStart.IsZero() || now.Before(entry.windowStart) || now.Sub(entry.windowStart) >= limiter.config.window {
-		entry.windowStart = now
-		entry.count = 0
-	}
-	entry.count++
-	entry.lastSeen = now
-	limiter.clients[key] = entry
-
-	if len(limiter.clients) > 4096 {
-		limiter.cleanup(now)
-	}
-
-	return entry.count <= limit
-}
-
-func (limiter *rateLimiter) cleanup(now time.Time) {
-	ttl := limiter.config.window * 2
-	for key, entry := range limiter.clients {
-		if now.Sub(entry.lastSeen) > ttl {
-			delete(limiter.clients, key)
-		}
-	}
-}
-
-func clientAddress(request *http.Request) (string, string) {
-	if value := strings.TrimSpace(request.Header.Get("CF-Connecting-IP")); value != "" {
-		return value, "cf-connecting-ip"
-	}
-	if value := strings.TrimSpace(request.Header.Get("X-Forwarded-For")); value != "" {
-		first, _, _ := strings.Cut(value, ",")
-		if first = strings.TrimSpace(first); first != "" {
-			return first, "x-forwarded-for"
-		}
-	}
-	if host, _, err := net.SplitHostPort(strings.TrimSpace(request.RemoteAddr)); err == nil && host != "" {
-		return host, "remote-addr"
-	}
-	return strings.TrimSpace(request.RemoteAddr), "remote-addr"
-}
-
 func clientHashes(clientIP, secret string, now time.Time) clientHashSet {
 	now = now.UTC()
 	year, week := now.ISOWeek()
@@ -451,7 +269,10 @@ func (recorder *statusRecorder) Write(body []byte) (int, error) {
 	return recorder.ResponseWriter.Write(body)
 }
 
-func requestLogger(next http.Handler, config analyticsConfig) http.Handler {
+func requestLogger(next http.Handler, config analyticsConfig, resolver *clientAddressResolver) http.Handler {
+	if resolver == nil {
+		resolver = newClientAddressResolver(nil, nil)
+	}
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: writer}
@@ -460,8 +281,8 @@ func requestLogger(next http.Handler, config analyticsConfig) http.Handler {
 			recorder.status = http.StatusOK
 		}
 
-		clientIP, clientSource := clientAddress(request)
-		hashes := clientHashes(clientIP, config.hashSecret, config.timeNow())
+		client := resolver.resolve(request)
+		hashes := clientHashes(client.address, config.hashSecret, config.timeNow())
 		entry := map[string]any{
 			"time":         time.Now().UTC().Format(time.RFC3339Nano),
 			"level":        "INFO",
@@ -472,9 +293,9 @@ func requestLogger(next http.Handler, config analyticsConfig) http.Handler {
 			"durationMs":   time.Since(start).Milliseconds(),
 			"clientDay":    hashes.Day,
 			"clientWeek":   hashes.Week,
-			"clientSource": clientSource,
-			"country":      strings.TrimSpace(request.Header.Get("CF-IPCountry")),
-			"cfRay":        strings.TrimSpace(request.Header.Get("CF-Ray")),
+			"clientSource": client.source,
+			"country":      client.country,
+			"cfRay":        client.cfRay,
 			"userAgent":    strings.TrimSpace(request.UserAgent()),
 			"referer":      strings.TrimSpace(request.Referer()),
 		}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,22 +39,18 @@ func TestHandleEvaluateRejectsUnknownFields(t *testing.T) {
 
 func TestRateLimitAPIRejectsBurstAndResetsAfterWindow(t *testing.T) {
 	now := time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC)
-	config := rateLimitConfig{
-		window: time.Minute,
-		limits: map[string]int{
-			"/api/validate": 2,
-		},
-		now: func() time.Time { return now },
-	}
+	config := testRateLimitConfig(func() time.Time { return now }, 16, map[rateLimitRule]int{
+		{method: http.MethodPost, path: "/api/validate"}: 2,
+	})
 	handled := 0
 	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		handled++
 		writer.WriteHeader(http.StatusNoContent)
 	}), config)
 
-	first := rateLimitedRequest(handler, "/api/validate", "203.0.113.10:1234")
-	second := rateLimitedRequest(handler, "/api/validate", "203.0.113.10:1234")
-	third := rateLimitedRequest(handler, "/api/validate", "203.0.113.10:1234")
+	first := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234")
+	second := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234")
+	third := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234")
 
 	if first.Code != http.StatusNoContent || second.Code != http.StatusNoContent {
 		t.Fatalf("expected first two requests through, got %d/%d", first.Code, second.Code)
@@ -68,7 +66,7 @@ func TestRateLimitAPIRejectsBurstAndResetsAfterWindow(t *testing.T) {
 	}
 
 	now = now.Add(time.Minute)
-	fourth := rateLimitedRequest(handler, "/api/validate", "203.0.113.10:1234")
+	fourth := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234")
 
 	if fourth.Code != http.StatusNoContent {
 		t.Fatalf("expected request after window reset through, got %d", fourth.Code)
@@ -79,22 +77,17 @@ func TestRateLimitAPIRejectsBurstAndResetsAfterWindow(t *testing.T) {
 }
 
 func TestRateLimitAPISeparatesClientsAndPaths(t *testing.T) {
-	now := time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC)
-	config := rateLimitConfig{
-		window: time.Minute,
-		limits: map[string]int{
-			"/api/submissions": 1,
-		},
-		now: func() time.Time { return now },
-	}
+	config := testRateLimitConfig(time.Now, 16, map[rateLimitRule]int{
+		{method: http.MethodPost, path: "/api/submissions"}: 1,
+	})
 	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusNoContent)
 	}), config)
 
-	_ = rateLimitedRequest(handler, "/api/submissions", "203.0.113.10:1234")
-	sameClient := rateLimitedRequest(handler, "/api/submissions", "203.0.113.10:1234")
-	otherClient := rateLimitedRequest(handler, "/api/submissions", "203.0.113.11:1234")
-	otherPath := rateLimitedRequest(handler, "/api/health", "203.0.113.10:1234")
+	_ = rateLimitedRequest(handler, http.MethodPost, "/api/submissions", "203.0.113.10:1234")
+	sameClient := rateLimitedRequest(handler, http.MethodPost, "/api/submissions", "203.0.113.10:1234")
+	otherClient := rateLimitedRequest(handler, http.MethodPost, "/api/submissions", "203.0.113.11:1234")
+	otherPath := rateLimitedRequest(handler, http.MethodPost, "/api/health", "203.0.113.10:1234")
 
 	if sameClient.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected same client to be rate limited, got %d", sameClient.Code)
@@ -107,10 +100,204 @@ func TestRateLimitAPISeparatesClientsAndPaths(t *testing.T) {
 	}
 }
 
-func rateLimitedRequest(handler http.Handler, path string, remoteAddr string) *httptest.ResponseRecorder {
-	request := httptest.NewRequest(http.MethodPost, path, nil)
+func TestRateLimitAPIRestrictsHintGET(t *testing.T) {
+	config := defaultRateLimitConfig(newClientAddressResolver(nil, nil))
+	handled := 0
+	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		handled++
+		writer.WriteHeader(http.StatusNoContent)
+	}), config)
+
+	for index := 0; index < 30; index++ {
+		response := rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234")
+		if response.Code != http.StatusNoContent {
+			t.Fatalf("request %d unexpectedly returned %d", index+1, response.Code)
+		}
+	}
+	response := rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234")
+	if response.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 31st hint request to be limited, got %d", response.Code)
+	}
+	if handled != 30 {
+		t.Fatalf("handled requests = %d, want 30", handled)
+	}
+}
+
+func TestRateLimitAPIIsMethodAndPathSpecific(t *testing.T) {
+	config := testRateLimitConfig(time.Now, 16, map[rateLimitRule]int{
+		{method: http.MethodGet, path: "/api/hint"}:      1,
+		{method: http.MethodPost, path: "/api/validate"}: 1,
+	})
+	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusNoContent)
+	}), config)
+
+	_ = rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234")
+	if response := rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234"); response.Code != http.StatusTooManyRequests {
+		t.Fatalf("second GET /api/hint = %d, want 429", response.Code)
+	}
+	if response := rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234"); response.Code != http.StatusNoContent {
+		t.Fatalf("POST /api/hint = %d, want unlisted pass-through", response.Code)
+	}
+	if response := rateLimitedRequest(handler, http.MethodGet, "/api/validate", "203.0.113.10:1234"); response.Code != http.StatusNoContent {
+		t.Fatalf("GET /api/validate = %d, want unlisted pass-through", response.Code)
+	}
+	if response := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234"); response.Code != http.StatusNoContent {
+		t.Fatalf("first POST /api/validate = %d, want pass-through", response.Code)
+	}
+	if response := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234"); response.Code != http.StatusTooManyRequests {
+		t.Fatalf("second POST /api/validate = %d, want 429", response.Code)
+	}
+}
+
+func TestRateLimiterNeverExceedsConfiguredCapacity(t *testing.T) {
+	config := testRateLimitConfig(time.Now, 32, map[rateLimitRule]int{
+		{method: http.MethodGet, path: "/api/hint"}: 30,
+	})
+	limiter := newRateLimiter(config)
+
+	for index := 0; index < 10_000; index++ {
+		request := httptest.NewRequest(http.MethodGet, "/api/hint", nil)
+		request.RemoteAddr = fmt.Sprintf("198.51.%d.%d:443", (index/254)%254, index%254+1)
+		if !limiter.allow(request) {
+			t.Fatalf("unique request %d unexpectedly limited", index)
+		}
+		if got := len(limiter.clients); got > config.capacity {
+			t.Fatalf("limiter size grew to %d, capacity %d", got, config.capacity)
+		}
+	}
+	if got := len(limiter.clients); got != config.capacity {
+		t.Fatalf("limiter size = %d, want %d", got, config.capacity)
+	}
+}
+
+func TestRateLimiterEvictsLeastRecentlyUsedEntry(t *testing.T) {
+	config := testRateLimitConfig(time.Now, 2, map[rateLimitRule]int{
+		{method: http.MethodGet, path: "/api/hint"}: 1,
+	})
+	limiter := newRateLimiter(config)
+
+	requestA := newRateLimiterRequest("203.0.113.1:443")
+	requestB := newRateLimiterRequest("203.0.113.2:443")
+	requestC := newRateLimiterRequest("203.0.113.3:443")
+	if !limiter.allow(requestA) || !limiter.allow(requestB) {
+		t.Fatal("expected initial requests through")
+	}
+	if limiter.allow(requestA) {
+		t.Fatal("expected second A request to be limited while refreshing A recency")
+	}
+	if !limiter.allow(requestC) {
+		t.Fatal("expected C request through")
+	}
+	if !limiter.allow(requestB) {
+		t.Fatal("expected least-recently-used B entry to have been evicted")
+	}
+}
+
+func TestTrustedProxyConfigRejectsInvalidCIDR(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+	}{
+		{name: "generic", env: map[string]string{"TRUSTED_PROXY_CIDRS": "192.0.2.0/24,not-a-cidr"}},
+		{name: "cloudflare", env: map[string]string{"TRUSTED_CLOUDFLARE_PROXY_CIDRS": "bad"}},
+		{name: "empty list element", env: map[string]string{"TRUSTED_PROXY_CIDRS": "192.0.2.0/24,,198.51.100.0/24"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := parseRuntimeSecurityConfig(mapEnvironment(test.env)); err == nil {
+				t.Fatal("expected invalid trusted proxy CIDR error")
+			}
+		})
+	}
+}
+
+func TestHintConcurrencyConfigUsesDefaultWhenUnset(t *testing.T) {
+	config, err := parseRuntimeSecurityConfig(mapEnvironment(nil))
+	if err != nil {
+		t.Fatalf("parseRuntimeSecurityConfig: %v", err)
+	}
+	if config.maxConcurrentHintSolves != 4 {
+		t.Fatalf("maxConcurrentHintSolves = %d, want 4", config.maxConcurrentHintSolves)
+	}
+}
+
+func TestHintConcurrencyConfigAcceptsOneAndSixteen(t *testing.T) {
+	for _, value := range []string{"1", "16"} {
+		t.Run(value, func(t *testing.T) {
+			config, err := parseRuntimeSecurityConfig(mapEnvironment(map[string]string{"MAX_CONCURRENT_HINT_SOLVES": value}))
+			if err != nil {
+				t.Fatalf("parseRuntimeSecurityConfig: %v", err)
+			}
+			if fmt.Sprint(config.maxConcurrentHintSolves) != value {
+				t.Fatalf("maxConcurrentHintSolves = %d, want %s", config.maxConcurrentHintSolves, value)
+			}
+		})
+	}
+}
+
+func TestHintConcurrencyConfigRejectsZeroSeventeenNonIntegerAndMalformedValues(t *testing.T) {
+	for _, value := range []string{"0", "17", "1.5", "four", "+4", " 4 ", "4x"} {
+		t.Run(value, func(t *testing.T) {
+			if _, err := parseRuntimeSecurityConfig(mapEnvironment(map[string]string{"MAX_CONCURRENT_HINT_SOLVES": value})); err == nil {
+				t.Fatalf("expected %q to be rejected", value)
+			}
+		})
+	}
+}
+
+func TestInvalidRuntimeConfigStopsBeforeOpeningSubmissionStore(t *testing.T) {
+	tests := []map[string]string{
+		{"TRUSTED_PROXY_CIDRS": "invalid"},
+		{"TRUSTED_CLOUDFLARE_PROXY_CIDRS": "also-invalid"},
+		{"MAX_CONCURRENT_HINT_SOLVES": "0"},
+	}
+	for index, environment := range tests {
+		t.Run(fmt.Sprintf("case-%d", index), func(t *testing.T) {
+			openCalls := 0
+			_, store, err := initializeRuntime(mapEnvironment(environment), func(string) (*submissionStore, error) {
+				openCalls++
+				return nil, errors.New("store opener must not run")
+			})
+			if err == nil {
+				t.Fatal("expected invalid runtime configuration error")
+			}
+			if store != nil {
+				t.Fatalf("store = %#v, want nil", store)
+			}
+			if openCalls != 0 {
+				t.Fatalf("submission store opened %d times", openCalls)
+			}
+		})
+	}
+}
+
+func testRateLimitConfig(now func() time.Time, capacity int, limits map[rateLimitRule]int) rateLimitConfig {
+	return rateLimitConfig{
+		window:   time.Minute,
+		limits:   limits,
+		capacity: capacity,
+		now:      now,
+		resolver: newClientAddressResolver(nil, nil),
+	}
+}
+
+func rateLimitedRequest(handler http.Handler, method string, path string, remoteAddr string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, nil)
 	request.RemoteAddr = remoteAddr
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
+}
+
+func newRateLimiterRequest(remoteAddr string) *http.Request {
+	request := httptest.NewRequest(http.MethodGet, "/api/hint", nil)
+	request.RemoteAddr = remoteAddr
+	return request
+}
+
+func mapEnvironment(values map[string]string) func(string) string {
+	return func(key string) string {
+		return values[key]
+	}
 }

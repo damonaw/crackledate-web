@@ -43,17 +43,25 @@ import { solutionBadges, type SolutionBadge } from './solutionBadges';
 import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
 import {
-  GuidedFirstWinRoute,
-  guidedFirstWinStorageKey,
-  routeForGuidedFirstWin,
-} from './guidedFirstWinPolicy';
+  FirstRunOnboardingPhase,
+  firstRunOnboardingStorageKey,
+  homeDestinationForPhase,
+  isRequiredOnboardingPractice,
+  launchDestinationForPhase,
+  legacyGuidedFirstWinCompletedStorageKey,
+  legacyPlayStartedStorageKey,
+  phaseAfterPracticeSuccess,
+  playDestinationForPhase,
+  practiceEntryForPhase,
+  resetOnboardingPhase,
+  resolveFirstRunOnboarding,
+} from './firstRunOnboarding';
 import {
   guidedPracticeGlowKey,
   guidedPracticeStepForTokens,
 } from './guidedPractice';
 import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
 import { dateAccessDecisionFor } from './dateAccessPolicy';
-import { initialActiveView } from './startScreenRouting';
 import './styles.css';
 
 type Puzzle = {
@@ -345,10 +353,66 @@ function savedSolutionsSummary(savedSolutions: StoredSolutions) {
 }
 
 const storageKey = 'crackledate.web.solutions.v1';
-const playStartedKey = 'crackledate.web.play-started.v1';
 const themePreferenceKey = 'crackledate.web.theme.v1';
 const difficultyModeKey = 'crackledate.web.difficulty.v1';
 const emptyDigitIndices = new Set<number>();
+const onboardingStorageError =
+  'Could not save Practice Round progress. Please try again.';
+
+function persistOnboardingPhase(
+  phase: FirstRunOnboardingPhase,
+  mirrorLegacyCompletion = false,
+): boolean {
+  try {
+    if (mirrorLegacyCompletion) {
+      localStorage.setItem(legacyGuidedFirstWinCompletedStorageKey, 'true');
+      localStorage.setItem(legacyPlayStartedStorageKey, 'true');
+    }
+    localStorage.setItem(firstRunOnboardingStorageKey, phase);
+    return localStorage.getItem(firstRunOnboardingStorageKey) === phase;
+  } catch {
+    return false;
+  }
+}
+
+function loadFirstRunOnboarding(): {
+  phase: FirstRunOnboardingPhase;
+  errorMessage: string;
+} {
+  try {
+    const resolution = resolveFirstRunOnboarding({
+      storedPhase: localStorage.getItem(firstRunOnboardingStorageKey),
+      legacyGuidedFirstWinCompleted:
+        localStorage.getItem(legacyGuidedFirstWinCompletedStorageKey) === 'true',
+      legacyPlayStarted:
+        localStorage.getItem(legacyPlayStartedStorageKey) === 'true',
+    });
+    if (resolution.shouldPersist &&
+        !persistOnboardingPhase(resolution.phase)) {
+      return {
+        phase: FirstRunOnboardingPhase.NotStarted,
+        errorMessage: onboardingStorageError,
+      };
+    }
+    return { phase: resolution.phase, errorMessage: '' };
+  } catch {
+    return {
+      phase: FirstRunOnboardingPhase.NotStarted,
+      errorMessage: onboardingStorageError,
+    };
+  }
+}
+
+function clearOnboardingStorage(): boolean {
+  try {
+    localStorage.removeItem(legacyPlayStartedStorageKey);
+    localStorage.removeItem(legacyGuidedFirstWinCompletedStorageKey);
+    localStorage.removeItem(firstRunOnboardingStorageKey);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 function App() {
   const path = window.location.pathname.replace(/\/+$/, '') || '/';
@@ -362,15 +426,13 @@ function App() {
 }
 
 function GamePage() {
-  const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
-  const [playStarted, setPlayStarted] = useState(() => localStorage.getItem(playStartedKey) === 'true');
-  const [guidedFirstWinCompleted, setGuidedFirstWinCompleted] = useState(
-    () => localStorage.getItem(guidedFirstWinStorageKey) === 'true',
-  );
-  const [guidedFirstWinActive, setGuidedFirstWinActive] = useState(false);
+  const [onboardingBootstrap] = useState(loadFirstRunOnboarding);
+  const [onboardingPhase, setOnboardingPhase] =
+    useState(onboardingBootstrap.phase);
   const [activeView, setActiveView] = useState<ActiveView>(
-    () => initialActiveView({ playStarted, guidedFirstWinCompleted }),
+    () => launchDestinationForPhase(onboardingBootstrap.phase),
   );
+  const [selectedDate, setSelectedDate] = useState(localDateIdentifier(new Date()));
   const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
@@ -383,8 +445,10 @@ function GamePage() {
   const [isDeadEnd, setIsDeadEnd] = useState(false);
   const [shakeHintButton, setShakeHintButton] = useState(false);
   const [usedHint, setUsedHint] = useState(false);
-  const [message, setMessage] = useState('');
-  const [messageTone, setMessageTone] = useState<FeedbackTone>('success');
+  const [message, setMessage] = useState(onboardingBootstrap.errorMessage);
+  const [messageTone, setMessageTone] = useState<FeedbackTone>(
+    onboardingBootstrap.errorMessage ? 'error' : 'success',
+  );
   const [startTime, setStartTime] = useState<number | null>(null);
   const [savedSolutions, setSavedSolutions] = useState<StoredSolutions>(loadSolutions);
   const [themePreference, setThemePreference] = useState<ThemePreference>(loadThemePreference);
@@ -402,6 +466,12 @@ function GamePage() {
     return localDateIdentifier(tomorrow);
   }, []);
   const isPracticeMode = activeView === 'practice';
+  const requiredOnboardingPractice = isRequiredOnboardingPractice({
+    phase: onboardingPhase,
+    activeView,
+  });
+  const onboardingCompleted =
+    onboardingPhase === FirstRunOnboardingPhase.Completed;
   const puzzleDateIdentifier = isPracticeMode ? practiceRound.dateIdentifier : selectedDate;
 
   const { tokens, selection } = editorState;
@@ -427,10 +497,6 @@ function GamePage() {
   const nextDigitIndex = useMemo(
     () => (puzzle ? firstUnusedDigitIndex(tokens, puzzle.digits) : null),
     [puzzle, tokens],
-  );
-  const guidedFirstWinRoute = useMemo(
-    () => routeForGuidedFirstWin({ playStarted, guidedFirstWinCompleted }),
-    [guidedFirstWinCompleted, playStarted],
   );
   const guidedPracticeStep = useMemo(
     () => (isPracticeMode ? guidedPracticeStepForTokens(tokens) : null),
@@ -776,6 +842,20 @@ function GamePage() {
     setStartTime(null);
   }, []);
 
+  const enterPractice = useCallback(() => {
+    const entry = practiceEntryForPhase(onboardingPhase);
+    if (entry.phase !== onboardingPhase &&
+        !persistOnboardingPhase(entry.phase)) {
+      setMessageTone('error');
+      setMessage(onboardingStorageError);
+      return;
+    }
+    clear();
+    setOnboardingPhase(entry.phase);
+    setActiveView(entry.destination);
+    setMessage('');
+  }, [clear, onboardingPhase]);
+
   const moveSelectorFromControls = useCallback((direction: SelectorDirection) => {
     selectorMoveRef.current?.(direction);
   }, []);
@@ -808,18 +888,21 @@ function GamePage() {
     }
 
     if (isPracticeMode) {
+      const nextOnboardingPhase = phaseAfterPracticeSuccess(onboardingPhase);
+      if (nextOnboardingPhase !== onboardingPhase &&
+          !persistOnboardingPhase(FirstRunOnboardingPhase.Completed, true)) {
+        setMessageTone('error');
+        setMessage(onboardingStorageError);
+        return;
+      }
       clear();
       setMessageTone('success');
       setMessage(practiceSuccessMessage(result.leftValue ?? evaluation.left));
       preserveFeedbackOnNextPuzzleLoadRef.current = true;
       const destination = practiceCompletionTarget(todayId);
+      setOnboardingPhase(nextOnboardingPhase);
       setSelectedDate(destination.selectedDate);
       setActiveView(destination.activeView);
-      if (guidedFirstWinActive) {
-        localStorage.setItem(guidedFirstWinStorageKey, 'true');
-        setGuidedFirstWinCompleted(true);
-        setGuidedFirstWinActive(false);
-      }
       return;
     }
 
@@ -851,17 +934,12 @@ function GamePage() {
       platform: 'web',
       appVersion: webAppVersion,
     });
-    if (guidedFirstWinActive) {
-      localStorage.setItem(guidedFirstWinStorageKey, 'true');
-      setGuidedFirstWinCompleted(true);
-      setGuidedFirstWinActive(false);
-    }
     setIsSearchingAnother(false);
     setMessageTone('success');
     setMessage(`Solved. Both sides equal ${solution.value}.`);
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, guidedFirstWinActive, isPracticeMode, puzzle, startTime, todayId, todaySolutions]);
+  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, onboardingPhase, puzzle, startTime, todayId, todaySolutions]);
 
   const applyHintStep = useCallback(
     (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
@@ -1039,20 +1117,13 @@ function GamePage() {
   }, []);
 
   const playPuzzle = useCallback(() => {
-    setActiveView('game');
-  }, []);
-
-  const showPractice = useCallback(() => {
-    clear();
-    setGuidedFirstWinActive(false);
-    setActiveView('practice');
-  }, [clear]);
-
-  const startPracticeFromStart = useCallback(() => {
-    localStorage.setItem(playStartedKey, 'true');
-    setPlayStarted(true);
-    showPractice();
-  }, [showPractice]);
+    const destination = playDestinationForPhase(onboardingPhase);
+    if (destination === 'practice') {
+      enterPractice();
+      return;
+    }
+    setActiveView(destination === 'guided_first_win' ? 'game' : destination);
+  }, [enterPractice, onboardingPhase]);
 
   const showRules = useCallback(() => {
     setActiveView('rules');
@@ -1076,34 +1147,36 @@ function GamePage() {
     setActiveView('howToPlay');
   }, []);
 
-  const startGuidedFirstWin = useCallback(() => {
+  const restartTutorial = useCallback(() => {
+    if (!clearOnboardingStorage()) {
+      setMessageTone('error');
+      setMessage(onboardingStorageError);
+      return;
+    }
     clear();
-    localStorage.setItem(playStartedKey, 'true');
-    setPlayStarted(true);
-    setGuidedFirstWinActive(true);
-    setActiveView('practice');
-    setMessage('');
+    setOnboardingPhase(resetOnboardingPhase());
+    setActiveView('start');
   }, [clear]);
 
-  const restartTutorial = useCallback(() => {
-    localStorage.removeItem(playStartedKey);
-    localStorage.removeItem(guidedFirstWinStorageKey);
-    setPlayStarted(false);
-    setGuidedFirstWinCompleted(false);
-    setGuidedFirstWinActive(false);
-    setActiveView('game');
-  }, []);
-
   const clearBrowserData = useCallback(() => {
-    localStorage.removeItem(storageKey);
-    localStorage.removeItem(playStartedKey);
-    localStorage.removeItem(guidedFirstWinStorageKey);
-    localStorage.removeItem(themePreferenceKey);
-    localStorage.removeItem(difficultyModeKey);
+    try {
+      localStorage.removeItem(storageKey);
+      localStorage.removeItem(themePreferenceKey);
+      localStorage.removeItem(difficultyModeKey);
+    } catch {
+      setClearDataConfirmVisible(false);
+      setMessageTone('error');
+      setMessage(onboardingStorageError);
+      return;
+    }
+    if (!clearOnboardingStorage()) {
+      setClearDataConfirmVisible(false);
+      setMessageTone('error');
+      setMessage(onboardingStorageError);
+      return;
+    }
     setSavedSolutions({});
-    setPlayStarted(false);
-    setGuidedFirstWinCompleted(false);
-    setGuidedFirstWinActive(false);
+    setOnboardingPhase(resetOnboardingPhase());
     setThemePreference('light');
     setDifficultyMode('easy');
     setEditorState(emptyEditorState());
@@ -1120,8 +1193,8 @@ function GamePage() {
   }, []);
 
   const showGame = useCallback(() => {
-    setActiveView('game');
-  }, []);
+    setActiveView(homeDestinationForPhase(onboardingPhase));
+  }, [onboardingPhase]);
 
   const chooseCalendarDate = useCallback((dateIdentifier: string) => {
     setSelectedDate(dateIdentifier);
@@ -1174,45 +1247,47 @@ function GamePage() {
           <button className="toolbar-home-button" type="button" aria-label="Play Crackle Date" onClick={showGame}>
             <img src="/app-icon.png" alt="" />
           </button>
-          <nav className="site-nav" aria-label="Site">
-            {activeView === 'game' && !isEquationCorrect && !(todaySolutions.length > 0 && !isSearchingAnother) && (
+          {onboardingCompleted && (
+            <nav className="site-nav" aria-label="Site">
+              {activeView === 'game' && !isEquationCorrect && !(todaySolutions.length > 0 && !isSearchingAnother) && (
+                <ToolbarButton
+                  label="Hint"
+                  icon={<HintIcon />}
+                  className={`toolbar-hint-button${shakeHintButton ? ' shake' : ''}`}
+                  isExpanded={true}
+                  onClick={handleHintClick}
+                  disabled={hintLoading}
+                />
+              )}
               <ToolbarButton
-                label="Hint"
-                icon={<HintIcon />}
-                className={`toolbar-hint-button${shakeHintButton ? ' shake' : ''}`}
-                isExpanded={true}
-                onClick={handleHintClick}
-                disabled={hintLoading}
+                label={puzzle?.displayDate ?? 'Calendar'}
+                icon={<CalendarIcon />}
+                isExpanded={activeView === 'calendar'}
+                onClick={activeView === 'calendar' ? showGame : showCalendar}
+                ariaLabel={dateInputLabel}
               />
-            )}
-            <ToolbarButton
-              label={puzzle?.displayDate ?? 'Calendar'}
-              icon={<CalendarIcon />}
-              isExpanded={activeView === 'calendar'}
-              onClick={activeView === 'calendar' ? showGame : showCalendar}
-              ariaLabel={dateInputLabel}
-            />
-            <ToolbarButton
-              label="Stats"
-              icon={<StatsIcon />}
-              isExpanded={activeView === 'solutions'}
-              onClick={activeView === 'solutions' ? showGame : showSolutions}
-            />
-            <ToolbarButton
-              label="Settings"
-              icon={<SettingsIcon />}
-              isExpanded={activeView === 'settings'}
-              onClick={activeView === 'settings' ? showGame : showSettingsPage}
-            />
-            <ToolbarButton
-              label={themePreference === 'dark' ? 'Light' : 'Dark'}
-              icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
-              className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
-              isExpanded={false}
-              onClick={toggleThemePreference}
-              ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
-            />
-          </nav>
+              <ToolbarButton
+                label="Stats"
+                icon={<StatsIcon />}
+                isExpanded={activeView === 'solutions'}
+                onClick={activeView === 'solutions' ? showGame : showSolutions}
+              />
+              <ToolbarButton
+                label="Settings"
+                icon={<SettingsIcon />}
+                isExpanded={activeView === 'settings'}
+                onClick={activeView === 'settings' ? showGame : showSettingsPage}
+              />
+              <ToolbarButton
+                label={themePreference === 'dark' ? 'Light' : 'Dark'}
+                icon={themePreference === 'dark' ? <SunIcon /> : <MoonIcon />}
+                className={themePreference === 'dark' ? 'theme-target-light' : 'theme-target-dark'}
+                isExpanded={false}
+                onClick={toggleThemePreference}
+                ariaLabel={`Switch to ${themePreference === 'dark' ? 'light' : 'dark'} mode`}
+              />
+            </nav>
+          )}
         </header>
       )}
 
@@ -1221,15 +1296,19 @@ function GamePage() {
       {activeView === 'start' && (
         <StartScreen
           onPlay={playPuzzle}
-          onHowToPlay={showHowToPlay}
-          onPractice={startPracticeFromStart}
+          onHowToPlay={onboardingCompleted ? showHowToPlay : showRules}
+          onPractice={enterPractice}
         />
       )}
 
       {(activeView === 'game' || activeView === 'practice') && (
         <section className="game-panel" aria-label={`${puzzle?.displayDate ?? 'Crackle Date'} game board`}>
           {isPracticeMode && (
-            <div className="practice-coach" role="note">
+            <div
+              className="practice-coach"
+              role="note"
+              data-required-onboarding={requiredOnboardingPractice ? 'true' : 'false'}
+            >
               <strong>{practiceRound.title}: {practiceRound.displayDate}</strong>
               <span>{guidedPracticeStep?.instruction ?? practiceRound.coach}</span>
               <small>{practiceRound.coach}</small>
@@ -1270,7 +1349,7 @@ function GamePage() {
                   onBackspace={backspace}
                   onInsertValue={insertOperator}
                   onShowDetailedInstructions={showDetailedHowToPlay}
-                  onStartPractice={showPractice}
+                  onStartPractice={enterPractice}
                   selectorMoveRef={selectorMoveRef}
                   nextDigit={nextDigit}
                   onAppendDigit={appendDigit}
@@ -1405,7 +1484,7 @@ function GamePage() {
 
       <StatusToast message={toastFeedbackMessage} tone={feedbackTone} />
 
-      {activeView === 'calendar' && (
+      {onboardingCompleted && activeView === 'calendar' && (
         <CalendarPage
           selectedDate={selectedDate}
           savedSolutionDates={savedSolutionDates}
@@ -1417,7 +1496,7 @@ function GamePage() {
         />
       )}
 
-      {activeView === 'solutions' && (
+      {onboardingCompleted && activeView === 'solutions' && (
         <SolutionsPage
           badges={badges}
           savedSolutions={savedSolutions}
@@ -1427,7 +1506,7 @@ function GamePage() {
         />
       )}
 
-      {activeView === 'settings' && (
+      {onboardingCompleted && activeView === 'settings' && (
         <SettingsPanel
           themePreference={themePreference}
           difficultyMode={difficultyMode}
@@ -1435,13 +1514,13 @@ function GamePage() {
           onDifficultyModeChange={setDifficultyMode}
           onClearData={() => setClearDataConfirmVisible(true)}
           onShowHowToPlay={showHowToPlay}
-          onPractice={showPractice}
+          onPractice={enterPractice}
           onShowRules={showRules}
           onRestartTutorial={restartTutorial}
         />
       )}
 
-      {activeView === 'howToPlay' && (
+      {onboardingCompleted && activeView === 'howToPlay' && (
         <HowToPlayView
           initiallyShowDetail={showHowToPlayDetailFirst}
           onPlay={playPuzzle}
@@ -1450,14 +1529,15 @@ function GamePage() {
 
       {activeView === 'rules' && (
         <WrittenRulesView
-          onPlay={playPuzzle}
-          onHowToPlay={showHowToPlay}
+          onPlay={onboardingCompleted ? playPuzzle : enterPractice}
+          onHowToPlay={onboardingCompleted ? showHowToPlay : showRules}
+          showHowToPlay={onboardingCompleted}
         />
       )}
 
-      {guidedFirstWinRoute === GuidedFirstWinRoute.GuidedFirstWin && activeView === 'game' && (
+      {onboardingPhase === FirstRunOnboardingPhase.NotStarted && activeView === 'game' && (
         <GuidedTutorial
-          onStartGuidedCrack={startGuidedFirstWin}
+          onStartGuidedCrack={enterPractice}
           onReadRules={showRules}
         />
       )}
@@ -2182,9 +2262,11 @@ function HowToPlayView({
 function WrittenRulesView({
   onPlay,
   onHowToPlay,
+  showHowToPlay = true,
 }: {
   onPlay: () => void;
   onHowToPlay: () => void;
+  showHowToPlay?: boolean;
 }) {
   return (
     <section className="start-panel" aria-labelledby="written-rules-title">
@@ -2205,9 +2287,11 @@ function WrittenRulesView({
           <button className="start-action-button play-button" type="button" onClick={onPlay}>
             Back to Game
           </button>
-          <button className="start-action-button secondary" type="button" onClick={onHowToPlay}>
-            Cracked Instructions
-          </button>
+          {showHowToPlay && (
+            <button className="start-action-button secondary" type="button" onClick={onHowToPlay}>
+              Cracked Instructions
+            </button>
+          )}
         </div>
 
         <div className="written-rules-list">

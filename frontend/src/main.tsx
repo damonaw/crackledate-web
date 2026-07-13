@@ -17,7 +17,23 @@ import type { SelectorDirection } from './EquationSelectorControls';
 import { shouldSurfaceEvaluationError } from './editorFeedback';
 import { feedbackMessageAfterPuzzleLoad } from './feedbackRetention';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
-import { nextVisibleHintStep } from './hintFlow';
+import {
+  bindHintDataToIdentity,
+  editorStatesEqual,
+  hintClickAction,
+  hintDataForIdentity,
+  hintFailureFeedback,
+  nextVisibleHintStep,
+  type HintFlowData,
+  type IdentifiedHintData,
+} from './hintFlow';
+import { requestHint } from './hintRequest';
+import {
+  HintRequestCoordinator,
+  sameHintRequestIdentity,
+  type HintRequestCompletion,
+  type HintRequestIdentity,
+} from './hintRequestCoordinator';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
 import { practiceCompletionTarget } from './practiceCompletion';
@@ -389,11 +405,13 @@ function GamePage() {
   const [showHowToPlayDetailFirst, setShowHowToPlayDetailFirst] = useState(false);
   const [puzzle, setPuzzle] = useState<Puzzle | null>(null);
   const [editorState, setEditorState] = useState<EquationEditorState>(emptyEditorState);
+  const editorStateRef = useRef(editorState);
+  editorStateRef.current = editorState;
   const [evaluation, setEvaluation] = useState<EvaluationState>({ left: '?', middle: '', right: '?', equation: '' });
   const [shakeActive, setShakeActive] = useState(false);
   const [confettiActive, setConfettiActive] = useState(false);
   const [hintStep, setHintStep] = useState(0);
-  const [hintData, setHintData] = useState<{ solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string } | null>(null);
+  const [hintData, setHintData] = useState<IdentifiedHintData | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [isDeadEnd, setIsDeadEnd] = useState(false);
   const [shakeHintButton, setShakeHintButton] = useState(false);
@@ -416,6 +434,10 @@ function GamePage() {
   const onboardingTransitionRef = useRef(
     createOnboardingTransitionState(onboardingBootstrap.phase),
   );
+  const hintRequestCoordinatorRef = useRef<HintRequestCoordinator | null>(null);
+  const hintCompletionHandlerRef = useRef<(completion: HintRequestCompletion) => void>(
+    () => undefined,
+  );
   const [isAutocompleting, setIsAutocompleting] = useState(false);
   const [isSearchingAnother, setIsSearchingAnother] = useState(false);
   const todayId = useMemo(() => localDateIdentifier(new Date()), []);
@@ -435,6 +457,16 @@ function GamePage() {
 
   const { tokens, selection } = editorState;
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
+  const hintOpen = hintStep > 0;
+  const hintPuzzleDate = puzzle?.dateIdentifier ?? '';
+  const hintPlayMode = isPracticeMode ? 'practice' : 'daily';
+  const currentHintIdentity: HintRequestIdentity = {
+    activeView,
+    puzzleDate: hintPuzzleDate,
+    playMode: hintPlayMode,
+    equation,
+  };
+  const currentHintData = hintDataForIdentity(hintData, currentHintIdentity);
   const usedDigitIndices = useMemo(() => digitIndicesInUse(tokens), [tokens]);
   const unusedDigits = useMemo(() => {
     if (!puzzle) return [];
@@ -476,12 +508,12 @@ function GamePage() {
   const nextDigit = puzzle && nextDigitIndex !== null ? puzzle.digits[nextDigitIndex] : null;
   const isEasyMode = difficultyMode === 'easy';
   const isLHSCompleteForHint = useMemo(() => {
-    if (!hintData) return false;
+    if (!currentHintData) return false;
     const normalize = (str: string) => str.replace(/\s+/g, '').replace(/=+$/, '');
-    return normalize(equation).startsWith(normalize(hintData.step2));
-  }, [equation, hintData]);
+    return normalize(equation).startsWith(normalize(currentHintData.step2));
+  }, [currentHintData, equation]);
   const mappedGlowKey = useMemo(() => {
-    if (hintStep === 0 || !hintData) return null;
+    if (hintStep === 0 || !currentHintData) return null;
     if (isDeadEnd) {
       return 'Backspace';
     }
@@ -490,7 +522,7 @@ function GamePage() {
       return eq.replace(/×/g, '*').replace(/÷/g, '/').replace(/−/g, '-').replace(/\s/g, '');
     };
     const normEq = normalizeEquationStr(equation);
-    const normSol = normalizeEquationStr(hintData.solution);
+    const normSol = normalizeEquationStr(currentHintData.solution);
 
     if (normSol.startsWith(normEq)) {
       const nextChar = normSol[normEq.length];
@@ -512,8 +544,25 @@ function GamePage() {
       }
     }
     return null;
-  }, [hintStep, hintData, isDeadEnd, equation]);
+  }, [currentHintData, equation, hintStep, isDeadEnd]);
   const activeGlowKey = guidedPracticeGlowKey(guidedPracticeStep) ?? mappedGlowKey;
+
+  const cancelHintRequests = useCallback(() => {
+    hintRequestCoordinatorRef.current?.invalidate();
+    setHintLoading(false);
+    setHintData(null);
+    setIsDeadEnd(false);
+  }, []);
+
+  const navigateTo = useCallback((destination: ActiveView) => {
+    cancelHintRequests();
+    setActiveView(destination);
+  }, [cancelHintRequests]);
+
+  const selectPuzzleDate = useCallback((dateIdentifier: string) => {
+    cancelHintRequests();
+    setSelectedDate(dateIdentifier);
+  }, [cancelHintRequests]);
 
   const transitionOnboardingPhase = useCallback(
     (phase: FirstRunOnboardingPhase) => {
@@ -528,10 +577,10 @@ function GamePage() {
 
   const recoverFromOnboardingStorageFailure = useCallback(() => {
     transitionOnboardingPhase(FirstRunOnboardingPhase.NotStarted);
-    setActiveView('start');
+    navigateTo('start');
     setMessageTone('error');
     setMessage(onboardingStorageError);
-  }, [transitionOnboardingPhase]);
+  }, [navigateTo, transitionOnboardingPhase]);
 
   useEffect(() => {
     if (themePreference === 'system') {
@@ -564,39 +613,7 @@ function GamePage() {
   }, [equation, puzzle, isAutocompleting]);
 
   useEffect(() => {
-    if (isAutocompleting) return;
-    if (hintStep > 0 && puzzle) {
-      const controller = new AbortController();
-      const query = new URLSearchParams({
-        date: puzzle.dateIdentifier,
-        mode: 'classic',
-        prefix: equation,
-      });
-
-      fetch(`/api/hint?${query.toString()}`, { signal: controller.signal })
-        .then((res) => {
-          if (res.ok) {
-            setIsDeadEnd(false);
-            return res.json();
-          }
-          throw new Error('No solution found');
-        })
-        .then((data: any) => {
-          setHintData(data);
-        })
-        .catch((err) => {
-          if (err.name !== 'AbortError') {
-            setIsDeadEnd(true);
-          }
-        });
-
-      return () => controller.abort();
-    } else {
-      setIsDeadEnd(false);
-    }
-  }, [equation, hintStep, puzzle, isAutocompleting]);
-
-  useEffect(() => {
+    cancelHintRequests();
     let isCurrent = true;
     fetch(`/api/puzzle?date=${puzzleDateIdentifier}`)
       .then((response) => response.json() as Promise<Puzzle>)
@@ -634,14 +651,19 @@ function GamePage() {
         autocompleteIntervalRef.current = null;
       }
     };
-  }, [puzzleDateIdentifier]);
+  }, [cancelHintRequests, puzzleDateIdentifier]);
 
   useEffect(() => {
     if (isEquationCorrect) {
+      cancelHintRequests();
       setHintStep(0);
       setHintData(null);
     }
-  }, [isEquationCorrect]);
+  }, [cancelHintRequests, isEquationCorrect]);
+
+  useEffect(() => {
+    return () => cancelHintRequests();
+  }, [cancelHintRequests]);
 
   useEffect(() => {
     return () => {
@@ -694,8 +716,8 @@ function GamePage() {
   }, [dailyDashboardSummary]);
 
   const handleUnlockTomorrow = useCallback(() => {
-    setSelectedDate(tomorrowId);
-  }, [tomorrowId]);
+    selectPuzzleDate(tomorrowId);
+  }, [selectPuzzleDate, tomorrowId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -722,21 +744,32 @@ function GamePage() {
         selection: EditorSelection,
       ) => { tokens: EquationToken[]; selection: EditorSelection },
     ) => {
+      const currentEditorState = editorStateRef.current;
+      const editedEditorState = edit(
+        currentEditorState.tokens,
+        currentEditorState.selection,
+      );
+      const nextEditorState = {
+        tokens: editedEditorState.tokens,
+        selection: normalizeEditorSelection(
+          editedEditorState.selection,
+          editedEditorState.tokens.length,
+        ),
+      };
+
+      if (editorStatesEqual(currentEditorState, nextEditorState)) return;
+
+      cancelHintRequests();
       if (autocompleteIntervalRef.current) {
         clearInterval(autocompleteIntervalRef.current);
         autocompleteIntervalRef.current = null;
         setIsAutocompleting(false);
       }
-      setEditorState((current) => {
-        const next = edit(current.tokens, current.selection);
-        return {
-          tokens: next.tokens,
-          selection: normalizeEditorSelection(next.selection, next.tokens.length),
-        };
-      });
+      editorStateRef.current = nextEditorState;
+      setEditorState(nextEditorState);
       setMessage('');
     },
-    [],
+    [cancelHintRequests],
   );
 
   const insertText = useCallback(
@@ -817,6 +850,7 @@ function GamePage() {
   }, [applyEditorEdit]);
 
   const clear = useCallback(() => {
+    cancelHintRequests();
     if (autocompleteIntervalRef.current) {
       clearInterval(autocompleteIntervalRef.current);
       autocompleteIntervalRef.current = null;
@@ -825,7 +859,7 @@ function GamePage() {
     setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
     setMessage('');
     setStartTime(null);
-  }, []);
+  }, [cancelHintRequests]);
 
   const enterPractice = useCallback(() => {
     const entry = practiceEntryForPhase(onboardingPhase);
@@ -837,9 +871,9 @@ function GamePage() {
     }
     clear();
     transitionOnboardingPhase(entry.phase);
-    setActiveView(entry.destination);
+    navigateTo(entry.destination);
     setMessage('');
-  }, [clear, onboardingPhase, transitionOnboardingPhase]);
+  }, [clear, navigateTo, onboardingPhase, transitionOnboardingPhase]);
 
   const moveSelectorFromControls = useCallback((direction: SelectorDirection) => {
     selectorMoveRef.current?.(direction);
@@ -896,8 +930,8 @@ function GamePage() {
       preserveFeedbackOnNextPuzzleLoadRef.current = true;
       const destination = practiceCompletionTarget(todayId);
       transitionOnboardingPhase(nextOnboardingPhase);
-      setSelectedDate(destination.selectedDate);
-      setActiveView(destination.activeView);
+      selectPuzzleDate(destination.selectedDate);
+      navigateTo(destination.activeView);
       return;
     }
 
@@ -941,10 +975,10 @@ function GamePage() {
     setMessage(`Solved. Both sides equal ${solution.value}.`);
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, onboardingPhase, puzzle, startTime, todayId, todaySolutions, transitionOnboardingPhase]);
+  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, navigateTo, onboardingPhase, puzzle, selectPuzzleDate, startTime, todayId, todaySolutions, transitionOnboardingPhase]);
 
   const applyHintStep = useCallback(
-    (step: number, data: { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string }) => {
+    (step: number, data: HintFlowData) => {
       if (!puzzle) return;
 
       if (step === 1) {
@@ -973,6 +1007,7 @@ function GamePage() {
           return insertTokensAtSelection(currentTokens, currentSelection, hintTokens);
         });
       } else if (step === 3) {
+        cancelHintRequests();
         if (autocompleteIntervalRef.current) {
           clearInterval(autocompleteIntervalRef.current);
         }
@@ -1023,74 +1058,106 @@ function GamePage() {
         }, 300);
       }
     },
-    [puzzle, tokens, applyEditorEdit],
+    [applyEditorEdit, cancelHintRequests, puzzle, tokens],
   );
 
-  const fetchHint = useCallback(async () => {
-    if (!puzzle) return;
-    setHintLoading(true);
-    try {
-      const query = new URLSearchParams({
-        date: puzzle.dateIdentifier,
-        mode: 'classic',
-        prefix: equation,
-      });
-      const response = await fetch(`/api/hint?${query.toString()}`);
-      if (!response.ok) {
-        throw new Error('No solution found');
-      }
-      const data = (await response.json()) as { solution: string; step1: string; step2: string; step3: string; balancingHint?: string; mathTip?: string };
-      setHintData(data);
+  hintCompletionHandlerRef.current = ({ identity, result, trigger }) => {
+    if (!sameHintRequestIdentity(identity, currentHintIdentity)) return;
+
+    if (result.kind === 'success') {
+      setHintData(bindHintDataToIdentity(identity, result.hint));
+      setIsDeadEnd(false);
+      setMessage('');
+      if (trigger !== 'explicit') return;
+
       const initialStep = nextVisibleHintStep({
         requestedStep: 1,
         currentHintStep: 0,
       });
-      
       setHintStep(initialStep);
-      setIsDeadEnd(false);
       setUsedHint(true);
-      applyHintStep(initialStep, data);
-    } catch {
-      setMessageTone('error');
-      if (equation.trim().length > 0) {
-        setMessage('Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.');
-        setIsDeadEnd(true);
-      } else {
-        setMessage('Could not find any solutions for this puzzle.');
-      }
-    } finally {
-      setHintLoading(false);
+      applyHintStep(initialStep, result.hint);
+      return;
     }
-  }, [puzzle, equation, applyHintStep]);
+
+    const feedback = hintFailureFeedback(result.kind, identity.equation);
+    if (!feedback) return;
+    setHintData(null);
+    setMessageTone('error');
+    setMessage(feedback.message);
+    setIsDeadEnd(feedback.isDeadEnd);
+  };
+
+  if (!hintRequestCoordinatorRef.current) {
+    hintRequestCoordinatorRef.current = new HintRequestCoordinator({
+      request: (identity, signal) => requestHint({
+        date: identity.puzzleDate,
+        mode: 'classic',
+        prefix: identity.equation,
+      }, signal),
+      onStart: () => setHintLoading(true),
+      onResult: (completion) => hintCompletionHandlerRef.current(completion),
+      onFinish: () => setHintLoading(false),
+    });
+  }
 
   const handleHintClick = useCallback(() => {
-    if (hintStep === 0) {
-      void fetchHint();
-    } else {
-      let nextStep = Math.min(hintStep + 1, 3);
-      if (hintData) {
-        nextStep = nextVisibleHintStep({
-          requestedStep: nextStep,
-          currentHintStep: hintStep,
-        });
-      }
-
-      if (nextStep === 3) {
-        if (isDeadEnd || !hintData || !hintData.solution) {
-          return;
-        }
-        setHintStep(3);
-        if (hintData) {
-          applyHintStep(3, hintData);
-        }
-      } else {
-        setHintStep(nextStep);
-        if (hintData) {
-          applyHintStep(nextStep, hintData);
-        }
-      }
+    if (hintClickAction({ hintOpen, currentHintData }) === 'request') {
+      setHintData(null);
+      setIsDeadEnd(false);
+      if (!hintPuzzleDate) return;
+      hintRequestCoordinatorRef.current?.requestExplicit({
+        activeView,
+        puzzleDate: hintPuzzleDate,
+        playMode: hintPlayMode,
+        equation,
+      });
+      return;
     }
-  }, [hintStep, fetchHint, hintData, applyHintStep, isDeadEnd]);
+
+    if (!currentHintData) return;
+    const nextStep = nextVisibleHintStep({
+      requestedStep: Math.min(hintStep + 1, 3),
+      currentHintStep: hintStep,
+    });
+
+    if (nextStep === 3) {
+      if (isDeadEnd || !currentHintData.solution) {
+        return;
+      }
+      setHintStep(3);
+      applyHintStep(3, currentHintData);
+      return;
+    }
+
+    setHintStep(nextStep);
+    applyHintStep(nextStep, currentHintData);
+  }, [activeView, applyHintStep, currentHintData, equation, hintOpen, hintPlayMode, hintPuzzleDate, hintStep, isDeadEnd]);
+
+  useEffect(() => {
+    if (
+      !hintOpen ||
+      isAutocompleting ||
+      !hintPuzzleDate ||
+      (activeView !== 'game' && activeView !== 'practice')
+    ) {
+      return;
+    }
+
+    hintRequestCoordinatorRef.current?.requestReactive({
+      activeView,
+      puzzleDate: hintPuzzleDate,
+      playMode: hintPlayMode,
+      equation,
+    });
+  }, [activeView, equation, hintOpen, hintPlayMode, hintPuzzleDate, isAutocompleting]);
+
+  const closeHint = useCallback(() => {
+    cancelHintRequests();
+    setHintStep(0);
+    setHintData(null);
+    setIsDeadEnd(false);
+  }, [cancelHintRequests]);
 
   const shareSolution = useCallback((sol: SavedSolution, dateId: string) => {
     const text = savedSolutionSharePayload(dateDisplayString(dateId), sol);
@@ -1124,30 +1191,30 @@ function GamePage() {
       enterPractice();
       return;
     }
-    setActiveView(destination === 'guided_first_win' ? 'game' : destination);
-  }, [enterPractice, onboardingPhase]);
+    navigateTo(destination === 'guided_first_win' ? 'game' : destination);
+  }, [enterPractice, navigateTo, onboardingPhase]);
 
   const showRules = useCallback(() => {
-    setActiveView('rules');
-  }, []);
+    navigateTo('rules');
+  }, [navigateTo]);
 
   const showSolutions = useCallback(() => {
-    setActiveView('solutions');
-  }, []);
+    navigateTo('solutions');
+  }, [navigateTo]);
 
   const showSettingsPage = useCallback(() => {
-    setActiveView('settings');
-  }, []);
+    navigateTo('settings');
+  }, [navigateTo]);
 
   const showHowToPlay = useCallback(() => {
     setShowHowToPlayDetailFirst(false);
-    setActiveView('howToPlay');
-  }, []);
+    navigateTo('howToPlay');
+  }, [navigateTo]);
 
   const showDetailedHowToPlay = useCallback(() => {
     setShowHowToPlayDetailFirst(true);
-    setActiveView('howToPlay');
-  }, []);
+    navigateTo('howToPlay');
+  }, [navigateTo]);
 
   const playFromRules = useCallback(() => {
     const destination = rulesPlayDestinationForPhase(onboardingPhase);
@@ -1155,8 +1222,8 @@ function GamePage() {
       enterPractice();
       return;
     }
-    setActiveView(destination);
-  }, [enterPractice, onboardingPhase]);
+    navigateTo(destination);
+  }, [enterPractice, navigateTo, onboardingPhase]);
 
   const restartTutorial = useCallback(() => {
     if (!clearOnboardingStorage()) {
@@ -1166,10 +1233,11 @@ function GamePage() {
     }
     clear();
     transitionOnboardingPhase(resetOnboardingPhase());
-    setActiveView('start');
-  }, [clear, transitionOnboardingPhase]);
+    navigateTo('start');
+  }, [clear, navigateTo, transitionOnboardingPhase]);
 
   const clearBrowserData = useCallback(() => {
+    cancelHintRequests();
     try {
       localStorage.removeItem(savedSolutionsStorageKey);
       localStorage.removeItem(themePreferenceStorageKey);
@@ -1194,23 +1262,24 @@ function GamePage() {
     setEditorState(emptyEditorState());
     setEvaluation({ left: '?', right: '?', equation: '' });
     setStartTime(null);
-    setActiveView('start');
+    navigateTo('start');
     setClearDataConfirmVisible(false);
     setMessageTone('success');
     setMessage('Local data cleared.');
-  }, [transitionOnboardingPhase]);
+  }, [cancelHintRequests, navigateTo, transitionOnboardingPhase]);
 
   const showCalendar = useCallback(() => {
-    setActiveView('calendar');
-  }, []);
+    navigateTo('calendar');
+  }, [navigateTo]);
 
   const showGame = useCallback(() => {
+    cancelHintRequests();
     setActiveView(homeDestinationForPhase(onboardingPhase));
-  }, [onboardingPhase]);
+  }, [cancelHintRequests, onboardingPhase]);
 
   const chooseCalendarDate = useCallback((dateIdentifier: string) => {
-    setSelectedDate(dateIdentifier);
-  }, []);
+    selectPuzzleDate(dateIdentifier);
+  }, [selectPuzzleDate]);
 
   const playCalendarDate = useCallback(() => {
     const decision = dateAccessDecisionFor({
@@ -1219,13 +1288,13 @@ function GamePage() {
     });
 
     if (decision.kind === 'open') {
-      setActiveView('game');
+      navigateTo('game');
     }
-  }, [selectedDate]);
+  }, [navigateTo, selectedDate]);
 
   const chooseToday = useCallback(() => {
-    setSelectedDate(localDateIdentifier(new Date()));
-  }, []);
+    selectPuzzleDate(localDateIdentifier(new Date()));
+  }, [selectPuzzleDate]);
 
   const showEvaluationError = shouldSurfaceEvaluationError(
     tokens,
@@ -1390,61 +1459,70 @@ function GamePage() {
                   </div>
                 )}
 
-                {!hintLoading && hintStep > 0 && hintData && (
+                {!hintLoading && hintOpen && isDeadEnd && (
                   <div className="hint-panel" aria-live="polite">
                     <div className="hint-header">
                       <strong>Hint (Step {hintStep}/3)</strong>
                       <button
                         type="button"
                         className="close-hint"
-                        onClick={() => {
-                          setHintStep(0);
-                          setHintData(null);
-                        }}
+                        onClick={closeHint}
                       >
                         ×
                       </button>
                     </div>
                     <div className="hint-body">
-                      {isDeadEnd ? (
-                        isEquationCorrect ? (
-                          <p className="dead-end-message success-message">
-                            🎉 Equation is correct! Click Submit to save your solution.
-                          </p>
-                        ) : (
-                          <p className="dead-end-message">
-                            ⚠️ Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.
-                          </p>
-                        )
+                      {isEquationCorrect ? (
+                        <p className="dead-end-message success-message">
+                          🎉 Equation is correct! Click Submit to save your solution.
+                        </p>
                       ) : (
-                        <>
-                          {hintStep === 1 && (
-                            <p>
-                              {isLHSCompleteForHint && hintData.balancingHint ? (
-                                <>{hintData.balancingHint}</>
-                              ) : (
-                                <>Target value of all parts is: <strong>{hintData.step1}</strong></>
-                              )}
-                            </p>
-                          )}
-                          {hintStep === 2 && (
-                            <p>
-                              {isLHSCompleteForHint && hintData.balancingHint ? (
-                                <>{hintData.mathTip || "Tip: remember that x^0 = 1"}</>
-                              ) : (
-                                <>Left side could be: <code>{hintData.step2}</code></>
-                              )}
-                            </p>
-                          )}
-                          {hintStep === 3 && (
-                            <p>
-                              A possible solution: <code>{hintData.step3}</code>
-                            </p>
-                          )}
-                        </>
+                        <p className="dead-end-message">
+                          ⚠️ Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.
+                        </p>
                       )}
                     </div>
-                    {hintStep < 3 && !isDeadEnd && (
+                  </div>
+                )}
+
+                {!hintLoading && hintOpen && !isDeadEnd && currentHintData && (
+                  <div className="hint-panel" aria-live="polite">
+                    <div className="hint-header">
+                      <strong>Hint (Step {hintStep}/3)</strong>
+                      <button
+                        type="button"
+                        className="close-hint"
+                        onClick={closeHint}
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="hint-body">
+                      {hintStep === 1 && (
+                        <p>
+                          {isLHSCompleteForHint && currentHintData.balancingHint ? (
+                            <>{currentHintData.balancingHint}</>
+                          ) : (
+                            <>Target value of all parts is: <strong>{currentHintData.step1}</strong></>
+                          )}
+                        </p>
+                      )}
+                      {hintStep === 2 && (
+                        <p>
+                          {isLHSCompleteForHint && currentHintData.balancingHint ? (
+                            <>{currentHintData.mathTip || "Tip: remember that x^0 = 1"}</>
+                          ) : (
+                            <>Left side could be: <code>{currentHintData.step2}</code></>
+                          )}
+                        </p>
+                      )}
+                      {hintStep === 3 && (
+                        <p>
+                          A possible solution: <code>{currentHintData.step3}</code>
+                        </p>
+                      )}
+                    </div>
+                    {hintStep < 3 && (
                       <button type="button" className="next-hint-button" onClick={handleHintClick}>
                         Next Hint
                       </button>

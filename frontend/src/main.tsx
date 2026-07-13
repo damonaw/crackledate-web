@@ -1348,7 +1348,7 @@ function GamePage() {
                   }
                   onBackspace={backspace}
                   onInsertValue={insertOperator}
-                  onShowDetailedInstructions={showDetailedHowToPlay}
+                  onShowDetailedInstructions={onboardingCompleted ? showDetailedHowToPlay : showRules}
                   onStartPractice={enterPractice}
                   selectorMoveRef={selectorMoveRef}
                   nextDigit={nextDigit}
@@ -1529,7 +1529,7 @@ function GamePage() {
 
       {activeView === 'rules' && (
         <WrittenRulesView
-          onPlay={onboardingCompleted ? playPuzzle : enterPractice}
+          onPlay={showGame}
           onHowToPlay={onboardingCompleted ? showHowToPlay : showRules}
           showHowToPlay={onboardingCompleted}
         />

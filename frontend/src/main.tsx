@@ -34,6 +34,13 @@ import {
   type HintRequestCompletion,
   type HintRequestIdentity,
 } from './hintRequestCoordinator';
+import { requestValidation } from './validationRequest';
+import {
+  ValidationRequestCoordinator,
+  sameValidationRequestIdentity,
+  type ValidationRequestCompletion,
+  type ValidationRequestIdentity,
+} from './validationRequestCoordinator';
 import { equationToLatex, equationTokensToLatex, type EquationLatexToken } from './mathLatexFormatter';
 import { statusToastDismissMs } from './notificationTiming';
 import { practiceCompletionTarget } from './practiceCompletion';
@@ -112,13 +119,6 @@ type EvaluationResponse = {
 
 type EvaluationState = EvaluationResponse & {
   equation: string;
-};
-
-type ValidationResponse = {
-  valid: boolean;
-  leftValue?: string;
-  rightValue?: string;
-  errorMessage?: string;
 };
 
 type SavedSolution = {
@@ -413,6 +413,7 @@ function GamePage() {
   const [hintStep, setHintStep] = useState(0);
   const [hintData, setHintData] = useState<IdentifiedHintData | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
+  const [validationLoading, setValidationLoading] = useState(false);
   const [isDeadEnd, setIsDeadEnd] = useState(false);
   const [shakeHintButton, setShakeHintButton] = useState(false);
   const [usedHint, setUsedHint] = useState(false);
@@ -438,6 +439,11 @@ function GamePage() {
   const hintCompletionHandlerRef = useRef<(completion: HintRequestCompletion) => void>(
     () => undefined,
   );
+  const validationRequestCoordinatorRef = useRef<ValidationRequestCoordinator | null>(null);
+  const validationCompletionHandlerRef = useRef<(completion: ValidationRequestCompletion) => void>(
+    () => undefined,
+  );
+  const validationIdentityRef = useRef<ValidationRequestIdentity | null>(null);
   const [isAutocompleting, setIsAutocompleting] = useState(false);
   const [isSearchingAnother, setIsSearchingAnother] = useState(false);
   const todayId = useMemo(() => localDateIdentifier(new Date()), []);
@@ -458,7 +464,8 @@ function GamePage() {
   const { tokens, selection } = editorState;
   const equation = useMemo(() => tokensToEquation(tokens), [tokens]);
   const hintOpen = hintStep > 0;
-  const hintPuzzleDate = puzzle?.dateIdentifier ?? '';
+  const loadedPuzzleDate = puzzle?.dateIdentifier ?? '';
+  const hintPuzzleDate = loadedPuzzleDate;
   const hintPlayMode = isPracticeMode ? 'practice' : 'daily';
   const currentHintIdentity: HintRequestIdentity = {
     activeView,
@@ -467,6 +474,15 @@ function GamePage() {
     equation,
   };
   const currentHintData = hintDataForIdentity(hintData, currentHintIdentity);
+  const currentValidationIdentity: ValidationRequestIdentity = {
+    activeView,
+    puzzleDate: puzzleDateIdentifier,
+    playMode: isPracticeMode ? 'practice' : 'daily',
+    equation: equation.trim(),
+    onboardingPhase,
+    onboardingGeneration: onboardingTransitionRef.current.revision,
+  };
+  validationIdentityRef.current = currentValidationIdentity;
   const usedDigitIndices = useMemo(() => digitIndicesInUse(tokens), [tokens]);
   const unusedDigits = useMemo(() => {
     if (!puzzle) return [];
@@ -554,25 +570,56 @@ function GamePage() {
     setIsDeadEnd(false);
   }, []);
 
+  const cancelValidationRequests = useCallback(() => {
+    validationRequestCoordinatorRef.current?.invalidate();
+    setValidationLoading(false);
+  }, []);
+
   const navigateTo = useCallback((destination: ActiveView) => {
     cancelHintRequests();
+    cancelValidationRequests();
+    if (validationIdentityRef.current) {
+      validationIdentityRef.current = {
+        ...validationIdentityRef.current,
+        activeView: destination,
+        playMode: destination === 'practice' ? 'practice' : 'daily',
+        ...(destination === 'practice'
+          ? { puzzleDate: practiceRound.dateIdentifier }
+          : {}),
+      };
+    }
     setActiveView(destination);
-  }, [cancelHintRequests]);
+  }, [cancelHintRequests, cancelValidationRequests]);
 
   const selectPuzzleDate = useCallback((dateIdentifier: string) => {
     cancelHintRequests();
+    cancelValidationRequests();
+    if (validationIdentityRef.current) {
+      validationIdentityRef.current = {
+        ...validationIdentityRef.current,
+        puzzleDate: dateIdentifier,
+      };
+    }
     setSelectedDate(dateIdentifier);
-  }, [cancelHintRequests]);
+  }, [cancelHintRequests, cancelValidationRequests]);
 
   const transitionOnboardingPhase = useCallback(
     (phase: FirstRunOnboardingPhase) => {
+      cancelValidationRequests();
       onboardingTransitionRef.current = advanceOnboardingTransition(
         onboardingTransitionRef.current,
         phase,
       );
+      if (validationIdentityRef.current) {
+        validationIdentityRef.current = {
+          ...validationIdentityRef.current,
+          onboardingPhase: phase,
+          onboardingGeneration: onboardingTransitionRef.current.revision,
+        };
+      }
       setOnboardingPhase(phase);
     },
-    [],
+    [cancelValidationRequests],
   );
 
   const recoverFromOnboardingStorageFailure = useCallback(() => {
@@ -614,6 +661,7 @@ function GamePage() {
 
   useEffect(() => {
     cancelHintRequests();
+    cancelValidationRequests();
     let isCurrent = true;
     fetch(`/api/puzzle?date=${puzzleDateIdentifier}`)
       .then((response) => response.json() as Promise<Puzzle>)
@@ -651,7 +699,7 @@ function GamePage() {
         autocompleteIntervalRef.current = null;
       }
     };
-  }, [cancelHintRequests, puzzleDateIdentifier]);
+  }, [cancelHintRequests, cancelValidationRequests, puzzleDateIdentifier]);
 
   useEffect(() => {
     if (isEquationCorrect) {
@@ -664,6 +712,16 @@ function GamePage() {
   useEffect(() => {
     return () => cancelHintRequests();
   }, [cancelHintRequests]);
+
+  useEffect(() => {
+    return () => cancelValidationRequests();
+  }, [
+    activeView,
+    cancelValidationRequests,
+    equation,
+    onboardingPhase,
+    puzzleDateIdentifier,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -760,6 +818,17 @@ function GamePage() {
       if (editorStatesEqual(currentEditorState, nextEditorState)) return;
 
       cancelHintRequests();
+      const currentEquation = tokensToEquation(currentEditorState.tokens).trim();
+      const nextEquation = tokensToEquation(nextEditorState.tokens).trim();
+      if (currentEquation !== nextEquation) {
+        cancelValidationRequests();
+        if (validationIdentityRef.current) {
+          validationIdentityRef.current = {
+            ...validationIdentityRef.current,
+            equation: nextEquation,
+          };
+        }
+      }
       if (autocompleteIntervalRef.current) {
         clearInterval(autocompleteIntervalRef.current);
         autocompleteIntervalRef.current = null;
@@ -769,7 +838,7 @@ function GamePage() {
       setEditorState(nextEditorState);
       setMessage('');
     },
-    [cancelHintRequests],
+    [cancelHintRequests, cancelValidationRequests],
   );
 
   const insertText = useCallback(
@@ -851,15 +920,22 @@ function GamePage() {
 
   const clear = useCallback(() => {
     cancelHintRequests();
+    cancelValidationRequests();
     if (autocompleteIntervalRef.current) {
       clearInterval(autocompleteIntervalRef.current);
       autocompleteIntervalRef.current = null;
     }
     setEditorState(emptyEditorState());
+    if (validationIdentityRef.current) {
+      validationIdentityRef.current = {
+        ...validationIdentityRef.current,
+        equation: '',
+      };
+    }
     setEvaluation({ left: '?', middle: '', right: '?', equation: '' });
     setMessage('');
     setStartTime(null);
-  }, [cancelHintRequests]);
+  }, [cancelHintRequests, cancelValidationRequests]);
 
   const enterPractice = useCallback(() => {
     const entry = practiceEntryForPhase(onboardingPhase);
@@ -879,28 +955,20 @@ function GamePage() {
     selectorMoveRef.current?.(direction);
   }, []);
 
-  const submit = useCallback(async () => {
-    if (!puzzle) return;
-    const practiceValidationTicket = isPracticeMode
-      ? capturePracticeValidation(onboardingTransitionRef.current)
-      : null;
-    const normalizedEquation = equation.trim();
-    if (!isPracticeMode && todaySolutions.some((solution) => solution.equation === normalizedEquation)) {
-      setMessageTone('error');
-      setMessage('Solution already saved for this date.');
+  validationCompletionHandlerRef.current = ({ identity, result }) => {
+    const currentIdentity = validationIdentityRef.current;
+    if (!currentIdentity ||
+        !sameValidationRequestIdentity(identity, currentIdentity) ||
+        loadedPuzzleDate !== identity.puzzleDate) {
       return;
     }
 
-    const response = await fetch('/api/validate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        date: puzzle.dateIdentifier,
-        equation: normalizedEquation,
-        mode: 'classic',
-      }),
-    });
-    const result = (await response.json()) as ValidationResponse;
+    const practiceValidationTicket = identity.playMode === 'practice'
+      ? capturePracticeValidation({
+          phase: identity.onboardingPhase as FirstRunOnboardingPhase,
+          revision: identity.onboardingGeneration,
+        })
+      : null;
     if (practiceValidationTicket &&
         !canApplyPracticeValidation(
           practiceValidationTicket,
@@ -908,13 +976,32 @@ function GamePage() {
         )) {
       return;
     }
-    if (!result.valid) {
+
+    if (result.kind === 'invalid_equation') {
       setMessageTone('error');
       setMessage(result.errorMessage ?? 'That equation is not valid.');
       setShakeActive(true);
       setTimeout(() => setShakeActive(false), 500);
       return;
     }
+    if (result.kind === 'bad_request') {
+      setMessageTone('error');
+      setMessage('The check request was not accepted. Please review the equation and puzzle date, then try again.');
+      setShakeActive(true);
+      setTimeout(() => setShakeActive(false), 500);
+      return;
+    }
+    if (result.kind === 'rate_limited') {
+      setMessageTone('error');
+      setMessage('Too many checks at once. Please wait a moment and try again.');
+      return;
+    }
+    if (result.kind === 'temporary') {
+      setMessageTone('error');
+      setMessage('Could not check this equation right now. Your equation is still here—try again.');
+      return;
+    }
+    if (result.kind !== 'valid') return;
 
     if (isPracticeMode) {
       const nextOnboardingPhase = phaseAfterPracticeSuccess(onboardingPhase);
@@ -937,9 +1024,9 @@ function GamePage() {
 
     const seconds = startTime ? Math.max(1, Math.round((Date.now() - startTime) / 1000)) : 0;
     const solvedTodayIdentifier = localDateIdentifier(new Date());
-    const solvedOnOtherDay = solvedTodayIdentifier !== puzzle.dateIdentifier;
+    const solvedOnOtherDay = solvedTodayIdentifier !== identity.puzzleDate;
     const solution: SavedSolution = {
-      equation: normalizedEquation,
+      equation: identity.equation,
       timestamp: new Date().toISOString(),
       seconds,
       value: result.leftValue ?? evaluation.left,
@@ -950,8 +1037,8 @@ function GamePage() {
     const currentSavedSolutions = savedSolutionsRef.current;
     const nextSavedSolutions = {
       ...currentSavedSolutions,
-      [puzzle.dateIdentifier]: [
-        ...(currentSavedSolutions[puzzle.dateIdentifier] ?? []),
+      [identity.puzzleDate]: [
+        ...(currentSavedSolutions[identity.puzzleDate] ?? []),
         solution,
       ],
     };
@@ -963,8 +1050,8 @@ function GamePage() {
     savedSolutionsRef.current = nextSavedSolutions;
     setSavedSolutions(nextSavedSolutions);
     void submitSolutionRecord({
-      date: puzzle.dateIdentifier,
-      equation: normalizedEquation,
+      date: identity.puzzleDate,
+      equation: identity.equation,
       seconds,
       difficulty: difficultyMode,
       platform: 'web',
@@ -975,7 +1062,34 @@ function GamePage() {
     setMessage(`Solved. Both sides equal ${solution.value}.`);
     setConfettiActive(true);
     setTimeout(() => setConfettiActive(false), 4000);
-  }, [clear, difficultyMode, equation, evaluation.left, isPracticeMode, navigateTo, onboardingPhase, puzzle, selectPuzzleDate, startTime, todayId, todaySolutions, transitionOnboardingPhase]);
+  };
+
+  if (!validationRequestCoordinatorRef.current) {
+    validationRequestCoordinatorRef.current = new ValidationRequestCoordinator({
+      request: (identity, signal) => requestValidation({
+        date: identity.puzzleDate,
+        equation: identity.equation,
+      }, signal),
+      onStart: () => setValidationLoading(true),
+      onResult: (completion) => validationCompletionHandlerRef.current(completion),
+      onFinish: () => setValidationLoading(false),
+    });
+  }
+
+  const submit = useCallback(() => {
+    const identity = validationIdentityRef.current;
+    if (!identity || loadedPuzzleDate !== identity.puzzleDate) return;
+    if (identity.playMode === 'daily' &&
+        (savedSolutionsRef.current[identity.puzzleDate] ?? [])
+          .some((solution) => solution.equation === identity.equation)) {
+      setMessageTone('error');
+      setMessage('Solution already saved for this date.');
+      return;
+    }
+
+    setMessage('');
+    validationRequestCoordinatorRef.current?.submit(identity);
+  }, [loadedPuzzleDate]);
 
   const applyHintStep = useCallback(
     (step: number, data: HintFlowData) => {
@@ -1008,6 +1122,7 @@ function GamePage() {
         });
       } else if (step === 3) {
         cancelHintRequests();
+        cancelValidationRequests();
         if (autocompleteIntervalRef.current) {
           clearInterval(autocompleteIntervalRef.current);
         }
@@ -1026,11 +1141,18 @@ function GamePage() {
         const startIdx = isMatchingPrefix ? currentLength : 0;
         let index = startIdx;
         const initialTokens = isMatchingPrefix ? [...tokens] : [];
-
-        setEditorState({
+        const initialEditorState: EquationEditorState = {
           tokens: initialTokens,
           selection: { kind: 'slot', index: initialTokens.length },
-        });
+        };
+        editorStateRef.current = initialEditorState;
+        if (validationIdentityRef.current) {
+          validationIdentityRef.current = {
+            ...validationIdentityRef.current,
+            equation: tokensToEquation(initialTokens).trim(),
+          };
+        }
+        setEditorState(initialEditorState);
 
         autocompleteIntervalRef.current = setInterval(() => {
           if (index >= targetTokens.length) {
@@ -1046,19 +1168,27 @@ function GamePage() {
 
           const tokenToAdd = targetTokens[index];
           if (tokenToAdd) {
-            setEditorState((prev) => {
-              const nextTokens = [...prev.tokens, tokenToAdd];
-              return {
-                tokens: nextTokens,
-                selection: { kind: 'slot', index: nextTokens.length },
+            cancelValidationRequests();
+            const currentEditorState = editorStateRef.current;
+            const nextTokens = [...currentEditorState.tokens, tokenToAdd];
+            const nextEditorState: EquationEditorState = {
+              tokens: nextTokens,
+              selection: { kind: 'slot', index: nextTokens.length },
+            };
+            editorStateRef.current = nextEditorState;
+            if (validationIdentityRef.current) {
+              validationIdentityRef.current = {
+                ...validationIdentityRef.current,
+                equation: tokensToEquation(nextTokens).trim(),
               };
-            });
+            }
+            setEditorState(nextEditorState);
           }
           index++;
         }, 300);
       }
     },
-    [applyEditorEdit, cancelHintRequests, puzzle, tokens],
+    [applyEditorEdit, cancelHintRequests, cancelValidationRequests, puzzle, tokens],
   );
 
   hintCompletionHandlerRef.current = ({ identity, result, trigger }) => {
@@ -1238,6 +1368,7 @@ function GamePage() {
 
   const clearBrowserData = useCallback(() => {
     cancelHintRequests();
+    cancelValidationRequests();
     try {
       localStorage.removeItem(savedSolutionsStorageKey);
       localStorage.removeItem(themePreferenceStorageKey);
@@ -1266,7 +1397,7 @@ function GamePage() {
     setClearDataConfirmVisible(false);
     setMessageTone('success');
     setMessage('Local data cleared.');
-  }, [cancelHintRequests, navigateTo, transitionOnboardingPhase]);
+  }, [cancelHintRequests, cancelValidationRequests, navigateTo, transitionOnboardingPhase]);
 
   const showCalendar = useCallback(() => {
     navigateTo('calendar');
@@ -1274,8 +1405,9 @@ function GamePage() {
 
   const showGame = useCallback(() => {
     cancelHintRequests();
+    cancelValidationRequests();
     setActiveView(homeDestinationForPhase(onboardingPhase));
-  }, [cancelHintRequests, onboardingPhase]);
+  }, [cancelHintRequests, cancelValidationRequests, onboardingPhase]);
 
   const chooseCalendarDate = useCallback((dateIdentifier: string) => {
     selectPuzzleDate(dateIdentifier);
@@ -1562,7 +1694,13 @@ function GamePage() {
                   <button className={`wide ${activeGlowKey === '=' ? 'glow' : ''}`.trim()} type="button" onClick={() => insertText('=')}>
                     =
                   </button>
-                  <button className={`submit ${activeGlowKey === 'Submit' ? 'glow' : ''}`.trim()} type="button" onClick={submit}>
+                  <button
+                    className={`submit ${activeGlowKey === 'Submit' ? 'glow' : ''}`.trim()}
+                    type="button"
+                    onClick={submit}
+                    disabled={validationLoading}
+                    aria-busy={validationLoading}
+                  >
                     Submit
                   </button>
                 </div>

@@ -71,6 +71,49 @@ describe('first-run onboarding wiring', () => {
     expect(source).toContain('persistWebPreference(');
     expect(source).toContain('recoverFromOnboardingStorageFailure');
     expect(source).toContain('canApplyPracticeValidation(');
+    expect(source).toContain('validationRequestCoordinatorRef');
+    expect(source).toContain('validationCompletionHandlerRef');
+    expect(source).toContain('onboardingGeneration: onboardingTransitionRef.current.revision');
+    expect(source).toContain('sameValidationRequestIdentity(');
+  });
+
+  test('invalidates validation across navigation, dates, onboarding, reset, Clear Data, and unmount', () => {
+    const cancelDefinition = source.indexOf('const cancelValidationRequests = useCallback(');
+    const navigation = source.indexOf('const navigateTo = useCallback(', cancelDefinition);
+    const dateSelection = source.indexOf('const selectPuzzleDate = useCallback(', navigation);
+    const onboardingTransition = source.indexOf('const transitionOnboardingPhase = useCallback(', dateSelection);
+    const clear = source.indexOf('const clear = useCallback(', onboardingTransition);
+    const clearData = source.indexOf('const clearBrowserData = useCallback(', clear);
+
+    expect(cancelDefinition).toBeGreaterThanOrEqual(0);
+    expect(source.slice(navigation, dateSelection)).toContain('cancelValidationRequests();');
+    expect(source.slice(dateSelection, onboardingTransition)).toContain('cancelValidationRequests();');
+    expect(source.slice(onboardingTransition, source.indexOf('const recoverFromOnboardingStorageFailure')))
+      .toContain('cancelValidationRequests();');
+    expect(source.slice(clear, source.indexOf('const enterPractice', clear)))
+      .toContain('cancelValidationRequests();');
+    expect(source.slice(clearData, source.indexOf('const showCalendar', clearData)))
+      .toContain('cancelValidationRequests();');
+    expect(source).toContain('return () => cancelValidationRequests();');
+  });
+
+  test('keeps required Practice completion ordered and storage failure recoverable', () => {
+    const currentGuard = source.indexOf('sameValidationRequestIdentity(');
+    const practiceBranch = source.indexOf('if (isPracticeMode) {', currentGuard);
+    const completionWrite = source.indexOf(
+      'persistOnboardingPhase(FirstRunOnboardingPhase.Completed, true)',
+      practiceBranch,
+    );
+    const storageFailure = source.indexOf('setMessage(onboardingStorageError)', completionWrite);
+    const clearPractice = source.indexOf('clear();', completionWrite);
+    const destination = source.indexOf('practiceCompletionTarget(todayId)', clearPractice);
+
+    expect(currentGuard).toBeGreaterThanOrEqual(0);
+    expect(practiceBranch).toBeGreaterThan(currentGuard);
+    expect(completionWrite).toBeGreaterThan(practiceBranch);
+    expect(storageFailure).toBeGreaterThan(completionWrite);
+    expect(clearPractice).toBeGreaterThan(storageFailure);
+    expect(destination).toBeGreaterThan(clearPractice);
   });
 
   test('durably persists daily solutions before state and success effects', () => {

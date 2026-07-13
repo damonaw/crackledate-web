@@ -60,11 +60,10 @@ func main() {
 		port = "8080"
 	}
 
-	server := &http.Server{
-		Addr:              ":" + port,
-		Handler:           securityHeaders(requestLogger(rateLimitAPI(mux, defaultRateLimitConfig(runtimeConfig.resolver)), defaultAnalyticsConfig(), runtimeConfig.resolver)),
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	server := newHTTPServer(
+		":"+port,
+		securityHeaders(requestLogger(rateLimitAPI(mux, defaultRateLimitConfig(runtimeConfig.resolver)), defaultAnalyticsConfig(), runtimeConfig.resolver)),
+	)
 
 	log.Printf("crackledate web listening on :%s", port)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

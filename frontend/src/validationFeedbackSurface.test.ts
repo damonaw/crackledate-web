@@ -59,4 +59,34 @@ describe('validation feedback surface', () => {
     expect(intervalBody).toContain('const currentEditorState = editorStateRef.current;');
     expect(intervalBody).not.toContain('setEditorState((prev) => {');
   });
+
+  test('retires partial Submit feedback before the next autocomplete token changes the equation', () => {
+    const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
+    const temporaryFeedback = appSource.indexOf(
+      'Could not check this equation right now. Your equation is still here—try again.',
+    );
+    const intervalStart = appSource.indexOf('autocompleteIntervalRef.current = setInterval(');
+    const nextTokenStart = appSource.indexOf('if (tokenToAdd) {', intervalStart);
+    const nextTokenWrite = appSource.indexOf('setEditorState(nextEditorState);', nextTokenStart);
+    const nextTokenPrefix = appSource.slice(nextTokenStart, nextTokenWrite);
+    const cancel = nextTokenPrefix.indexOf('cancelValidationRequests();');
+    const retireFeedback = nextTokenPrefix.indexOf("setMessage('');");
+
+    expect(temporaryFeedback).toBeGreaterThanOrEqual(0);
+    expect(nextTokenStart).toBeGreaterThan(intervalStart);
+    expect(nextTokenWrite).toBeGreaterThan(nextTokenStart);
+    expect(cancel).toBeGreaterThanOrEqual(0);
+    expect(retireFeedback).toBeGreaterThan(cancel);
+  });
+
+  test('retires feedback when full-solution autocomplete initially replaces the equation', () => {
+    const appSource = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
+    const initialStateStart = appSource.indexOf('const initialEditorState: EquationEditorState');
+    const initialStateWrite = appSource.indexOf('setEditorState(initialEditorState);', initialStateStart);
+    const initialStatePrefix = appSource.slice(initialStateStart, initialStateWrite);
+
+    expect(initialStateStart).toBeGreaterThanOrEqual(0);
+    expect(initialStateWrite).toBeGreaterThan(initialStateStart);
+    expect(initialStatePrefix).toContain("setMessage('');");
+  });
 });

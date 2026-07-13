@@ -1152,6 +1152,7 @@ function GamePage() {
             equation: tokensToEquation(initialTokens).trim(),
           };
         }
+        setMessage('');
         setEditorState(initialEditorState);
 
         autocompleteIntervalRef.current = setInterval(() => {
@@ -1169,6 +1170,7 @@ function GamePage() {
           const tokenToAdd = targetTokens[index];
           if (tokenToAdd) {
             cancelValidationRequests();
+            setMessage('');
             const currentEditorState = editorStateRef.current;
             const nextTokens = [...currentEditorState.tokens, tokenToAdd];
             const nextEditorState: EquationEditorState = {

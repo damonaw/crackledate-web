@@ -38,7 +38,7 @@ type validateRequest struct {
 const maxAPIJSONBodyBytes int64 = 32 * 1024
 
 func main() {
-	runtimeConfig, submissions, err := initializeRuntime(os.Getenv, newSubmissionStore)
+	runtimeConfig, submissions, err := initializeRuntime(os.Getenv, openSubmissionStore)
 	if err != nil {
 		log.Fatal(err)
 	}

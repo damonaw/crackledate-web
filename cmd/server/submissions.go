@@ -54,7 +54,29 @@ const acceptedSubmission = "accepted"
 const rejectedSubmission = "rejected"
 const duplicateSolutionReason = "Solution already saved for this date."
 
-func newSubmissionStore(path string) (*submissionStore, error) {
+const currentSubmissionTableSQL = `
+	CREATE TABLE IF NOT EXISTS submission_attempts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		submitted_at TEXT NOT NULL,
+		puzzle_date TEXT NOT NULL,
+		equation TEXT NOT NULL,
+		value TEXT NOT NULL,
+		solve_time_seconds INTEGER,
+		difficulty TEXT NOT NULL,
+		hard_mode INTEGER NOT NULL,
+		platform TEXT NOT NULL,
+		app_version TEXT,
+		submission_status TEXT NOT NULL,
+		rejection_reason TEXT
+	);
+`
+
+const currentSubmissionIndexesSQL = `
+	CREATE INDEX IF NOT EXISTS submission_attempts_submitted_at_idx ON submission_attempts (submitted_at);
+	CREATE INDEX IF NOT EXISTS submission_attempts_puzzle_status_idx ON submission_attempts (puzzle_date, submission_status);
+`
+
+func openSubmissionStore(path string) (*submissionStore, error) {
 	store := &submissionStore{path: path}
 	if !isDatabasePath(store.path) {
 		return store, nil
@@ -70,34 +92,34 @@ func newSubmissionStore(path string) (*submissionStore, error) {
 	}
 	db.SetMaxOpenConns(1)
 	store.db = db
+	return store, nil
+}
 
-	const createTable = `
-	CREATE TABLE IF NOT EXISTS submission_attempts (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		submitted_at TEXT NOT NULL,
-		puzzle_date TEXT NOT NULL,
-		equation TEXT NOT NULL,
-		value TEXT NOT NULL,
-		solve_time_seconds INTEGER,
-		difficulty TEXT NOT NULL,
-		hard_mode INTEGER NOT NULL,
-		platform TEXT NOT NULL,
-		app_version TEXT,
-		submission_status TEXT NOT NULL,
-		rejection_reason TEXT
-	);
-	`
-	if _, err := store.db.Exec(createTable); err != nil {
-		return nil, fmt.Errorf("create submissions table: %w", err)
+func ensureSubmissionSchema(store *submissionStore) error {
+	if store == nil {
+		return fmt.Errorf("submission store is not configured")
 	}
-	const createIndexes = `
-	CREATE INDEX IF NOT EXISTS submission_attempts_submitted_at_idx ON submission_attempts (submitted_at);
-	CREATE INDEX IF NOT EXISTS submission_attempts_puzzle_status_idx ON submission_attempts (puzzle_date, submission_status);
-	`
-	if _, err := store.db.Exec(createIndexes); err != nil {
-		return nil, fmt.Errorf("create submissions indexes: %w", err)
+	if store.db == nil {
+		return nil
 	}
+	if _, err := store.db.Exec(currentSubmissionTableSQL); err != nil {
+		return fmt.Errorf("create submissions table: %w", err)
+	}
+	if _, err := store.db.Exec(currentSubmissionIndexesSQL); err != nil {
+		return fmt.Errorf("create submissions indexes: %w", err)
+	}
+	return nil
+}
 
+func newSubmissionStore(path string) (*submissionStore, error) {
+	store, err := openSubmissionStore(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureSubmissionSchema(store); err != nil {
+		store.close()
+		return nil, err
+	}
 	return store, nil
 }
 

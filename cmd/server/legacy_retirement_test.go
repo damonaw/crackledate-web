@@ -101,6 +101,48 @@ var testHistoricalAccountSchema = []string{
 	`CREATE INDEX IF NOT EXISTS user_solutions_user_date_idx ON user_solutions (user_id, puzzle_date);`,
 }
 
+func TestRetainedSubmissionEvidenceLiteralGoldensBeforeExtraction(t *testing.T) {
+	tests := []struct {
+		name       string
+		create     func(*testing.T) *sql.DB
+		wantCount  int64
+		wantDigest string
+	}{
+		{
+			name: "empty",
+			create: func(t *testing.T) *sql.DB {
+				db := openFixtureDatabase(t, filepath.Join(t.TempDir(), "empty.db"))
+				mustExec(t, db, testHistoricalSubmissionAnonymous)
+				return db
+			},
+			wantCount:  0,
+			wantDigest: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		},
+		{
+			name: "mixed storage",
+			create: func(t *testing.T) *sql.DB {
+				return createHistoricalFixture(t, filepath.Join(t.TempDir(), "mixed.db"), "fresh-user-column", false)
+			},
+			wantCount:  2,
+			wantDigest: "816f12befd64dac5a1b7f17ddf5f9b84a768b5049e7d7883884e327b213fd814",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := test.create(t)
+			t.Cleanup(func() { _ = db.Close() })
+			evidence, err := captureRetainedSubmissionEvidence(context.Background(), db)
+			if err != nil {
+				t.Fatalf("capture retained submission evidence: %v", err)
+			}
+			if evidence.count != test.wantCount || fmt.Sprintf("%x", evidence.digest) != test.wantDigest {
+				t.Fatalf("evidence = count %d, digest %x; want count %d, digest %s", evidence.count, evidence.digest, test.wantCount, test.wantDigest)
+			}
+		})
+	}
+}
+
 const testHistoricalSubmissionIndexes = `
 	CREATE INDEX IF NOT EXISTS submission_attempts_submitted_at_idx ON submission_attempts (submitted_at);
 	CREATE INDEX IF NOT EXISTS submission_attempts_puzzle_status_idx ON submission_attempts (puzzle_date, submission_status);

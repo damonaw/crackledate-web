@@ -4,13 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/binary"
 	"fmt"
-	"math"
 	"reflect"
 	"sort"
 	"strings"
 	"unicode"
+
+	"crackledate-web/internal/submissionevidence"
 )
 
 const historicalSubmissionTableSQL = `
@@ -87,21 +87,6 @@ var historicalAccountSchemaSQL = []string{
 	`CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions (expires_at);`,
 	`CREATE INDEX IF NOT EXISTS email_verifications_token_hash_idx ON email_verifications (token_hash);`,
 	`CREATE INDEX IF NOT EXISTS user_solutions_user_date_idx ON user_solutions (user_id, puzzle_date);`,
-}
-
-var retainedSubmissionColumns = []string{
-	"id",
-	"submitted_at",
-	"puzzle_date",
-	"equation",
-	"value",
-	"solve_time_seconds",
-	"difficulty",
-	"hard_mode",
-	"platform",
-	"app_version",
-	"submission_status",
-	"rejection_reason",
 }
 
 type legacyRetirementOptions struct {
@@ -579,75 +564,11 @@ func compareLegacySchemaFingerprint(actual, expected legacySchemaFingerprint) er
 }
 
 func captureRetainedSubmissionEvidence(ctx context.Context, runner legacySQLRunner) (retainedSubmissionEvidence, error) {
-	query := `SELECT ` + strings.Join(retainedSubmissionColumns, ", ") + ` FROM submission_attempts ORDER BY id`
-	rows, err := runner.QueryContext(ctx, query)
+	evidence, err := submissionevidence.Capture(ctx, runner)
 	if err != nil {
 		return retainedSubmissionEvidence{}, err
 	}
-	defer rows.Close()
-	hasher := sha256.New()
-	var count int64
-	for rows.Next() {
-		values := make([]any, len(retainedSubmissionColumns))
-		destinations := make([]any, len(values))
-		for index := range values {
-			destinations[index] = &values[index]
-		}
-		if err := rows.Scan(destinations...); err != nil {
-			return retainedSubmissionEvidence{}, err
-		}
-		for _, value := range values {
-			if err := encodeSQLiteValue(hasher, value); err != nil {
-				return retainedSubmissionEvidence{}, err
-			}
-		}
-		count++
-	}
-	if err := rows.Err(); err != nil {
-		return retainedSubmissionEvidence{}, err
-	}
-	var digest [sha256.Size]byte
-	copy(digest[:], hasher.Sum(nil))
-	return retainedSubmissionEvidence{count: count, digest: digest}, nil
-}
-
-type legacyHashWriter interface {
-	Write([]byte) (int, error)
-}
-
-func encodeSQLiteValue(writer legacyHashWriter, value any) error {
-	var marker byte
-	var encoded []byte
-	switch typed := value.(type) {
-	case nil:
-		marker = 'n'
-	case int64:
-		marker = 'i'
-		encoded = make([]byte, 8)
-		binary.BigEndian.PutUint64(encoded, uint64(typed))
-	case float64:
-		marker = 'f'
-		encoded = make([]byte, 8)
-		binary.BigEndian.PutUint64(encoded, math.Float64bits(typed))
-	case string:
-		marker = 's'
-		encoded = []byte(typed)
-	case []byte:
-		marker = 'b'
-		encoded = typed
-	default:
-		return fmt.Errorf("unsupported SQLite storage value %T", value)
-	}
-	if _, err := writer.Write([]byte{marker}); err != nil {
-		return err
-	}
-	length := make([]byte, 8)
-	binary.BigEndian.PutUint64(length, uint64(len(encoded)))
-	if _, err := writer.Write(length); err != nil {
-		return err
-	}
-	_, err := writer.Write(encoded)
-	return err
+	return retainedSubmissionEvidence{count: evidence.Count, digest: evidence.Digest}, nil
 }
 
 func verifyUnchangedRetainedObjects(before, after legacySchemaFingerprint) error {

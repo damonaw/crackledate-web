@@ -447,89 +447,19 @@ rollback, and one-shot flag removal. Repository defaults must never set confirme
 
 Commit: fix(server): retire unlinked legacy account data
 
-## Task 7: Add deployment, backup, and rollback runbook
+## Task 7: Safe evidence tooling and operations runbook (amended)
 
-Interface: consumes every new environment/operational boundary and produces the
-shipping configuration, build-context exclusions, and safe activation runbook.
+The original Task 7 and final-verification instructions were superseded after a
+read-only deployment preflight found sibling-checkout identity collision risk,
+secret-rendering Compose commands, incomplete immutable-image/volume wiring,
+and no safe canonical copied-fixture evidence path.
 
-Files:
+Execute the independently reviewed amendment instead:
 
-- Create docs/runbooks/submissions-database.md
-- Modify .dockerignore
-- Create scripts/verify_dockerignore.sh
-- Modify README.md
-- Modify AGENTS.md
-- Modify docker-compose.yml
+- [2026-07-13 Web Task 7 safe operations](./2026-07-13-web-task-7-safe-operations.md)
 
-Document:
-
-- Proxy/concurrency settings and safe defaults.
-- Separate generic-proxy and Cloudflare-proxy CIDRs, plus an operational test
-  proving the configured proxy overwrites/appends forwarding headers safely.
-- How to identify the immediate proxy CIDR without trusting public headers.
-- Service quiesce; actual Compose project/volume; encrypted timestamped backup;
-  SHA-256; PRAGMA quick_check; schema/row inventory; temporary restore drill.
-- Pre/post submission count and digest.
-- One-shot retirement maintenance deployment and expected linked-data refusal.
-- Rollback by stop, restore, prior image, and flag removal.
-- Offline VACUUM only after backup/free-space checks.
-- Backup access, owner, retention, and deletion approval.
-- Cookie middleware removal after the identified release.
-- Docker build-context exclusions for data/, *.db, SQLite WAL/SHM files, local
-  logs, and other runtime data before any local or remote image build.
-
-~~~bash
-scripts/verify_dockerignore.sh
-docker compose config
-git diff --check
-~~~
-
-Commit: docs(ops): add submissions retirement runbook
-
-## Final verification and runtime QA
-
-Ordered security verification:
-
-1. Applicability/buildability: final diff, focused Go/frontend tests.
-2. Closure: unrestricted hint GET, generic-proxy CF spoofing, malformed runtime
-   config, churn, saturation, every bounded/malformed query variant, stale
-   hint/validation response, and linked-DB triggers are rejected at the
-   intended boundary.
-3. Bypass review: alternate methods, encoded parameters, invalid chains, direct
-   CF headers, LRU churn, slot release, stale responses, retirement rerun.
-4. Preserved behavior: valid three-step hints, trusted proxy identity, equation
-   feedback/retry, submissions/static routes, disabled retirement.
-5. Repository gates:
-
-~~~bash
-gofmt -w cmd/server/*.go
-go test ./...
-cd frontend
-npm test
-npm run build
-cd ..
-docker compose config
-scripts/verify_dockerignore.sh
-docker build -t crackledate-web:ship-check .
-git diff --check
-~~~
-
-Browser QA at 390x844 and 1280x900 intercepts hint 404/429/503/500/slow/
-malformed/aborted/out-of-order responses and validation network/429/500 then a
-successful retry. Confirm no stale hint UI, equation/onboarding retention, and
-legacy-cookie clearing. Capture materially changed failure states and require a
-clean console.
-
-Before the Docker build, the repository script must parse .dockerignore and
-require exclusions for data/, SQLite database/WAL/SHM files, and local logs.
-It must use only synthetic paths/fixtures and never open, copy, hash, or create
-anything under the live data directory.
-
-Database QA uses only a copied/temp fixture. Production activation stays blocked
-until actual schema/count inventory, linked-data disposition, backup owner/
-location/retention, maintenance window, both proxy CIDR classes and sanitizer
-behavior, and cookie-release identifier are recorded.
-
-The repo-controlled milestone is complete only after every task has independent
-review approval, final gates and browser QA pass, the branch is clean/synced,
-and external deployment blockers are explicit rather than assumed.
+That amendment owns Milestones 7A and 7B plus final repository QA. Its safety
+constraints are normative: no live database or service mutation during
+repository implementation; no production activation without the separate
+owner-filled identity, proxy, backup, deletion, image, maintenance, rollback,
+and post-write recovery gates.

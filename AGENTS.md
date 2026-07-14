@@ -50,12 +50,24 @@ Open `http://localhost:5173/` for the local app.
 - Backend tests: `go test ./...`
 - Frontend tests: `cd frontend && npm test`
 - Frontend build/type check: `cd frontend && npm run build`
+- Compose policy: `scripts/verify_compose_test.sh && scripts/verify_compose.sh`
+- Deployment identity policy: `scripts/verify_deployment_identity_test.sh` (fake Docker only; never invoke the live identity guard as a repository check)
 
 ## Environment
 
 - `PORT` controls the backend port and defaults to `8080`.
 - `SUBMISSIONS_PATH` controls where submitted solutions are stored.
 - `CLIENT_HASH_SECRET` salts rotating request-log client hashes; set it for production-like deployments.
+- Proxy trust lists default empty, and `RETIRE_LEGACY_ACCOUNT_DATA` must default empty outside the single reviewed maintenance create.
+
+For isolated local Compose work, choose a project name unique to the checkout and validate without rendering secrets:
+
+```bash
+DEV_PROJECT=crackledate-web-agent-your-unique-checkout-id
+docker compose --env-file /dev/null -f "$PWD/docker-compose.yml" --project-directory "$PWD" --project-name "$DEV_PROJECT" config --quiet
+```
+
+Do not use outputting `docker compose config`, raw `docker inspect`, or environment dumps. Production database, image, proxy, backup, migration, and rollback work is governed by `docs/runbooks/submissions-database.md`; repository checks do not authorize those operations.
 
 ## Notes For Agents
 
@@ -63,3 +75,4 @@ Open `http://localhost:5173/` for the local app.
 - Do not commit `frontend/node_modules/`, `frontend/dist/`, `data/`, or local log files.
 - Prefer small, focused changes and run the relevant checks before committing.
 - Keep privacy/support copy aligned when changing local data, access, or submission behavior.
+- Never run database audit/reconciliation against repository `data/`, a live volume, or an authoritative database. Use only a dedicated copied fixture under the runbook's identity and ownership gates.

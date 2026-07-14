@@ -58,15 +58,22 @@ The Vite dev server proxies `/api` to `http://localhost:8080`.
 - `PORT`: backend HTTP port; defaults to `8080`.
 - `SUBMISSIONS_PATH`: storage target for anonymous submission attempts. `.db`/`.sqlite`/`.sqlite3` enables SQLite rows. Defaults to `data/submissions.db` locally and `/data/submissions.db` in Docker.
 - `CLIENT_HASH_SECRET`: optional salt for rotating request-log client hashes. Set this in production so daily and weekly client hashes cannot be compared across deployments.
+- `TRUSTED_PROXY_CIDRS` and `TRUSTED_CLOUDFLARE_PROXY_CIDRS`: separate comma-delimited trusted-proxy lists. Both default empty.
+- `MAX_CONCURRENT_HINT_SOLVES`: optional bounded hint-solver concurrency override.
+- `RETIRE_LEGACY_ACCOUNT_DATA`: one-shot maintenance activation. It must remain empty during normal operation; see the reviewed operations runbook before using it.
 
 ## Docker
 
 ```bash
-docker compose up --build -d
+DEV_PROJECT=crackledate-web-dev-your-unique-checkout-id
+docker compose --env-file /dev/null -f "$PWD/docker-compose.yml" --project-directory "$PWD" --project-name "$DEV_PROJECT" config --quiet
+docker compose --env-file /dev/null -f "$PWD/docker-compose.yml" --project-directory "$PWD" --project-name "$DEV_PROJECT" up --build -d
 curl -I http://127.0.0.1:8082
 ```
 
-The compose file binds the container to loopback so it is intended to be reached through the host's reverse proxy rather than directly exposed.
+Replace the project-name suffix with a value unique to this checkout; never rely on the directory-derived default when sibling checkouts may be present. The project-derived submissions volume is for local development only. Production must explicitly select an existing reviewed volume and immutable image by following [the submissions database runbook](docs/runbooks/submissions-database.md).
+
+The Compose file binds the container to loopback so it is intended to be reached through the host's reverse proxy rather than directly exposed. Repository validation is non-outputting: use `scripts/verify_compose.sh`, which permits only `docker compose config --quiet`; never print interpolated Compose configuration because it can contain the client-hash secret.
 
 ## Routes
 

@@ -3162,7 +3162,7 @@ function PrivacyPage() {
       currentPage="privacy"
       title="Privacy"
       subtitle="Crackle Date is built to be played with local saves, no remote profile, no ads, in-app purchases, or public profile."
-      meta="Last updated June 25, 2026"
+      meta="Last updated July 14, 2026"
     >
       <DocumentSection
         title="Local Storage"
@@ -3179,19 +3179,27 @@ function PrivacyPage() {
       />
 
       <DocumentSection
-        title="Anonymous Web Submissions"
+        title="Gameplay Requests and Submissions"
         rows={[
           {
-            label: 'What is sent',
-            body: 'When you submit a web solution, Crackle Date sends the puzzle date, equation, solve time, difficulty mode, platform, app version, and submission time.',
+            label: 'While you play',
+            body: 'The web app sends the puzzle date and current equation to calculate running values and validate an attempted solution.',
+          },
+          {
+            label: 'Hints',
+            body: 'Hints send the puzzle date, mode, equation prefix, and target value when relevant.',
+          },
+          {
+            label: 'Correct solutions',
+            body: 'Correct non-Practice solutions send the puzzle date, equation, solve time, difficulty mode, platform, and app version. Practice solutions are not submitted.',
           },
           {
             label: 'What is not sent',
             body: 'Submitted records do not include contact details, payment information, advertising identifier, or the contents of browser storage.',
           },
           {
-            label: 'Server logs',
-            body: 'The server may keep basic operational request logs needed to run and secure the site. Solution records are not tied to a remote profile.',
+            label: 'Operational data',
+            body: 'To run and secure the site, the server processes network addresses in bounded memory for rate limiting and logs route, method, status, timing, rotating network-derived hashes, and available request metadata. Solution records are not tied to a remote profile.',
           },
         ]}
       />

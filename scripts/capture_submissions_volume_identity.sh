@@ -1,5 +1,9 @@
-#!/usr/bin/env bash
+#!/bin/bash
 set -euo pipefail
+
+safe_path="/usr/local/bin:/usr/bin:/bin"
+PATH="$safe_path"
+export PATH
 
 failure() {
   printf 'submission volume fingerprint capture failed\n' >&2
@@ -91,9 +95,8 @@ require_physical_directory "$docker_config" || failure
 [[ "$output" == "$(physical_new_file_path "$output")" ]] || failure
 [[ ! -e "$output" && ! -L "$output" ]] || failure
 
-safe_path="/usr/local/bin:/usr/bin:/bin"
 docker_env=(
-  env -i
+  /usr/bin/env -i
   "PATH=$safe_path"
   HOME=/nonexistent
   "DOCKER_CONFIG=$docker_config"
@@ -102,9 +105,22 @@ docker_env=(
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/crackledate-volume-capture.XXXXXX")"
 remove_output=false
+output_metadata=''
+output_fd_metadata=''
+output_matches_fd() {
+  local path="$1"
+  local metadata
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  if stat -f '%l|%Lp|%i' "$path" >/dev/null 2>&1; then
+    metadata="$(stat -f '%l|%Lp|%i' "$path")" || return 1
+  else
+    metadata="$(stat -c '%h|%a|%i' "$path")" || return 1
+  fi
+  [[ "$metadata" == "1|600|$output_fd_metadata" ]]
+}
 cleanup() {
   rm -rf -- "$scratch"
-  if [[ "$remove_output" == true ]]; then
+  if [[ "$remove_output" == true ]] && output_matches_fd "$output"; then
     rm -f -- "$output"
   fi
 }
@@ -225,10 +241,19 @@ require_physical_directory "$docker_config" || failure
 [[ "$output" == "$(physical_new_file_path "$output")" ]] || failure
 [[ ! -e "$output" && ! -L "$output" ]] || failure
 umask 077
-( set -o noclobber; : >"$output" ) 2>/dev/null || failure
+set -o noclobber
+exec 3>"$output" || failure
+set +o noclobber
 remove_output=true
-chmod 600 "$output" || failure
-cat "$fingerprint" >"$output" || failure
+if stat -f '%i' /dev/fd/3 >/dev/null 2>&1; then
+  output_fd_metadata="$(stat -f '%i' /dev/fd/3)" || failure
+else
+  output_fd_metadata="$(stat -c '%i' /dev/fd/3)" || failure
+fi
+output_matches_fd "$output" || failure
+cat "$fingerprint" >&3 || failure
+output_matches_fd "$output" || failure
+exec 3>&-
 remove_output=false
 
 printf 'submission volume fingerprint captured\n'

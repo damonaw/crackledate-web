@@ -36,6 +36,19 @@ new_subject() {
     printf 'capture script does not use the fixed production PATH\n' >&2
     exit 1
   }
+  grep -Fq '/usr/bin/env -i' "$capture_script" || {
+    printf 'capture script does not invoke env by trusted absolute path\n' >&2
+    exit 1
+  }
+  grep -Fq 'exec 3>"$output"' "$capture_script" || {
+    printf 'capture script does not create the output through one descriptor\n' >&2
+    exit 1
+  }
+  if grep -F 'cat "$fingerprint" >"$output"' "$capture_script" >/dev/null ||
+    grep -F 'chmod 600 "$output"' "$capture_script" >/dev/null; then
+    printf 'capture script reopens the output pathname after creation\n' >&2
+    exit 1
+  fi
   sed -i.bak "s|safe_path=\"/usr/local/bin:/usr/bin:/bin\"|safe_path=\"$subject/bin:/usr/local/bin:/usr/bin:/bin\"|" \
     "$subject/scripts/capture_submissions_volume_identity.sh"
   rm -f "$subject/scripts/capture_submissions_volume_identity.sh.bak"
@@ -45,6 +58,12 @@ printf 'capture used inherited PATH Docker\n' >&2
 exit 111
 HOSTILE_DOCKER
   chmod +x "$subject/hostile-bin/docker"
+  cat >"$subject/hostile-bin/env" <<'HOSTILE_ENV'
+#!/usr/bin/env bash
+printf 'capture used inherited PATH env\n' >&2
+exit 112
+HOSTILE_ENV
+  chmod +x "$subject/hostile-bin/env"
 
   write_state "$subject" context 'approved-context'
   write_state "$subject" context_identity 'approved-context|unix:///approved/docker.sock'
@@ -221,13 +240,19 @@ replace_capture_value() {
 execute_capture() {
   local subject="$1"
   shift
-  env -i \
+  (
+    env() {
+      printf 'capture used inherited exported env function\n' >&2
+      exit 113
+    }
+    export -f env
     PATH="$subject/hostile-bin:/usr/bin:/bin" \
     HOME="$subject/home" \
     DOCKER_CONFIG="$subject/inherited-docker-config" \
     CAPTURE_LEAK_SENTINEL='must-not-reach-docker' \
     CLIENT_HASH_SECRET='secret-must-not-reach-docker' \
     "$subject/scripts/capture_submissions_volume_identity.sh" "$@"
+  )
 }
 
 run_capture() {

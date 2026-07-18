@@ -115,6 +115,10 @@ stat_identity() {
     stat -f '%d|%i' "$path"
   fi
 }
+path_matches_identity() {
+  local path="$1"
+  [[ -e "$path" && ! -L "$path" && "$(stat_identity "$path")" == "$published_identity" ]]
+}
 output_matches_publish() {
   local path="$1" metadata
   [[ -f "$path" && ! -L "$path" ]] || return 1
@@ -123,14 +127,14 @@ output_matches_publish() {
   else
     metadata="$(stat -f '%l|%Lp' "$path")" || return 1
   fi
-  [[ "$metadata" == '1|600' && "$(stat_identity "$path")" == "$published_identity" ]]
+  [[ "$metadata" == '1|600' ]] && path_matches_identity "$path"
 }
 cleanup() {
   rm -rf -- "$scratch"
-  if [[ -n "$staged_output" ]] && output_matches_publish "$staged_output"; then
+  if [[ -n "$staged_output" ]] && path_matches_identity "$staged_output"; then
     rm -f -- "$staged_output"
   fi
-  if [[ "$remove_output" == true ]] && output_matches_publish "$output"; then
+  if [[ "$remove_output" == true ]] && path_matches_identity "$output"; then
     rm -f -- "$output"
   fi
 }
@@ -265,9 +269,9 @@ cat "$fingerprint" >"$staged_output" || failure
 output_matches_publish "$staged_output" || failure
 ln "$staged_output" "$output" || failure
 remove_output=true
-[[ "$(stat_identity "$output")" == "$published_identity" ]] || failure
 rm -f -- "$staged_output"
 staged_output=''
+[[ "$(stat_identity "$output")" == "$published_identity" ]] || failure
 output_matches_publish "$output" || failure
 remove_output=false
 

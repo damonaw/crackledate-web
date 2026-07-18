@@ -275,7 +275,7 @@ func genMixed(items []solvedExpr, memo map[string][]solvedExpr) []solvedExpr {
 }
 
 func genAdvanced(digits []int, memo map[string][]solvedExpr, state *searchState) ([]solvedExpr, error) {
-	return genAdvancedWithUnaryLayers(digits, memo, state, 1)
+	return genAdvancedWithUnaryLayers(digits, memo, state, 2)
 }
 
 func genAdvancedWithUnaryLayers(
@@ -308,7 +308,7 @@ func genAdvancedWithUnaryLayers(
 }
 
 func genMixedAdvanced(items []solvedExpr, memo map[string][]solvedExpr, state *searchState) ([]solvedExpr, error) {
-	return genMixedAdvancedWithUnaryLayers(items, memo, state, 1)
+	return genMixedAdvancedWithUnaryLayers(items, memo, state, 2)
 }
 
 func genMixedAdvancedWithUnaryLayers(
@@ -522,6 +522,40 @@ func hasPrefixIgnoreParentheses(sol, normPrefix string) bool {
 // SolvePuzzle keeps the legacy server callback shape while hint callers migrate
 // to the context-aware, budgeted solver.
 func SolvePuzzle(digits []int, mode string, targetValue string, prefix string) (string, error) {
+	if mode == "classic" && len(digits) > 0 && hintDigitsAreValid(digits) {
+		normalizedPrefix := normalizeEquation(prefix)
+		if strings.Contains(prefix, "=") && ValidateEquation(prefix, digits, "classic", "").Valid {
+			return prefix, nil
+		}
+
+		state := newSearchState(context.Background(), DefaultSearchBudget)
+		if normalizedPrefix != "" && !strings.Contains(prefix, "=") {
+			completed, found, err := completeEvaluableLHSWithBase(digits, prefix, state)
+			if err != nil {
+				return "", err
+			}
+			if found {
+				return completed, nil
+			}
+		}
+		firstSplit, lastSplit := hintSplitRange(digits, prefix, normalizedPrefix)
+		if firstSplit <= lastSplit {
+			baseClean, found, err := findBaseCleanCandidate(
+				digits,
+				firstSplit,
+				prefix,
+				normalizedPrefix,
+				state,
+			)
+			if err != nil {
+				return "", err
+			}
+			if found {
+				return baseClean, nil
+			}
+		}
+	}
+
 	solution, _, err := SolvePuzzleWithBudget(
 		context.Background(),
 		digits,
@@ -547,10 +581,8 @@ func SolvePuzzleWithBudget(
 	if len(digits) == 0 {
 		return "", SearchStats{}, errors.New("digits slice cannot be empty")
 	}
-	for _, digit := range digits {
-		if digit < 0 || digit > 9 {
-			return "", SearchStats{}, errors.New("hint digits must be between 0 and 9")
-		}
+	if !hintDigitsAreValid(digits) {
+		return "", SearchStats{}, errors.New("hint digits must be between 0 and 9")
 	}
 	_ = targetValue
 
@@ -560,48 +592,10 @@ func SolvePuzzleWithBudget(
 	}
 
 	normalizedPrefix := normalizeEquation(prefix)
-	if strings.Contains(prefix, "=") && ValidateEquation(prefix, digits, "classic", "").Valid {
-		return prefix, state.stats, nil
-	}
-	if normalizedPrefix != "" && !strings.Contains(prefix, "=") {
-		completed, found, err := completeEvaluableLHSWithBase(digits, prefix, state)
-		if err != nil {
-			return "", state.stats, err
-		}
-		if found {
-			return completed, state.stats, nil
-		}
-	}
 	memo := make(map[string][]solvedExpr)
 	var firstCompatible string
 	var firstCompatibleClean string
-	firstSplit := 1
-	lastSplit := len(digits) - 1
-	if normalizedPrefix != "" {
-		leftPrefix := strings.SplitN(prefix, "=", 2)[0]
-		prefixDigitCount := countDigits(leftPrefix)
-		if prefixDigitCount > firstSplit {
-			firstSplit = prefixDigitCount
-		}
-		if strings.Contains(prefix, "=") {
-			lastSplit = prefixDigitCount
-		}
-	}
-	if firstSplit <= lastSplit {
-		baseClean, found, err := findBaseCleanCandidate(
-			digits,
-			firstSplit,
-			prefix,
-			normalizedPrefix,
-			state,
-		)
-		if err != nil {
-			return "", state.stats, err
-		}
-		if found {
-			return baseClean, state.stats, nil
-		}
-	}
+	firstSplit, lastSplit := hintSplitRange(digits, prefix, normalizedPrefix)
 
 	for split := firstSplit; split <= lastSplit; split++ {
 		if err := state.checkLimits(); err != nil {
@@ -660,6 +654,32 @@ func SolvePuzzleWithBudget(
 		return firstCompatible, state.stats, nil
 	}
 	return "", state.stats, ErrNoSolution
+}
+
+func hintDigitsAreValid(digits []int) bool {
+	for _, digit := range digits {
+		if digit < 0 || digit > 9 {
+			return false
+		}
+	}
+	return true
+}
+
+func hintSplitRange(digits []int, prefix string, normalizedPrefix string) (int, int) {
+	firstSplit := 1
+	lastSplit := len(digits) - 1
+	if normalizedPrefix == "" {
+		return firstSplit, lastSplit
+	}
+	leftPrefix := strings.SplitN(prefix, "=", 2)[0]
+	prefixDigitCount := countDigits(leftPrefix)
+	if prefixDigitCount > firstSplit {
+		firstSplit = prefixDigitCount
+	}
+	if strings.Contains(prefix, "=") {
+		lastSplit = prefixDigitCount
+	}
+	return firstSplit, lastSplit
 }
 
 func completeEvaluableLHSWithBase(

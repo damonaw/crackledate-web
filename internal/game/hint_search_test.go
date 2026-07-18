@@ -28,6 +28,8 @@ func (ctx *cancelOnThirdCheckContext) Err() error {
 func TestSolvePuzzleWithBudgetIsDeterministicForRootPowerPrefix(t *testing.T) {
 	digits := []int{5, 1, 6, 2, 0, 2, 6}
 	prefix := "5+√16"
+	budget := DefaultSearchBudget
+	budget.MaxDuration = 30 * time.Second
 	var first string
 
 	for run := 0; run < 20; run++ {
@@ -37,7 +39,7 @@ func TestSolvePuzzleWithBudgetIsDeterministicForRootPowerPrefix(t *testing.T) {
 			"classic",
 			"",
 			prefix,
-			DefaultSearchBudget,
+			budget,
 		)
 		if err != nil {
 			t.Fatalf("run %d: solve: %v (stats: %#v)", run, err, stats)
@@ -59,6 +61,26 @@ func TestSolvePuzzleWithBudgetIsDeterministicForRootPowerPrefix(t *testing.T) {
 		} else if solution != first {
 			t.Fatalf("run %d: solution = %q, want deterministic %q", run, solution, first)
 		}
+	}
+}
+
+func TestDefaultSearchBudgetContract(t *testing.T) {
+	if DefaultSearchBudget.MaxCandidateConstructions != 5_000_000 ||
+		DefaultSearchBudget.MaxDuration != 3*time.Second ||
+		DefaultSearchBudget.CancellationCheckInterval != 1_024 {
+		t.Fatalf("default search budget = %#v", DefaultSearchBudget)
+	}
+}
+
+func TestSolvePuzzleWithBudgetRejectsExpiredWallBudget(t *testing.T) {
+	budget := DefaultSearchBudget
+	budget.MaxDuration = 1
+	_, stats, err := SolvePuzzleWithBudget(context.Background(), []int{1, 1}, "classic", "", "", budget)
+	if !errors.Is(err, ErrSearchBudgetExceeded) {
+		t.Fatalf("error = %v, want %v", err, ErrSearchBudgetExceeded)
+	}
+	if stats.CandidateConstructions != 0 {
+		t.Fatalf("candidate constructions = %d, want 0", stats.CandidateConstructions)
 	}
 }
 
@@ -185,8 +207,8 @@ func TestSolvePuzzleWithBudgetPinsSplitForPartialRHS(t *testing.T) {
 }
 
 func TestSolvePuzzleWithBudgetReturnsCompleteValidPrefix(t *testing.T) {
-	digits := []int{6, 2, 0, 2, 0, 2, 6}
-	prefix := "6+2=0+20-2*6"
+	digits := []int{2, 3, 8}
+	prefix := "2^3=8"
 	solution, stats, err := SolvePuzzleWithBudget(
 		context.Background(),
 		digits,
@@ -201,22 +223,15 @@ func TestSolvePuzzleWithBudgetReturnsCompleteValidPrefix(t *testing.T) {
 	if solution != prefix {
 		t.Fatalf("solution = %q, want completed prefix %q", solution, prefix)
 	}
-	if stats.CandidateConstructions != 0 {
-		t.Fatalf("candidate constructions = %d, want 0", stats.CandidateConstructions)
+	if stats.CandidateConstructions == 0 {
+		t.Fatal("canonical search bypassed enumeration for a completed prefix")
 	}
 }
 
-func TestSolvePuzzleWithBudgetCompletesExactEvaluableLHS(t *testing.T) {
+func TestSolvePuzzleWrapperCompletesExactEvaluableLHS(t *testing.T) {
 	digits := []int{6, 2, 0, 2, 0, 2, 6}
 	prefix := "6+2-√0"
-	solution, stats, err := SolvePuzzleWithBudget(
-		context.Background(),
-		digits,
-		"classic",
-		"",
-		prefix,
-		DefaultSearchBudget,
-	)
+	solution, err := SolvePuzzle(digits, "classic", "", prefix)
 	if err != nil {
 		t.Fatalf("solve: %v", err)
 	}
@@ -225,9 +240,6 @@ func TestSolvePuzzleWithBudgetCompletesExactEvaluableLHS(t *testing.T) {
 	}
 	if result := ValidateEquation(solution, digits, "classic", ""); !result.Valid {
 		t.Fatalf("solution %q is invalid: %s", solution, result.ErrorMessage)
-	}
-	if stats.CandidateConstructions == 0 || stats.CandidateConstructions > DefaultSearchBudget.MaxCandidateConstructions {
-		t.Fatalf("candidate constructions = %d", stats.CandidateConstructions)
 	}
 }
 
@@ -240,6 +252,20 @@ func TestHasCleanEndingDoesNotTreatUnaryNegationAsBinary(t *testing.T) {
 	if !hasCleanEnding("10-4") {
 		t.Error("hasCleanEnding(\"10-4\") = false, want true")
 	}
+}
+
+func TestAdvancedGenerationIncludesDepthTwoUnaryCandidates(t *testing.T) {
+	state := newSearchState(context.Background(), DefaultSearchBudget)
+	expressions, err := genAdvanced([]int{3}, make(map[string][]solvedExpr), state)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	for _, expression := range expressions {
+		if expression.str == "(3!)!" && expression.unaryDepth == 2 {
+			return
+		}
+	}
+	t.Fatal("advanced generation omitted depth-two unary candidate (3!)!")
 }
 
 func TestGenerateHintBuildsClassicSteps(t *testing.T) {

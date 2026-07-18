@@ -19,10 +19,10 @@ import { feedbackMessageAfterPuzzleLoad } from './feedbackRetention';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
 import {
   bindHintDataToIdentity,
-  completeHintFailure,
   editorStatesEqual,
   hintClickAction,
   hintDataForIdentity,
+  hintFailureStateTransition,
   nextVisibleHintStep,
   type HintFlowData,
   type IdentifiedHintData,
@@ -1212,17 +1212,18 @@ function GamePage() {
       return;
     }
 
-    const completion = completeHintFailure(
+    const transition = hintFailureStateTransition(
       result.kind,
       identity.equation,
       editorStateRef.current,
     );
-    const feedback = completion.feedback;
-    if (!feedback) return;
-    setHintData(null);
-    setMessageTone('error');
-    setMessage(feedback.message);
-    setIsDeadEnd(feedback.isDeadEnd);
+    if (!transition) return;
+    editorStateRef.current = transition.editorState;
+    setEditorState(transition.editorState);
+    setHintData(transition.hintData);
+    setMessageTone(transition.messageTone);
+    setMessage(transition.message);
+    setIsDeadEnd(transition.isDeadEnd);
   };
 
   if (!hintRequestCoordinatorRef.current) {

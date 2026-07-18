@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import {
-  completeHintFailure,
   hintFailureFeedback,
+  hintFailureStateTransition,
   hintNoSolutionMessage,
   hintRateLimitedMessage,
   hintTemporaryMessage,
@@ -32,21 +32,41 @@ describe('hint unavailable feedback', () => {
   });
 
   test.each([
-    ['no_solution' as const, true],
-    ['temporary' as const, false],
-  ])('preserves the editable equation when %s completes', (kind, isDeadEnd) => {
+    ['no_solution' as const, 'No hint available yet', true],
+    ['temporary' as const, 'No hint available yet', false],
+    [
+      'rate_limited' as const,
+      'Too many hint requests at once. Please wait a moment and try again.',
+      false,
+    ],
+  ])('applies a non-destructive editor transition when %s completes', (
+    kind,
+    message,
+    isDeadEnd,
+  ) => {
     const editorState = {
       tokens: [{ value: '1' }, { value: '+' }, { value: '2' }],
       selection: { kind: 'slot' as const, index: 3 },
     };
 
-    const completion = completeHintFailure(kind, '1+2', editorState);
+    const transition = hintFailureStateTransition(kind, '1+2', editorState);
 
-    expect(completion.editorState).toBe(editorState);
-    expect(completion.editorState.tokens.map((token) => token.value).join('')).toBe('1+2');
-    expect(completion.feedback).toEqual({
-      message: 'No hint available yet',
+    expect(transition).toMatchObject({
+      hintData: null,
+      messageTone: 'error',
+      message,
       isDeadEnd,
     });
+    expect(transition?.editorState).toBe(editorState);
+    expect(transition?.editorState.tokens.map((token) => token.value).join('')).toBe('1+2');
+  });
+
+  test('does not transition editor state for an aborted hint request', () => {
+    const editorState = {
+      tokens: [{ value: '1' }],
+      selection: { kind: 'slot' as const, index: 1 },
+    };
+
+    expect(hintFailureStateTransition('aborted', '1', editorState)).toBeNull();
   });
 });

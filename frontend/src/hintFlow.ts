@@ -29,9 +29,12 @@ export type HintFailureFeedback = {
   isDeadEnd: boolean;
 };
 
-export type HintFailureCompletion<TEditorState> = {
+export type HintFailureStateTransition<TEditorState> = {
   editorState: TEditorState;
-  feedback: HintFailureFeedback | null;
+  hintData: null;
+  messageTone: 'error';
+  message: string;
+  isDeadEnd: boolean;
 };
 
 export type IdentifiedHintData = {
@@ -115,14 +118,20 @@ export function hintFailureFeedback(
   return { message: hintNoSolutionMessage, isDeadEnd: true };
 }
 
-export function completeHintFailure<TEditorState>(
+export function hintFailureStateTransition<TEditorState>(
   kind: HintFailureKind,
   equation: string,
   editorState: TEditorState,
-): HintFailureCompletion<TEditorState> {
+): HintFailureStateTransition<TEditorState> | null {
+  const feedback = hintFailureFeedback(kind, equation);
+  if (!feedback) return null;
+
   return {
     editorState,
-    feedback: hintFailureFeedback(kind, equation),
+    hintData: null,
+    messageTone: 'error',
+    message: feedback.message,
+    isDeadEnd: feedback.isDeadEnd,
   };
 }
 

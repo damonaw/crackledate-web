@@ -38,9 +38,13 @@ type hintParityCaseFixture struct {
 }
 
 func TestHintParityV1Artifacts(t *testing.T) {
+	defaultBudgetBefore := DefaultSearchBudget
 	manifest, digest, err := GenerateHintParityV1()
 	if err != nil {
 		t.Fatalf("generate hint parity v1: %v", err)
+	}
+	if DefaultSearchBudget != defaultBudgetBefore {
+		t.Fatalf("fixture generation mutated DefaultSearchBudget: before=%#v after=%#v", defaultBudgetBefore, DefaultSearchBudget)
 	}
 
 	checkedManifest, err := os.ReadFile("testdata/hint-parity-v1.json")
@@ -132,7 +136,6 @@ func TestHintParityV1Contract(t *testing.T) {
 	seenIDs := make(map[string]struct{}, len(manifest.Cases))
 	var covered struct {
 		emptyPrefix, partialMay16, fraction, factorial, absolute, noSolution, budgetExhausted bool
-		balancingHint, mathTip                                                                bool
 	}
 	for _, fixture := range manifest.Cases {
 		if fixture.ID == "" {
@@ -184,7 +187,6 @@ func TestHintParityV1Contract(t *testing.T) {
 		hasBudgetFields := fixture.MaximumCandidateConstructions != nil ||
 			fixture.MaximumWallTimeNanos != nil || fixture.CancellationCheckInterval != nil
 		if fixture.Outcome == "budget_exhausted" {
-			covered.budgetExhausted = true
 			if fixture.MaximumCandidateConstructions == nil || fixture.MaximumWallTimeNanos == nil || fixture.CancellationCheckInterval == nil {
 				t.Errorf("%s must include all three flat budget controls", fixture.ID)
 			}
@@ -192,22 +194,35 @@ func TestHintParityV1Contract(t *testing.T) {
 			t.Errorf("%s includes budget controls outside budget_exhausted", fixture.ID)
 		}
 
-		if fixture.Outcome == "solution" && fixture.Prefix == "" {
-			covered.emptyPrefix = true
+		switch fixture.ID {
+		case "classic-empty-prefix":
+			covered.emptyPrefix = fixture.Outcome == "solution" && fixture.Prefix == ""
+		case "classic-partial-root-power-zero-concatenation-2026-05-16":
+			covered.partialMay16 = fixture.Date == "2026-05-16" &&
+				reflect.DeepEqual(fixture.Digits, []int{5, 1, 6, 2, 0, 2, 6}) &&
+				fixture.Prefix == "5+√16" && fixture.Solution != nil &&
+				strings.Contains(*fixture.Solution, "√16") &&
+				strings.Contains(*fixture.Solution, "^") &&
+				strings.Contains(*fixture.Solution, "0")
+		case "classic-exact-fraction":
+			covered.fraction = fixture.Outcome == "solution" && fixture.Solution != nil &&
+				strings.Contains(*fixture.Solution, "/")
+		case "classic-factorial":
+			covered.factorial = fixture.Outcome == "solution" && fixture.Solution != nil &&
+				strings.Contains(*fixture.Solution, "!") &&
+				fixture.BalancingHint != nil && fixture.MathTip != nil
+		case "classic-absolute-value":
+			covered.absolute = fixture.Outcome == "solution" && fixture.Solution != nil &&
+				strings.Contains(*fixture.Solution, "|") &&
+				fixture.BalancingHint != nil && fixture.MathTip != nil
+		case "classic-no-solution":
+			covered.noSolution = fixture.Outcome == "no_solution"
+		case "classic-budget-exhausted":
+			covered.budgetExhausted = fixture.Outcome == "budget_exhausted" &&
+				fixture.MaximumCandidateConstructions != nil &&
+				fixture.MaximumWallTimeNanos != nil &&
+				fixture.CancellationCheckInterval != nil
 		}
-		if fixture.Date == "2026-05-16" && reflect.DeepEqual(fixture.Digits, []int{5, 1, 6, 2, 0, 2, 6}) &&
-			fixture.Prefix == "5+√16" && fixture.Solution != nil && strings.Contains(*fixture.Solution, "√") &&
-			strings.Contains(*fixture.Solution, "^") && strings.Contains(*fixture.Solution, "0") {
-			covered.partialMay16 = true
-		}
-		if fixture.Outcome == "solution" && fixture.Solution != nil {
-			covered.fraction = covered.fraction || strings.Contains(*fixture.Solution, "/")
-			covered.factorial = covered.factorial || strings.Contains(*fixture.Solution, "!")
-			covered.absolute = covered.absolute || strings.Contains(*fixture.Solution, "|")
-			covered.balancingHint = covered.balancingHint || fixture.BalancingHint != nil
-			covered.mathTip = covered.mathTip || fixture.MathTip != nil
-		}
-		covered.noSolution = covered.noSolution || fixture.Outcome == "no_solution"
 	}
 	for requiredID := range requiredIDs {
 		if _, found := seenIDs[requiredID]; !found {
@@ -216,8 +231,7 @@ func TestHintParityV1Contract(t *testing.T) {
 	}
 
 	if !covered.emptyPrefix || !covered.partialMay16 || !covered.fraction || !covered.factorial ||
-		!covered.absolute || !covered.noSolution || !covered.budgetExhausted ||
-		!covered.balancingHint || !covered.mathTip {
+		!covered.absolute || !covered.noSolution || !covered.budgetExhausted {
 		t.Fatalf("fixture coverage = %+v", covered)
 	}
 }

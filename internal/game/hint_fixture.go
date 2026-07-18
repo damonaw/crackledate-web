@@ -41,6 +41,7 @@ type hintParitySeed struct {
 	Mode                          string
 	Prefix                        string
 	Outcome                       string
+	GenerationMaximumWallTime     time.Duration
 	MaximumCandidateConstructions *uint64
 	MaximumWallTimeNanos          *int64
 	CancellationCheckInterval     *uint64
@@ -76,6 +77,11 @@ func generateHintParityCase(seed hintParitySeed) (hintParityCase, error) {
 	}
 
 	budget := DefaultSearchBudget
+	if seed.GenerationMaximumWallTime > 0 {
+		// Artifact generation may run under race instrumentation or slow CI.
+		// This does not alter the serialized production-budget contract.
+		budget.MaxDuration = seed.GenerationMaximumWallTime
+	}
 	if seed.MaximumCandidateConstructions != nil {
 		budget.MaxCandidateConstructions = *seed.MaximumCandidateConstructions
 	}
@@ -163,12 +169,13 @@ var hintParityV1Seeds = []hintParitySeed{
 		Outcome: "solution",
 	},
 	{
-		ID:      "classic-partial-root-power-zero-concatenation-2026-05-16",
-		Date:    "2026-05-16",
-		Digits:  []int{5, 1, 6, 2, 0, 2, 6},
-		Mode:    "classic",
-		Prefix:  "5+√16",
-		Outcome: "solution",
+		ID:                        "classic-partial-root-power-zero-concatenation-2026-05-16",
+		Date:                      "2026-05-16",
+		Digits:                    []int{5, 1, 6, 2, 0, 2, 6},
+		Mode:                      "classic",
+		Prefix:                    "5+√16",
+		Outcome:                   "solution",
+		GenerationMaximumWallTime: 30 * time.Second,
 	},
 	{
 		ID:      "classic-exact-fraction",

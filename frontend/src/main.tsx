@@ -67,8 +67,6 @@ import {
   savedSolutionSharePayload,
   spoilerFreeDailySharePayload,
 } from './sharePayloads';
-import { solutionBadges, type SolutionBadge } from './solutionBadges';
-import { submitSolutionRecord, webAppVersion } from './submissions';
 import { GuidedTutorial } from './GuidedTutorial';
 import {
   advanceOnboardingTransition,
@@ -98,7 +96,6 @@ import {
   guidedPracticeGlowKey,
   guidedPracticeStepForTokens,
 } from './guidedPractice';
-import { nextBadgeTargetFromBadges } from './nextBadgeTargets';
 import { dateAccessDecisionFor } from './dateAccessPolicy';
 import './styles.css';
 
@@ -511,7 +508,6 @@ function GamePage() {
   );
   const todaySolutions = puzzle && !isPracticeMode ? savedSolutions[puzzle.dateIdentifier] ?? [] : [];
   const savedSolutionDates = useMemo(() => savedSolutionDateSet(savedSolutions), [savedSolutions]);
-  const badges = useMemo(() => solutionBadges(savedSolutions), [savedSolutions]);
   const dailyDashboardSummary = useMemo(() => {
     if (!puzzle || isPracticeMode) return null;
     return dailyDashboardSummaryFromSolutions({
@@ -1049,14 +1045,6 @@ function GamePage() {
     }
     savedSolutionsRef.current = nextSavedSolutions;
     setSavedSolutions(nextSavedSolutions);
-    void submitSolutionRecord({
-      date: identity.puzzleDate,
-      equation: identity.equation,
-      seconds,
-      difficulty: difficultyMode,
-      platform: 'web',
-      appVersion: webAppVersion,
-    });
     setIsSearchingAnother(false);
     setMessageTone('success');
     setMessage(`Solved. Both sides equal ${solution.value}.`);
@@ -1541,7 +1529,6 @@ function GamePage() {
               summary={dailyDashboardSummary}
               solutions={todaySolutions}
               savedSolutions={savedSolutions}
-              badges={badges}
               onPlayAnother={() => {
                 clear();
                 setIsSearchingAnother(true);
@@ -1734,7 +1721,6 @@ function GamePage() {
 
       {onboardingCompleted && activeView === 'solutions' && (
         <SolutionsPage
-          badges={badges}
           savedSolutions={savedSolutions}
           selectedDate={selectedDate}
           displayDate={puzzle?.displayDate ?? dateDisplayString(selectedDate)}
@@ -1866,7 +1852,6 @@ function VictoryPanel({
   summary,
   solutions,
   savedSolutions,
-  badges,
   onPlayAnother,
   onUnlockTomorrow,
   onShare,
@@ -1881,7 +1866,6 @@ function VictoryPanel({
   summary: DailyDashboardSummary | null;
   solutions: SavedSolution[];
   savedSolutions: StoredSolutions;
-  badges: SolutionBadge[];
   onPlayAnother: () => void;
   onUnlockTomorrow?: () => void;
   onShare: () => void;
@@ -1892,7 +1876,6 @@ function VictoryPanel({
   isArchived: boolean;
   onGoToToday: () => void;
 }) {
-  const nextBadgeTarget = nextBadgeTargetFromBadges(badges);
   const victoryMessage = summary
     ? successMessage(summary.latestValue)
     : solutions.length === 1
@@ -1901,8 +1884,8 @@ function VictoryPanel({
 
   return (
     <div className="victory-panel-card">
-      <div className="victory-badge-row">
-        <span className="victory-badge-pill">🎉 Puzzle Cracked!</span>
+      <div className="victory-status-row">
+        <span className="victory-status-pill">🎉 Puzzle Cracked!</span>
       </div>
       <h2 className="victory-date-title">{displayDate}</h2>
       <p className="victory-subtext">{victoryMessage}</p>
@@ -1919,15 +1902,6 @@ function VictoryPanel({
         {summary ? <DailyDashboardStats summary={summary} /> : <StatsDashboard savedSolutions={savedSolutions} />}
       </div>
 
-      {nextBadgeTarget && (
-        <section className="next-badge-target" aria-labelledby="next-badge-target-title">
-          <span className="next-badge-label">Next Badge</span>
-          <h3 id="next-badge-target-title">{nextBadgeTarget.title}</h3>
-          <p>{nextBadgeTarget.description}</p>
-          <strong>{nextBadgeTarget.actionText}</strong>
-        </section>
-      )}
-
       <div className="victory-solutions-section">
         <h3>Your Solutions</h3>
         <ul className="victory-sol-list">
@@ -1939,12 +1913,12 @@ function VictoryPanel({
                     <MathEquation equation={sol.equation} />
                   </span>
                   <div className="victory-sol-metadata">
-                    <span className="victory-badge-mode">Classic</span>
+                    <span className="victory-meta-mode">Classic</span>
                     <span>⏱ {formatTime(sol.seconds)}</span>
-                    <span className={`victory-badge-diff difficulty-${sol.difficulty || 'easy'}`}>
+                    <span className={`victory-meta-difficulty difficulty-${sol.difficulty || 'easy'}`}>
                       {sol.difficulty || 'easy'}
                     </span>
-                    {sol.usedHint && <span className="victory-badge-hint">💡 Hint</span>}
+                    {sol.usedHint && <span className="victory-meta-hint">💡 Hint</span>}
                   </div>
                 </div>
                 <button
@@ -2040,13 +2014,11 @@ function StatsIcon() {
 }
 
 function SolutionsPage({
-  badges,
   savedSolutions,
   selectedDate,
   displayDate,
   onShare,
 }: {
-  badges: SolutionBadge[];
   savedSolutions: StoredSolutions;
   selectedDate: string;
   displayDate: string;
@@ -2060,10 +2032,9 @@ function SolutionsPage({
       <div className="solutions-page-header">
         <div>
           <h1 id="solutions-page-title">Saved Solutions</h1>
-          <p>Badges, saved equations, and solve history.</p>
+          <p>Saved equations, solve history, and local statistics.</p>
         </div>
       </div>
-      <BadgesSection badges={badges} />
       <section className="saved-solutions-section" aria-labelledby="saved-solutions-title">
         <div className="saved-solutions-section-header">
           <h2 id="saved-solutions-title">{displayDate} Solutions</h2>
@@ -2084,7 +2055,7 @@ function SolutionsPage({
         <h2 id="solutions-activity-title">Activity</h2>
         <div className="solutions-activity-row">
           <span>Last Played</span>
-          <strong>{summary.lastPlayed ? formatBadgeEarnedDate(summary.lastPlayed) : 'No saved dates'}</strong>
+          <strong>{summary.lastPlayed ? formatDisplayDate(summary.lastPlayed) : 'No saved dates'}</strong>
         </div>
       </section>
     </section>
@@ -2100,41 +2071,7 @@ function SummaryStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function BadgesSection({ badges }: { badges: SolutionBadge[] }) {
-  return (
-    <section className="badges-section" aria-labelledby="badges-title">
-      <div className="badges-header">
-        <h2 id="badges-title">Earned Badges</h2>
-      </div>
-
-      <div className="badge-grid">
-        {badges.map((badge) => (
-          <article
-            className={`badge-card ${badge.earned ? 'earned' : 'locked'}`}
-            key={badge.id}
-            aria-label={
-              badge.earned
-                ? `${badge.title}, earned ${formatBadgeEarnedDate(badge.earnedDate)}`
-                : `${badge.title}, locked. ${badge.description}`
-            }
-          >
-            {badge.iconSrc && (
-              <img className="badge-icon" src={badge.iconSrc} alt="" />
-            )}
-            <strong>{badge.title}</strong>
-            <span className={badge.earned ? 'badge-status earned' : 'badge-status locked'}>
-              {badge.earned ? 'Earned' : 'Locked'}
-            </span>
-            <p>{badge.description}</p>
-            {badge.earned && <time dateTime={badge.earnedDate}>{formatBadgeEarnedDate(badge.earnedDate)}</time>}
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function formatBadgeEarnedDate(dateIdentifier: string | undefined): string {
+function formatDisplayDate(dateIdentifier: string | undefined): string {
   if (!dateIdentifier) return 'Date unknown';
   const [year, month, day] = dateIdentifier.split('-').map(Number);
   if (!year || !month || !day) return dateIdentifier;
@@ -2161,10 +2098,10 @@ function SolutionsList({ solutions, onShare }: { solutions: SavedSolution[]; onS
                 <span>{formatTime(solution.seconds)}</span>
                 <span className="solution-divider">·</span>
                 <span className="solution-value-label">value <RepeatingDecimalValue value={solution.value} /></span>
-                {solution.solvedOnOtherDay && <span className="solution-badge archive-badge">Archive</span>}
-                {solution.usedHint && <span className="solution-badge hint-badge">Used Hint</span>}
+                {solution.solvedOnOtherDay && <span className="solution-tag archive-tag">Archive</span>}
+                {solution.usedHint && <span className="solution-tag hint-tag">Used Hint</span>}
                 {solution.difficulty && (
-                  <span className={`solution-badge difficulty-${solution.difficulty}`}>
+                  <span className={`solution-tag difficulty-${solution.difficulty}`}>
                     {solution.difficulty}
                   </span>
                 )}
@@ -2615,7 +2552,7 @@ function CalendarPage({
 
       <div className="calendar-equations-section">
         <div className="calendar-equations-header">
-          <h2>Equations for {formatBadgeEarnedDate(selectedDate)}</h2>
+          <h2>Equations for {formatDisplayDate(selectedDate)}</h2>
           <button className="play-date-button" type="button" onClick={onPlay}>
             Play this Date
           </button>

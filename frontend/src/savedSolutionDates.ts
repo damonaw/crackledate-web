@@ -2,7 +2,7 @@ export type SavedSolutionsByDate<T = unknown> = Record<string, readonly T[] | un
 
 export const savedSolutionsStorageKey = 'crackledate.web.solutions.v1';
 export const solutionStorageError =
-  'Could not save your solution. Please check browser storage and try again.';
+  'Your equation is correct, but this solution could not be saved in this browser. Your existing local history is unchanged.';
 
 export type SavedSolutionsStorage = {
   getItem: (key: string) => string | null;

@@ -38,7 +38,7 @@ export const HOW_TO_PLAY_SECTIONS: HowToPlaySection[] = [
   {
     title: 'Keep exploring',
     items: [
-      'Badges appear with your saved solutions when you unlock something fancy.',
+      'Saved solutions collect your equations, solve history, and local statistics.',
       'Hard mode hides the helper values under the equation for a bigger challenge.',
       'Have fun and try different operators. There is usually more than one good answer.',
     ],
@@ -73,14 +73,14 @@ export const HOW_TO_PLAY_DETAIL_CARDS: HowToPlayDetailCard[] = [
   {
     title: 'Try different operators',
     imageSrc: '/how-to-play/instruction-5.png',
-    imageAlt: 'Crackle Date saved solutions screen showing badges and saved equations',
+    imageAlt: 'Crackle Date saved solutions screen showing equations and solve history',
     note: 'Have fun and try different operators. That is a fancy solution you have got there.',
   },
   {
     title: 'Check Stats',
     imageSrc: '/how-to-play/instruction-6.png',
     imageAlt: 'Crackle Date settings screen showing the Hard difficulty option selected',
-    note: 'Check Stats to see if you earned any badges and admire your solutions.',
+    note: 'Check Stats to review your streak, month progress, solve history, and saved equations.',
   },
   {
     title: 'Try Hard mode',

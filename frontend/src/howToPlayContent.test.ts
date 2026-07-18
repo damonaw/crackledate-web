@@ -32,7 +32,7 @@ describe('HOW_TO_PLAY_SECTIONS', () => {
     expect(copy).toContain('Tap an equation element');
     expect(copy).toContain('PEMDAS');
     expect(copy).toContain('Hard mode hides the helper values');
-    expect(copy).toContain('Badges');
+    expect(copy).toContain('Saved solutions collect your equations');
   });
 });
 
@@ -55,7 +55,7 @@ describe('HOW_TO_PLAY_DETAIL_CARDS', () => {
     expect(copy).toContain('Hard mode');
     expect(copy).toContain('PEMDAS');
     expect(copy).toContain('Clear');
-    expect(copy).toContain('badges');
+    expect(copy).toContain('solve history');
   });
 
   test('matches the requested detailed card copy by card number', () => {
@@ -65,7 +65,7 @@ describe('HOW_TO_PLAY_DETAIL_CARDS', () => {
     );
     expect(HOW_TO_PLAY_DETAIL_CARDS[5]?.title).toBe('Check Stats');
     expect(HOW_TO_PLAY_DETAIL_CARDS[5]?.note).toBe(
-      'Check Stats to see if you earned any badges and admire your solutions.'
+      'Check Stats to review your streak, month progress, solve history, and saved equations.'
     );
     expect(HOW_TO_PLAY_DETAIL_CARDS[6]?.title).toBe('Try Hard mode');
     expect(HOW_TO_PLAY_DETAIL_CARDS[6]?.note).toBe(

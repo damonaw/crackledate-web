@@ -55,4 +55,13 @@ describe('persistSavedSolutions', () => {
 
     expect(persistSavedSolutions(solutions, storage)).toBe(false);
   });
+
+  test('returns false when storage silently drops the written value', () => {
+    const storage: SavedSolutionsStorage = {
+      setItem: () => undefined,
+      getItem: () => null,
+    };
+
+    expect(persistSavedSolutions(solutions, storage)).toBe(false);
+  });
 });

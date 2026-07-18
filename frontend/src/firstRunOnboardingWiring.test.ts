@@ -120,15 +120,30 @@ describe('first-run onboarding wiring', () => {
     expect(source).toContain('const savedSolutionsRef = useRef(savedSolutions)');
     expect(source).toContain('const currentSavedSolutions = savedSolutionsRef.current');
     const persistence = source.indexOf('if (!persistSavedSolutions(nextSavedSolutions))');
+    const storageError = source.indexOf('setMessage(solutionStorageError)', persistence);
+    const failureReturn = source.indexOf('return;', storageError);
     const refUpdate = source.indexOf('savedSolutionsRef.current = nextSavedSolutions', persistence);
     const stateUpdate = source.indexOf('setSavedSolutions(nextSavedSolutions)', persistence);
-    const remoteSubmission = source.indexOf('void submitSolutionRecord(', persistence);
+    const searchUpdate = source.indexOf('setIsSearchingAnother(false)', persistence);
+    const successTone = source.indexOf("setMessageTone('success')", persistence);
+    const successMessage = source.indexOf(
+      'setMessage(`Solved. Both sides equal ${solution.value}.`)',
+      persistence,
+    );
 
     expect(persistence).toBeGreaterThanOrEqual(0);
-    expect(refUpdate).toBeGreaterThan(persistence);
+    expect(storageError).toBeGreaterThan(persistence);
+    expect(failureReturn).toBeGreaterThan(storageError);
+    expect(refUpdate).toBeGreaterThan(failureReturn);
     expect(stateUpdate).toBeGreaterThan(refUpdate);
-    expect(remoteSubmission).toBeGreaterThan(stateUpdate);
-    expect(source.slice(persistence, stateUpdate)).toContain('setMessage(solutionStorageError)');
+    expect(searchUpdate).toBeGreaterThan(stateUpdate);
+    expect(successTone).toBeGreaterThan(searchUpdate);
+    expect(successMessage).toBeGreaterThan(successTone);
+    expect(source.slice(persistence, refUpdate)).not.toContain('savedSolutionsRef.current =');
+    expect(source.slice(persistence, refUpdate)).not.toContain('setSavedSolutions(');
+    expect(source.slice(persistence, refUpdate)).not.toContain('setIsSearchingAnother(false)');
+    expect(source.slice(persistence, refUpdate)).not.toContain("setMessageTone('success')");
+    expect(source).not.toContain('submitSolutionRecord');
     expect(source).not.toContain('localStorage.setItem(storageKey');
   });
 });

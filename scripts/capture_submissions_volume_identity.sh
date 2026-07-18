@@ -266,9 +266,9 @@ staged_output="$(mktemp "$output_parent/.crackledate-fingerprint.XXXXXX")" || fa
 published_identity="$(stat_identity "$staged_output")" || failure
 output_matches_publish "$staged_output" || failure
 cat "$fingerprint" >"$staged_output" || failure
+remove_output=true
 output_matches_publish "$staged_output" || failure
 ln "$staged_output" "$output" || failure
-remove_output=true
 rm -f -- "$staged_output"
 staged_output=''
 [[ "$(stat_identity "$output")" == "$published_identity" ]] || failure

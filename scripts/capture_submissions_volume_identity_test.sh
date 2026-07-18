@@ -53,6 +53,11 @@ new_subject() {
     printf 'capture script lacks exact identity cleanup matching\n' >&2
     exit 1
   }
+  grep -Fq 'remove_output=true
+ln "$staged_output" "$output"' "$capture_script" || {
+    printf 'capture script does not arm cleanup before publishing\n' >&2
+    exit 1
+  }
   if grep -F '/usr/bin/perl' "$capture_script" >/dev/null ||
     grep -F 'exec 3>"$output"' "$capture_script" >/dev/null; then
     printf 'capture script uses a nonportable descriptor publisher\n' >&2

@@ -28,6 +28,7 @@ new_subject() {
   local subject="$scratch/$name"
   mkdir -p "$subject/scripts" "$subject/bin" "$subject/hostile-bin" "$subject/home" "$subject/state" \
     "$subject/docker-config" "$subject/inherited-docker-config" "$subject/output"
+  chmod 700 "$subject/output"
   cp "$capture_script" "$subject/scripts/capture_submissions_volume_identity.sh"
   chmod +x "$subject/scripts/capture_submissions_volume_identity.sh"
   # The tracked script must use this fixed production path.  Only the isolated
@@ -40,21 +41,17 @@ new_subject() {
     printf 'capture script does not invoke env by trusted absolute path\n' >&2
     exit 1
   }
-  grep -Fq 'exec 3>"$output"' "$capture_script" || {
-    printf 'capture script does not create the output through one descriptor\n' >&2
+  grep -Fq "stat -c '%d|%i'" "$capture_script" || {
+    printf 'capture script does not prefer GNU stat identity probing\n' >&2
     exit 1
   }
-  grep -Fq "'%d|%i' /dev/fd/3" "$capture_script" || {
-    printf 'capture script does not bind the descriptor by device and inode\n' >&2
+  grep -Fq '"$(stat_identity "$output")" == "$published_identity"' "$capture_script" || {
+    printf 'capture script does not compare published output identity\n' >&2
     exit 1
   }
-  grep -Fq "'%l|%Lp|%d|%i'" "$capture_script" || {
-    printf 'capture script does not retain output device in pathname identity\n' >&2
-    exit 1
-  }
-  if grep -F 'cat "$fingerprint" >"$output"' "$capture_script" >/dev/null ||
-    grep -F 'chmod 600 "$output"' "$capture_script" >/dev/null; then
-    printf 'capture script reopens the output pathname after creation\n' >&2
+  if grep -F '/usr/bin/perl' "$capture_script" >/dev/null ||
+    grep -F 'exec 3>"$output"' "$capture_script" >/dev/null; then
+    printf 'capture script uses a nonportable descriptor publisher\n' >&2
     exit 1
   fi
   sed -i.bak "s|safe_path=\"/usr/local/bin:/usr/bin:/bin\"|safe_path=\"$subject/bin:/usr/local/bin:/usr/bin:/bin\"|" \

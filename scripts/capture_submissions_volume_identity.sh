@@ -105,22 +105,32 @@ docker_env=(
 
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/crackledate-volume-capture.XXXXXX")"
 remove_output=false
-output_metadata=''
-output_fd_metadata=''
-output_matches_fd() {
+published_identity=''
+staged_output=''
+stat_identity() {
   local path="$1"
-  local metadata
-  [[ -f "$path" && ! -L "$path" ]] || return 1
-  if stat -f '%l|%Lp|%d|%i' "$path" >/dev/null 2>&1; then
-    metadata="$(stat -f '%l|%Lp|%d|%i' "$path")" || return 1
+  if stat -c '%d|%i' "$path" >/dev/null 2>&1; then
+    stat -c '%d|%i' "$path"
   else
-    metadata="$(stat -c '%h|%a|%d|%i' "$path")" || return 1
+    stat -f '%d|%i' "$path"
   fi
-  [[ "$metadata" == "1|600|$output_fd_metadata" ]]
+}
+output_matches_publish() {
+  local path="$1" metadata
+  [[ -f "$path" && ! -L "$path" ]] || return 1
+  if stat -c '%h|%a' "$path" >/dev/null 2>&1; then
+    metadata="$(stat -c '%h|%a' "$path")" || return 1
+  else
+    metadata="$(stat -f '%l|%Lp' "$path")" || return 1
+  fi
+  [[ "$metadata" == '1|600' && "$(stat_identity "$path")" == "$published_identity" ]]
 }
 cleanup() {
   rm -rf -- "$scratch"
-  if [[ "$remove_output" == true ]] && output_matches_fd "$output"; then
+  if [[ -n "$staged_output" ]] && output_matches_publish "$staged_output"; then
+    rm -f -- "$staged_output"
+  fi
+  if [[ "$remove_output" == true ]] && output_matches_publish "$output"; then
     rm -f -- "$output"
   fi
 }
@@ -240,31 +250,25 @@ fingerprint="$scratch/fingerprint"
 require_physical_directory "$docker_config" || failure
 [[ "$output" == "$(physical_new_file_path "$output")" ]] || failure
 [[ ! -e "$output" && ! -L "$output" ]] || failure
+output_parent="$(dirname -- "$output")"
+if stat -c '%u|%a' "$output_parent" >/dev/null 2>&1; then
+  parent_metadata="$(stat -c '%u|%a' "$output_parent")" || failure
+else
+  parent_metadata="$(stat -f '%u|%Lp' "$output_parent")" || failure
+fi
+[[ "$parent_metadata" == "$(id -u)|700" ]] || failure
 umask 077
-set -o noclobber
-exec 3>"$output" || failure
-set +o noclobber
+staged_output="$(mktemp "$output_parent/.crackledate-fingerprint.XXXXXX")" || failure
+published_identity="$(stat_identity "$staged_output")" || failure
+output_matches_publish "$staged_output" || failure
+cat "$fingerprint" >"$staged_output" || failure
+output_matches_publish "$staged_output" || failure
+ln "$staged_output" "$output" || failure
 remove_output=true
-if stat -f '%d|%i' /dev/fd/3 >/dev/null 2>&1; then
-  output_fd_metadata="$(stat -f '%d|%i' /dev/fd/3)" || failure
-else
-  output_fd_metadata="$(stat -c '%d|%i' /dev/fd/3)" || failure
-fi
-if stat -f '%d|%i' "$output" >/dev/null 2>&1; then
-  output_path_metadata="$(stat -f '%d|%i' "$output")" || failure
-else
-  output_path_metadata="$(stat -c '%d|%i' "$output")" || failure
-fi
-# macOS exposes /dev/fd through devfs, whose device differs from the open
-# file's filesystem.  Use fstat in that case while retaining the same dev|ino
-# identity contract on every platform.
-if [[ "$output_fd_metadata" != "$output_path_metadata" ]]; then
-  output_fd_metadata="$(/usr/bin/perl -e 'my @s = stat STDIN; @s or exit 1; print "$s[0]|$s[1]"' <&3)" || failure
-fi
-output_matches_fd "$output" || failure
-cat "$fingerprint" >&3 || failure
-output_matches_fd "$output" || failure
-exec 3>&-
+[[ "$(stat_identity "$output")" == "$published_identity" ]] || failure
+rm -f -- "$staged_output"
+staged_output=''
+output_matches_publish "$output" || failure
 remove_output=false
 
 printf 'submission volume fingerprint captured\n'

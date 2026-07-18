@@ -37,6 +37,50 @@ func TestHandleEvaluateRejectsUnknownFields(t *testing.T) {
 	}
 }
 
+func TestEvaluateAndValidateJSONResponsesAreNoStore(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler http.HandlerFunc
+		body    string
+		status  int
+	}{
+		{name: "evaluate success", handler: handleEvaluate, body: `{"date":"2026-05-16","equation":"1+1"}`, status: http.StatusOK},
+		{name: "evaluate error", handler: handleEvaluate, body: `{"unexpected":true}`, status: http.StatusBadRequest},
+		{name: "validate success", handler: handleValidate, body: `{"date":"2026-05-16","equation":"5+√16=2^0+2+6","mode":"classic"}`, status: http.StatusOK},
+		{name: "validate error", handler: handleValidate, body: `{"date":`, status: http.StatusBadRequest},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/test", strings.NewReader(test.body))
+			response := httptest.NewRecorder()
+
+			test.handler(response, request)
+
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d; body %s", response.Code, test.status, response.Body.String())
+			}
+			assertNoStoreJSON(t, response)
+		})
+	}
+}
+
+func TestDefaultRateLimitRules(t *testing.T) {
+	config := defaultRateLimitConfig(newClientAddressResolver(nil, nil))
+	want := map[rateLimitRule]int{
+		{method: http.MethodPost, path: "/api/hint"}:     30,
+		{method: http.MethodPost, path: "/api/evaluate"}: 240,
+		{method: http.MethodPost, path: "/api/validate"}: 120,
+	}
+	if len(config.limits) != len(want) {
+		t.Fatalf("default rule count = %d, want %d: %#v", len(config.limits), len(want), config.limits)
+	}
+	for rule, limit := range want {
+		if config.limits[rule] != limit {
+			t.Errorf("default limit for %#v = %d, want %d", rule, config.limits[rule], limit)
+		}
+	}
+}
+
 func TestRateLimitAPIRejectsBurstAndResetsAfterWindow(t *testing.T) {
 	now := time.Date(2026, 5, 30, 12, 0, 0, 0, time.UTC)
 	config := testRateLimitConfig(func() time.Time { return now }, 16, map[rateLimitRule]int{
@@ -78,15 +122,15 @@ func TestRateLimitAPIRejectsBurstAndResetsAfterWindow(t *testing.T) {
 
 func TestRateLimitAPISeparatesClientsAndPaths(t *testing.T) {
 	config := testRateLimitConfig(time.Now, 16, map[rateLimitRule]int{
-		{method: http.MethodPost, path: "/api/submissions"}: 1,
+		{method: http.MethodPost, path: "/api/validate"}: 1,
 	})
 	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusNoContent)
 	}), config)
 
-	_ = rateLimitedRequest(handler, http.MethodPost, "/api/submissions", "203.0.113.10:1234")
-	sameClient := rateLimitedRequest(handler, http.MethodPost, "/api/submissions", "203.0.113.10:1234")
-	otherClient := rateLimitedRequest(handler, http.MethodPost, "/api/submissions", "203.0.113.11:1234")
+	_ = rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234")
+	sameClient := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.10:1234")
+	otherClient := rateLimitedRequest(handler, http.MethodPost, "/api/validate", "203.0.113.11:1234")
 	otherPath := rateLimitedRequest(handler, http.MethodPost, "/api/health", "203.0.113.10:1234")
 
 	if sameClient.Code != http.StatusTooManyRequests {
@@ -100,7 +144,7 @@ func TestRateLimitAPISeparatesClientsAndPaths(t *testing.T) {
 	}
 }
 
-func TestRateLimitAPIRestrictsHintGET(t *testing.T) {
+func TestRateLimitAPIRestrictsHintPOST(t *testing.T) {
 	config := defaultRateLimitConfig(newClientAddressResolver(nil, nil))
 	handled := 0
 	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
@@ -109,12 +153,12 @@ func TestRateLimitAPIRestrictsHintGET(t *testing.T) {
 	}), config)
 
 	for index := 0; index < 30; index++ {
-		response := rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234")
+		response := rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234")
 		if response.Code != http.StatusNoContent {
 			t.Fatalf("request %d unexpectedly returned %d", index+1, response.Code)
 		}
 	}
-	response := rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234")
+	response := rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234")
 	if response.Code != http.StatusTooManyRequests {
 		t.Fatalf("expected 31st hint request to be limited, got %d", response.Code)
 	}
@@ -125,19 +169,19 @@ func TestRateLimitAPIRestrictsHintGET(t *testing.T) {
 
 func TestRateLimitAPIIsMethodAndPathSpecific(t *testing.T) {
 	config := testRateLimitConfig(time.Now, 16, map[rateLimitRule]int{
-		{method: http.MethodGet, path: "/api/hint"}:      1,
+		{method: http.MethodPost, path: "/api/hint"}:     1,
 		{method: http.MethodPost, path: "/api/validate"}: 1,
 	})
 	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		writer.WriteHeader(http.StatusNoContent)
 	}), config)
 
-	_ = rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234")
-	if response := rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234"); response.Code != http.StatusTooManyRequests {
-		t.Fatalf("second GET /api/hint = %d, want 429", response.Code)
+	_ = rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234")
+	if response := rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234"); response.Code != http.StatusTooManyRequests {
+		t.Fatalf("second POST /api/hint = %d, want 429", response.Code)
 	}
-	if response := rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234"); response.Code != http.StatusNoContent {
-		t.Fatalf("POST /api/hint = %d, want unlisted pass-through", response.Code)
+	if response := rateLimitedRequest(handler, http.MethodGet, "/api/hint", "203.0.113.10:1234"); response.Code != http.StatusNoContent {
+		t.Fatalf("GET /api/hint = %d, want unlisted pass-through", response.Code)
 	}
 	if response := rateLimitedRequest(handler, http.MethodGet, "/api/validate", "203.0.113.10:1234"); response.Code != http.StatusNoContent {
 		t.Fatalf("GET /api/validate = %d, want unlisted pass-through", response.Code)
@@ -152,12 +196,12 @@ func TestRateLimitAPIIsMethodAndPathSpecific(t *testing.T) {
 
 func TestRateLimiterNeverExceedsConfiguredCapacity(t *testing.T) {
 	config := testRateLimitConfig(time.Now, 32, map[rateLimitRule]int{
-		{method: http.MethodGet, path: "/api/hint"}: 30,
+		{method: http.MethodPost, path: "/api/hint"}: 30,
 	})
 	limiter := newRateLimiter(config)
 
 	for index := 0; index < 10_000; index++ {
-		request := httptest.NewRequest(http.MethodGet, "/api/hint", nil)
+		request := httptest.NewRequest(http.MethodPost, "/api/hint", nil)
 		request.RemoteAddr = fmt.Sprintf("198.51.%d.%d:443", (index/254)%254, index%254+1)
 		if !limiter.allow(request) {
 			t.Fatalf("unique request %d unexpectedly limited", index)
@@ -173,7 +217,7 @@ func TestRateLimiterNeverExceedsConfiguredCapacity(t *testing.T) {
 
 func TestRateLimiterEvictsLeastRecentlyUsedEntry(t *testing.T) {
 	config := testRateLimitConfig(time.Now, 2, map[rateLimitRule]int{
-		{method: http.MethodGet, path: "/api/hint"}: 1,
+		{method: http.MethodPost, path: "/api/hint"}: 1,
 	})
 	limiter := newRateLimiter(config)
 
@@ -291,7 +335,7 @@ func rateLimitedRequest(handler http.Handler, method string, path string, remote
 }
 
 func newRateLimiterRequest(remoteAddr string) *http.Request {
-	request := httptest.NewRequest(http.MethodGet, "/api/hint", nil)
+	request := httptest.NewRequest(http.MethodPost, "/api/hint", nil)
 	request.RemoteAddr = remoteAddr
 	return request
 }

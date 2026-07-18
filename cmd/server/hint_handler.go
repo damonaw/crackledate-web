@@ -1,63 +1,88 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"crackledate-web/internal/game"
 )
 
 const (
-	maxHintRawQueryBytes    = 1024
 	maxHintDateBytes        = 32
 	maxHintModeBytes        = 32
-	maxHintTargetValueBytes = 64
 	maxHintPrefixBytes      = 256
+	maxHintTargetValueBytes = 64
 )
 
-type hintSolver func([]int, string, string, string) (string, error)
+type hintRequest struct {
+	Date        string `json:"date"`
+	Mode        string `json:"mode"`
+	Prefix      string `json:"prefix"`
+	TargetValue string `json:"targetValue,omitempty"`
+}
+
+type hintSolver func(
+	context.Context,
+	[]int,
+	string,
+	string,
+	string,
+	game.SearchBudget,
+) (game.Hint, game.SearchStats, error)
 
 type hintHandler struct {
 	solver hintSolver
 	gate   chan struct{}
+	budget game.SearchBudget
 }
 
-func newHintHandler(solver hintSolver, maxConcurrent int) http.Handler {
+func newHintHandler(solver hintSolver, maxConcurrent int, budget game.SearchBudget) http.Handler {
+	if maxConcurrent < 1 {
+		maxConcurrent = 1
+	}
 	return &hintHandler{
 		solver: solver,
 		gate:   make(chan struct{}, maxConcurrent),
+		budget: budget,
 	}
 }
 
 func (handler *hintHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
-	if request.Method != http.MethodGet {
+	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if len(request.URL.RawQuery) > maxHintRawQueryBytes {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "Invalid query"})
+
+	var payload hintRequest
+	if err := decodeJSONBody(writer, request, &payload); err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
-	query, err := url.ParseQuery(request.URL.RawQuery)
-	if err != nil ||
-		!queryValuesWithinLimit(query, "date", maxHintDateBytes) ||
-		!queryValuesWithinLimit(query, "mode", maxHintModeBytes) ||
-		!queryValuesWithinLimit(query, "targetValue", maxHintTargetValueBytes) ||
-		!queryValuesWithinLimit(query, "prefix", maxHintPrefixBytes) {
-		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "Invalid query"})
+	if len(payload.Date) > maxHintDateBytes ||
+		len(payload.Mode) > maxHintModeBytes ||
+		len(payload.Prefix) > maxHintPrefixBytes ||
+		len(payload.TargetValue) > maxHintTargetValueBytes ||
+		payload.Mode != "classic" {
+		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 		return
 	}
 
-	date, err := game.ParsePuzzleDate(query.Get("date"), time.Now())
+	date, err := game.ParsePuzzleDate(payload.Date, time.Now())
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]string{"error": "Invalid date"})
 		return
 	}
+	if request.Context().Err() != nil {
+		return
+	}
+
 	select {
 	case handler.gate <- struct{}{}:
 		defer func() { <-handler.gate }()
+	case <-request.Context().Done():
+		return
 	default:
 		writer.Header().Set("Retry-After", "1")
 		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "Hint service is busy"})
@@ -65,66 +90,28 @@ func (handler *hintHandler) ServeHTTP(writer http.ResponseWriter, request *http.
 	}
 
 	puzzle := game.PuzzleForDate(date)
-	mode := query.Get("mode")
-	targetValue := query.Get("targetValue")
-	prefix := query.Get("prefix")
-	solution, err := handler.solver(puzzle.Digits, mode, targetValue, prefix)
-	if err != nil {
+	hint, _, err := handler.solver(
+		request.Context(),
+		puzzle.Digits,
+		payload.Mode,
+		payload.TargetValue,
+		payload.Prefix,
+		handler.budget,
+	)
+	if request.Context().Err() != nil || errors.Is(err, context.Canceled) {
+		return
+	}
+	if err == nil {
+		writeJSON(writer, http.StatusOK, hint)
+		return
+	}
+	if errors.Is(err, game.ErrNoSolution) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "No solution found"})
 		return
 	}
-	writeHintSolution(writer, solution, mode, prefix, puzzle.Digits)
-}
-
-func queryValuesWithinLimit(query url.Values, key string, maximum int) bool {
-	for _, value := range query[key] {
-		if len(value) > maximum {
-			return false
-		}
+	if errors.Is(err, game.ErrSearchBudgetExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		writeJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "No hint available yet"})
+		return
 	}
-	return true
-}
-
-func writeHintSolution(writer http.ResponseWriter, solution string, mode string, prefix string, digits []int) {
-	var step1, step2, step3 string
-	step3 = solution
-
-	switch mode {
-	case "double_equality":
-		parts := strings.Split(solution, "=")
-		evaluation := game.RunningValues(solution)
-		step1 = evaluation.Left
-		if len(parts) >= 2 {
-			step2 = parts[0] + "=" + parts[1]
-		} else {
-			step2 = parts[0]
-		}
-	case "target":
-		parts := strings.Split(solution, "=")
-		if len(parts) >= 2 {
-			step1 = parts[0]
-			step2 = getSmartPrefix(parts[1])
-		} else {
-			step1 = parts[0]
-			step2 = parts[0]
-		}
-	case "single_expr":
-		step1 = getSmartHalfPrefix(solution)
-		step2 = getSmartAlmostPrefix(solution)
-	default:
-		parts := strings.Split(solution, "=")
-		evaluation := game.RunningValues(solution)
-		step1 = evaluation.Left
-		step2 = parts[0]
-	}
-
-	balancingHint, mathTip := computeBalancingHintAndTip(solution, mode, prefix, digits)
-	writeJSON(writer, http.StatusOK, map[string]string{
-		"solution":      solution,
-		"step1":         step1,
-		"step2":         step2,
-		"step3":         step3,
-		"balancingHint": balancingHint,
-		"mathTip":       mathTip,
-	})
+	writeJSON(writer, http.StatusInternalServerError, map[string]string{"error": "Hint service unavailable"})
 }

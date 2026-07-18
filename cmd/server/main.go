@@ -52,7 +52,7 @@ func main() {
 	mux.HandleFunc("/api/evaluate", handleEvaluate)
 	mux.HandleFunc("/api/validate", handleValidate)
 	mux.HandleFunc("/api/submissions", handleSubmitSolution(submissions, time.Now))
-	mux.Handle("/api/hint", newHintHandler(game.SolvePuzzle, runtimeConfig.maxConcurrentHintSolves))
+	mux.Handle("/api/hint", newHintHandler(game.GenerateHint, runtimeConfig.maxConcurrentHintSolves, game.DefaultSearchBudget))
 	mux.HandleFunc("/", handleStatic(publicFiles))
 
 	port := os.Getenv("PORT")
@@ -181,6 +181,7 @@ func mustPublicFS() fs.FS {
 
 func writeJSON(writer http.ResponseWriter, status int, payload any) {
 	writer.Header().Set("Content-Type", "application/json")
+	writer.Header().Set("Cache-Control", "no-store")
 	writer.WriteHeader(status)
 	if err := json.NewEncoder(writer).Encode(payload); err != nil {
 		log.Printf("write json: %v", err)

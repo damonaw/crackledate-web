@@ -18,7 +18,7 @@ describe('browser-local product contract', () => {
     expect(existsSync(new URL('./src/submissions.test.ts', frontendUrl))).toBe(false);
     expect(mainSource).not.toContain("from './submissions'");
     expect(mainSource).not.toContain('submitSolutionRecord');
-    expect(readLegacySource('./src/submissions.ts')).not.toContain('/api/submissions');
+    expect(mainSource).not.toContain('/api/submissions');
   });
 
   test('has no achievement calculators', () => {
@@ -70,6 +70,36 @@ describe('browser-local product contract', () => {
       '.victory-meta-hint',
     ]) {
       expect(stylesSource).toContain(replacementIdentifier);
+    }
+  });
+
+  test('renders preserved solution metadata with generic JSX identifiers', () => {
+    for (const preservedMetadata of [
+      'className="solution-tag archive-tag">Archive',
+      'className="solution-tag hint-tag">Used Hint',
+      'className={`solution-tag difficulty-${solution.difficulty}`}',
+      '{solution.difficulty}',
+      'className="victory-status-row"',
+      'className="victory-status-pill"',
+      'className="victory-meta-mode">Classic',
+      "className={`victory-meta-difficulty difficulty-${sol.difficulty || 'easy'}`}",
+      "{sol.difficulty || 'easy'}",
+      'className="victory-meta-hint">💡 Hint',
+    ]) {
+      expect(mainSource).toContain(preservedMetadata);
+    }
+
+    for (const oldJsxClass of [
+      'solution-badge',
+      'archive-badge',
+      'hint-badge',
+      'victory-badge-row',
+      'victory-badge-pill',
+      'victory-badge-mode',
+      'victory-badge-diff',
+      'victory-badge-hint',
+    ]) {
+      expect(mainSource).not.toContain(oldJsxClass);
     }
   });
 

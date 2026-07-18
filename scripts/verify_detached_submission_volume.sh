@@ -174,6 +174,31 @@ query_to() {
   "${docker_env[@]}" docker --context "$docker_context" "$@" >"$destination" 2>/dev/null || failure
 }
 
+normalize_println_output() {
+  local source="$1"
+  local destination="$2"
+  local line=''
+  local previous=''
+  local saw_line=false
+  : >"$destination"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$saw_line" == true ]]; then
+      printf '%s\n' "$previous" >>"$destination"
+    fi
+    previous="$line"
+    saw_line=true
+  done <"$source"
+  [[ "$saw_line" == true && -z "$previous" ]] || failure
+}
+
+query_println_to() {
+  local destination="$1"
+  shift
+  local raw_output="$destination-raw"
+  query_to "$raw_output" "$@"
+  normalize_println_output "$raw_output" "$destination"
+}
+
 query_exact() {
   local expected="$1" destination="$2"
   shift 2
@@ -192,7 +217,7 @@ verify_snapshot() {
   query_exact "$volume_created_at" "$scratch/$prefix-created-at" volume inspect --format '{{.CreatedAt}}' "$volume_name"
   query_exact "$volume_label_count" "$scratch/$prefix-label-count" volume inspect --format '{{len .Labels}}' "$volume_name"
   destination="$scratch/$prefix-label-keys"
-  query_to "$destination" volume inspect --format '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}' "$volume_name"
+  query_println_to "$destination" volume inspect --format '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}' "$volume_name"
   cmp -s "$expected_label_keys" "$destination" || failure
   while IFS= read -r label_key || [[ -n "$label_key" ]]; do
     IFS= read -r expected_label <"$scratch/expected-label-$(printf '%03d' "$label_number")" || failure

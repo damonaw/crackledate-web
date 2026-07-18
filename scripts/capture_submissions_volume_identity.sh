@@ -146,6 +146,31 @@ query_to() {
   "${docker_env[@]}" docker --context "$docker_context" "$@" >"$destination" 2>/dev/null || failure
 }
 
+normalize_println_output() {
+  local source="$1"
+  local destination="$2"
+  local line=''
+  local previous=''
+  local saw_line=false
+  : >"$destination"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$saw_line" == true ]]; then
+      printf '%s\n' "$previous" >>"$destination"
+    fi
+    previous="$line"
+    saw_line=true
+  done <"$source"
+  [[ "$saw_line" == true && -z "$previous" ]] || failure
+}
+
+query_println_to() {
+  local destination="$1"
+  shift
+  local raw_output="$destination-raw"
+  query_to "$raw_output" "$@"
+  normalize_println_output "$raw_output" "$destination"
+}
+
 query_exact() {
   local name="$1"
   local expected="$2"
@@ -190,9 +215,10 @@ query_exact container-project "$project_name" container inspect \
   --format '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id"
 query_exact container-service "$service" container inspect \
   --format '{{index .Config.Labels "com.docker.compose.service"}}' "$container_id"
-query_exact container-mount "volume|$volume|/data" container inspect \
+query_println_to "$scratch/container-mount" container inspect \
   --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}' \
   "$container_id"
+printf 'volume|%s|/data\n' "$volume" | cmp -s - "$scratch/container-mount" || failure
 
 query_value volume_name volume-name volume inspect --format '{{.Name}}' "$volume"
 [[ "$volume_name" == "$volume" ]] || failure
@@ -210,7 +236,7 @@ query_value label_count volume-label-count volume inspect --format '{{len .Label
 
 label_keys="$scratch/label-keys"
 sorted_label_keys="$scratch/sorted-label-keys"
-query_to "$label_keys" volume inspect \
+query_println_to "$label_keys" volume inspect \
   --format '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}' "$volume"
 while IFS= read -r label_key || [[ -n "$label_key" ]]; do
   [[ "$label_key" =~ $identifier_pattern ]] || failure

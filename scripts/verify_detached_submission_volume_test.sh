@@ -231,6 +231,14 @@ emit() {
   done <"$state/$key"
 }
 
+emit_println() {
+  emit "$1"
+  printf '\n'
+  if [[ -f "$state/println_unterminated_suffix" ]]; then
+    printf '%s' "$(<"$state/println_unterminated_suffix")"
+  fi
+}
+
 require_removed_for_post_query() {
   if [[ -f "$state/created" && ! -f "$state/removed" ]]; then
     printf 'post-inspection query occurred before removal\n' >&2
@@ -258,7 +266,7 @@ case "${1:-} ${2:-}" in
       '{{.Mountpoint}}') emit volume_mountpoint ;;
       '{{.CreatedAt}}') emit volume_created_at ;;
       '{{len .Labels}}') emit volume_label_count ;;
-      '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}') emit volume_label_keys ;;
+      '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}') emit_println volume_label_keys ;;
       *)
         if [[ "$4" =~ ^\{\{index\ \.Labels\ \"([A-Za-z0-9_.-]+)\"\}\}$ ]]; then
           emit "volume_label_${BASH_REMATCH[1]}"
@@ -436,6 +444,10 @@ expect_fail() {
 
 subject="$(new_subject success)"
 expect_pass "$subject"
+
+subject="$(new_subject unterminated-println-suffix)"
+printf 'forged-unterminated' >"$subject/state/println_unterminated_suffix"
+expect_fail "$subject"
 
 subject="$(new_subject metadata-main-only)"
 write_state "$subject" inspection_metadata '/evidence/submissions.db|regular file|1'

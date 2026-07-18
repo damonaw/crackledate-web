@@ -148,6 +148,14 @@ emit() {
   fi
 }
 
+emit_println() {
+  emit "$1"
+  printf '\n'
+  if [[ -f "$state/println_unterminated_suffix" ]]; then
+    printf '%s' "$(<"$state/println_unterminated_suffix")"
+  fi
+}
+
 case "${1:-}" in
   context)
     if [[ ${2:-} != inspect || ${3:-} != '--format' || \
@@ -173,7 +181,7 @@ case "${1:-}" in
       '{{.Id}}') emit container_id ;;
       '{{index .Config.Labels "com.docker.compose.project"}}') emit container_project ;;
       '{{index .Config.Labels "com.docker.compose.service"}}') emit container_service ;;
-      '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}') emit mounts ;;
+      '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}') emit_println mounts ;;
       *)
         printf 'unsafe container format\n' >&2
         exit 97
@@ -200,7 +208,7 @@ case "${1:-}" in
       '{{index .Labels "com.docker.compose.project"}}') emit volume_project ;;
       '{{index .Labels "com.docker.compose.volume"}}') emit volume_logical ;;
       '{{len .Labels}}') emit volume_label_count ;;
-      '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}') emit volume_label_keys ;;
+      '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}') emit_println volume_label_keys ;;
       *)
         if [[ "$format" =~ ^\{\{index\ .Labels\ \"([A-Za-z0-9_.-]+)\"\}\}$ ]]; then
           emit "volume_label_${BASH_REMATCH[1]}"
@@ -360,6 +368,10 @@ expect_fail() {
 
 subject="$(new_subject success)"
 expect_pass "$subject"
+
+subject="$(new_subject unterminated-println-suffix)"
+printf 'forged-unterminated' >"$subject/state/println_unterminated_suffix"
+expect_fail "$subject"
 
 # A value newline used to turn one Go-template label record into two output
 # records.  Label enumeration plus one value query per safe key must reject it.

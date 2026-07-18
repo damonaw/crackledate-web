@@ -193,6 +193,34 @@ query_exact() {
   printf '%s\n' "$expected" | cmp -s - "$output" || failure
 }
 
+normalize_println_output() {
+  local source="$1"
+  local destination="$2"
+  local line=''
+  local previous=''
+  local saw_line=false
+  : >"$destination"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$saw_line" == true ]]; then
+      printf '%s\n' "$previous" >>"$destination"
+    fi
+    previous="$line"
+    saw_line=true
+  done <"$source"
+  [[ "$saw_line" == true && -z "$previous" ]] || failure
+}
+
+query_println_exact() {
+  local name="$1"
+  local expected="$2"
+  shift 2
+  local raw_output="$scratch/$name-raw"
+  local output="$scratch/$name"
+  "${docker_env[@]}" docker --context "$docker_context" "$@" >"$raw_output" 2>/dev/null || failure
+  normalize_println_output "$raw_output" "$output"
+  printf '%s\n' "$expected" | cmp -s - "$output" || failure
+}
+
 query_exact context "$docker_context|$docker_host" context inspect \
   --format '{{.Name}}|{{.Endpoints.docker.Host}}' "$docker_context"
 
@@ -212,10 +240,10 @@ query_exact config-file "$compose_file" container inspect --format '{{index .Con
 query_exact container-id "$container_id" container inspect --format '{{.Id}}' "$container_id"
 query_exact image-id "$image_id" container inspect --format '{{.Image}}' "$container_id"
 query_exact revision "$revision" image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_id"
-query_exact mount "volume|$volume|/data" container inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}' "$container_id"
-query_exact submissions-path exact container inspect --format '{{range .Config.Env}}{{if eq (printf "%.17s" .) "SUBMISSIONS_PATH="}}{{if eq . "SUBMISSIONS_PATH=/data/submissions.db"}}exact{{else}}invalid{{end}}{{println}}{{end}}{{end}}' "$container_id"
-query_exact secret-state present-nonempty container inspect --format '{{range .Config.Env}}{{if eq (printf "%.19s" .) "CLIENT_HASH_SECRET="}}{{if gt (len .) 19}}present-nonempty{{else}}present-empty{{end}}{{println}}{{end}}{{end}}' "$container_id"
-query_exact retirement "$retirement_state" container inspect --format '{{range .Config.Env}}{{if eq (printf "%.27s" .) "RETIRE_LEGACY_ACCOUNT_DATA="}}{{if eq . "RETIRE_LEGACY_ACCOUNT_DATA="}}empty{{else if eq . "RETIRE_LEGACY_ACCOUNT_DATA=confirmed"}}confirmed{{else}}invalid{{end}}{{println}}{{end}}{{end}}' "$container_id"
+query_println_exact mount "volume|$volume|/data" container inspect --format '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}' "$container_id"
+query_println_exact submissions-path exact container inspect --format '{{range .Config.Env}}{{if eq (printf "%.17s" .) "SUBMISSIONS_PATH="}}{{if eq . "SUBMISSIONS_PATH=/data/submissions.db"}}exact{{else}}invalid{{end}}{{println}}{{end}}{{end}}' "$container_id"
+query_println_exact secret-state present-nonempty container inspect --format '{{range .Config.Env}}{{if eq (printf "%.19s" .) "CLIENT_HASH_SECRET="}}{{if gt (len .) 19}}present-nonempty{{else}}present-empty{{end}}{{println}}{{end}}{{end}}' "$container_id"
+query_println_exact retirement "$retirement_state" container inspect --format '{{range .Config.Env}}{{if eq (printf "%.27s" .) "RETIRE_LEGACY_ACCOUNT_DATA="}}{{if eq . "RETIRE_LEGACY_ACCOUNT_DATA="}}empty{{else if eq . "RETIRE_LEGACY_ACCOUNT_DATA=confirmed"}}confirmed{{else}}invalid{{end}}{{println}}{{end}}{{end}}' "$container_id"
 query_exact restart-policy "$restart_policy" container inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$container_id"
 state_format='{{if eq .State.Status "running"}}running{{else if or (eq .State.Status "created") (eq .State.Status "exited")}}stopped{{else}}invalid{{end}}'
 query_exact state "$expected_state" container inspect --format "$state_format" "$container_id"

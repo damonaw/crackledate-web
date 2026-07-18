@@ -85,6 +85,14 @@ emit() {
   fi
 }
 
+emit_println() {
+  emit "$1"
+  printf '\n'
+  if [[ -f "$state/println_unterminated_suffix" ]]; then
+    printf '%s' "$(<"$state/println_unterminated_suffix")"
+  fi
+}
+
 if [[ ${1:-} != '--context' || ${2:-} != "$(cat "$state/context")" ]]; then
   printf 'missing or wrong explicit Docker context\n' >&2
   exit 92
@@ -142,10 +150,10 @@ case "${1:-}" in
           '{{index .Config.Labels "com.docker.compose.project.config_files"}}') emit config_file ;;
           '{{.Id}}') emit container_id ;;
           '{{.Image}}') emit image_id ;;
-          '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}') emit mount ;;
-          '{{range .Config.Env}}{{if eq (printf "%.17s" .) "SUBMISSIONS_PATH="}}{{if eq . "SUBMISSIONS_PATH=/data/submissions.db"}}exact{{else}}invalid{{end}}{{println}}{{end}}{{end}}') emit submissions ;;
-          '{{range .Config.Env}}{{if eq (printf "%.19s" .) "CLIENT_HASH_SECRET="}}{{if gt (len .) 19}}present-nonempty{{else}}present-empty{{end}}{{println}}{{end}}{{end}}') emit secret ;;
-          '{{range .Config.Env}}{{if eq (printf "%.27s" .) "RETIRE_LEGACY_ACCOUNT_DATA="}}{{if eq . "RETIRE_LEGACY_ACCOUNT_DATA="}}empty{{else if eq . "RETIRE_LEGACY_ACCOUNT_DATA=confirmed"}}confirmed{{else}}invalid{{end}}{{println}}{{end}}{{end}}') emit retirement ;;
+          '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Type}}|{{.Name}}|{{.Destination}}{{println}}{{end}}{{end}}') emit_println mount ;;
+          '{{range .Config.Env}}{{if eq (printf "%.17s" .) "SUBMISSIONS_PATH="}}{{if eq . "SUBMISSIONS_PATH=/data/submissions.db"}}exact{{else}}invalid{{end}}{{println}}{{end}}{{end}}') emit_println submissions ;;
+          '{{range .Config.Env}}{{if eq (printf "%.19s" .) "CLIENT_HASH_SECRET="}}{{if gt (len .) 19}}present-nonempty{{else}}present-empty{{end}}{{println}}{{end}}{{end}}') emit_println secret ;;
+          '{{range .Config.Env}}{{if eq (printf "%.27s" .) "RETIRE_LEGACY_ACCOUNT_DATA="}}{{if eq . "RETIRE_LEGACY_ACCOUNT_DATA="}}empty{{else if eq . "RETIRE_LEGACY_ACCOUNT_DATA=confirmed"}}confirmed{{else}}invalid{{end}}{{println}}{{end}}{{end}}') emit_println retirement ;;
           '{{.HostConfig.RestartPolicy.Name}}') emit restart ;;
           '{{if eq .State.Status "running"}}running{{else if or (eq .State.Status "created") (eq .State.Status "exited")}}stopped{{else}}invalid{{end}}')
             if [[ "$target" == "$(head -n 1 "$state/container_id")" ]]; then
@@ -350,6 +358,10 @@ expect_fail_args() {
 subject="$(new_subject valid)"
 expect_pass "$subject"
 
+subject="$(new_subject unterminated-println-suffix)"
+printf 'forged-unterminated' >"$subject/state/println_unterminated_suffix"
+expect_fail "$subject"
+
 fields=(context_identity project service working_dir config_file container_id image_id revision mount submissions secret retirement restart run_state compose_container)
 wrong_values=('approved-context|unix:///wrong/docker.sock' wrong-project wrong-service /wrong/workdir /wrong/config wrong-id wrong-image wrong-revision 'bind||/data' invalid present-empty confirmed always running wrong-compose-id)
 
@@ -521,213 +533,36 @@ write_state "$subject" run_state running
 build_guard_args "$subject" unless-stopped empty running normal
 expect_pass_args "$subject" "${guard_args[@]}"
 
-runbook="$repo_dir/docs/runbooks/submissions-database.md"
-required_runbook_contracts=(
-  'verify_identity() {'
-  'require_empty_retirement_env_file() {'
-  'APPROVED_DOCKER_HOST'
-  'APPROVED_DOCKER_CONFIG'
-  'APPROVED_CURRENT_REVISION'
-  'APPROVED_NEW_REVISION'
-  'APPROVED_PRIOR_REVISION'
-  'OBSERVED_CURRENT_REVISION'
-  'AUTO_UPDATERS_DISABLED'
-  '--phase "$expected_phase"'
-  'CRACKLEDATE_IMAGE="$APPROVED_PRODUCTION_IMAGE"'
-  'CRACKLEDATE_SUBMISSIONS_VOLUME="$APPROVED_EXISTING_VOLUME"'
-  'CRACKLEDATE_RESTART_POLICY="$APPROVED_NORMAL_RESTART_POLICY"'
-  '--mount "type=volume,src=$ROLLBACK_VOLUME,dst=/target,readonly"'
-  '/reviewed-copy-verified-main'
-  'confirmed-post-start-verification'
-  'does not authorize production work'
-  'stat -f '\''%u:%g:%Lp'\'' -- "$RECONCILE_DIRECTORY"'
-  'stat -c '\''%u:%g:%a'\'' -- "$RECONCILE_DIRECTORY"'
-  'stat -f '\''%u:%g:%Lp'\'' -- "$RECONCILED_DATABASE"'
-  'stat -c '\''%u:%g:%a'\'' -- "$RECONCILED_DATABASE"'
+guard_script="$repo_dir/scripts/verify_deployment_identity.sh"
+required_guard_contracts=(
+  'query_exact revision "$revision" image inspect --format'
+  'query_println_exact mount "volume|$volume|/data" container inspect --format'
+  'query_println_exact submissions-path exact container inspect --format'
+  'query_println_exact secret-state present-nonempty container inspect --format'
+  'query_println_exact retirement "$retirement_state" container inspect --format'
+  'state_format='
 )
-for contract in "${required_runbook_contracts[@]}"; do
-  if ! grep -Fq -- "$contract" "$runbook"; then
-    printf 'runbook contract missing: %s\n' "$contract" >&2
+for contract in "${required_guard_contracts[@]}"; do
+  if ! grep -Fq -- "$contract" "$guard_script"; then
+    printf 'legacy runtime guard contract missing: %s\n' "$contract" >&2
     exit 1
   fi
 done
-if ! confirmed_create_count="$(awk '
-  /^```bash$/ {
-    in_fence = 1
-    current = ""
-    next
-  }
-  /^```$/ && in_fence {
-    if (current ~ /RETIRE_LEGACY_ACCOUNT_DATA=confirmed/ &&
-        current ~ /up --no-start --no-deps --force-recreate --no-build --pull never/) {
-      confirmed_creates++
-      if (previous !~ /(^|\n)require_empty_retirement_env_file(\n|$)/) invalid = 1
-    }
-    previous = current
-    in_fence = 0
-    next
-  }
-  in_fence { current = current $0 "\n" }
-  END {
-    if (invalid) exit 1
-    print confirmed_creates + 0
-  }
-' "$runbook")"; then
-  printf 'confirmed stopped-create path missing adjacent empty retirement check\n' >&2
-  exit 1
-fi
-if [[ "$confirmed_create_count" -ne 2 ]]; then
-  printf 'runbook must contain exactly two guarded confirmed stopped-create paths\n' >&2
-  exit 1
-fi
-rollback_static_failure=0
-rollback_contracts=(
-  'APPROVED_ROLLBACK_TRAFFIC_REDRAINED'
-  'APPROVED_ROLLBACK_WRITES_BLOCKED'
-  'APPROVED_FAILED_IMAGE'
-  'APPROVED_FAILED_CONTAINER_ID'
-  'APPROVED_FAILED_IMAGE_ID'
-  'APPROVED_FAILED_REVISION'
-  'APPROVED_FAILED_VOLUME'
-  'APPROVED_FAILED_RESTART'
-  'APPROVED_FAILED_RETIREMENT'
-  'APPROVED_FAILED_STATE'
-  'APPROVED_FAILED_PHASE'
-  'APPROVED_FAILED_STOPPED_PHASE'
-  'test "$APPROVED_FAILED_STATE" = running'
-  'test "$APPROVED_FAILED_STATE" = stopped'
-  'CRACKLEDATE_IMAGE="$APPROVED_FAILED_IMAGE"'
-  'CRACKLEDATE_SUBMISSIONS_VOLUME="$APPROVED_FAILED_VOLUME"'
-  'No observed output selects a rollback branch.'
-  'Never remove, rename, empty, restore over, or mount the failed volume read-write.'
+
+identity_test_source="$repo_dir/scripts/verify_deployment_identity_test.sh"
+legacy_runbook_reference='docs/runbooks/'"submissions-database.md"
+retired_runbook_contracts=(
+  'verify_'"identity() {"
+  'require_empty_'"retirement_env_file() {"
 )
-for contract in "${rollback_contracts[@]}"; do
-  if ! grep -Fq -- "$contract" "$runbook"; then
-    rollback_static_failure=1
+if grep -Fq -- "$legacy_runbook_reference" "$identity_test_source"; then
+  printf 'legacy identity test still depends on the decommission runbook\n' >&2
+  exit 1
+fi
+for contract in "${retired_runbook_contracts[@]}"; do
+  if grep -Fq -- "$contract" "$identity_test_source"; then
+    printf 'legacy identity test still requires a retired runbook function\n' >&2
+    exit 1
   fi
 done
-if [[ $rollback_static_failure -ne 0 ]]; then
-  printf 'rollback transition contract is incomplete\n' >&2
-fi
-if grep -Fq -- 'APPROVED_FAILED_STOPPED_RESTART' "$runbook"; then
-  printf 'rollback stopped convergence must require restart no\n' >&2
-  rollback_static_failure=1
-fi
-if ! rollback_adjacency="$(awk '
-  /^## Pre-write rollback$/ {
-    in_rollback = 1
-    previous = ""
-    next
-  }
-  /^## / && in_rollback { in_rollback = 0 }
-  !in_rollback { next }
-  /^```bash$/ {
-    in_fence = 1
-    current = ""
-    next
-  }
-  /^```$/ && in_fence {
-    if (expect_same_state_no) {
-      if (current !~ /verify_identity/ ||
-          current !~ /"\$APPROVED_FAILED_VOLUME" no/ ||
-          current !~ /"\$APPROVED_FAILED_RETIREMENT" "\$APPROVED_FAILED_STATE" "\$APPROVED_FAILED_PHASE"/) invalid = 1
-      expect_same_state_no = 0
-    }
-    if (expect_stopped) {
-      if (current !~ /verify_identity/ ||
-          current !~ /"\$APPROVED_FAILED_VOLUME" no/ ||
-          current !~ /"\$APPROVED_FAILED_RETIREMENT" stopped "\$APPROVED_FAILED_STOPPED_PHASE"/) invalid = 1
-      expect_stopped = 0
-    }
-
-    mutation = 0
-    if (current ~ /container update --restart no "\$APPROVED_FAILED_CONTAINER_ID"/) {
-      mutation = 1
-      updates++
-      if (previous !~ /verify_identity/ ||
-          previous !~ /"\$APPROVED_FAILED_VOLUME" "\$APPROVED_FAILED_RESTART"/ ||
-          previous !~ /"\$APPROVED_FAILED_RETIREMENT" "\$APPROVED_FAILED_STATE" "\$APPROVED_FAILED_PHASE"/) invalid = 1
-      expect_same_state_no = 1
-    }
-    if (current ~ /CRACKLEDATE_IMAGE="\$APPROVED_FAILED_IMAGE"/ && current ~ /stop "\$SERVICE"/) {
-      mutation = 1
-      stops++
-      if (previous !~ /verify_identity/ ||
-          previous !~ /"\$APPROVED_FAILED_VOLUME" no/ ||
-          previous !~ /"\$APPROVED_FAILED_RETIREMENT" running "\$APPROVED_FAILED_PHASE"/) invalid = 1
-      if (current !~ /DOCKER_CONFIG="\$APPROVED_DOCKER_CONFIG"/ ||
-          current !~ /COMPOSE_DISABLE_ENV_FILE=1/ ||
-          current !~ /CRACKLEDATE_SUBMISSIONS_VOLUME="\$APPROVED_FAILED_VOLUME"/ ||
-          current !~ /CRACKLEDATE_RESTART_POLICY=no/ ||
-          current !~ /docker --context "\$APPROVED_DOCKER_CONTEXT" compose/ ||
-          current !~ /--env-file "\$APPROVED_ENV_FILE" -f "\$COMPOSE_FILE"/ ||
-          current !~ /--project-directory "\$PROJECT_DIRECTORY" --project-name "\$PROJECT_NAME"/ ||
-          current ~ /RETIRE_LEGACY_ACCOUNT_DATA/) invalid = 1
-      expect_stopped = 1
-    }
-    if (current ~ /volume create "\$ROLLBACK_VOLUME"/) {
-      mutation = 1
-      volume_creates++
-      if (previous !~ /"\$APPROVED_FAILED_VOLUME" no/ ||
-          previous !~ /"\$APPROVED_FAILED_RETIREMENT" stopped "\$APPROVED_FAILED_STOPPED_PHASE"/) invalid = 1
-    }
-    if (current ~ /\/reviewed-copy-verified-main/) {
-      mutation = 1
-      copies++
-      if (previous !~ /"\$APPROVED_FAILED_VOLUME" no/ ||
-          previous !~ /"\$APPROVED_FAILED_RETIREMENT" stopped "\$APPROVED_FAILED_STOPPED_PHASE"/) invalid = 1
-    }
-    if (current ~ /up --no-start --no-deps --force-recreate --no-build --pull never/) {
-      mutation = 1
-      creates++
-      if (previous !~ /"\$APPROVED_FAILED_VOLUME" no/ ||
-          previous !~ /"\$APPROVED_FAILED_RETIREMENT" stopped "\$APPROVED_FAILED_STOPPED_PHASE"/ ||
-          previous !~ /require_empty_retirement_env_file/) invalid = 1
-    }
-    if (current ~ /start "\$SERVICE"/) {
-      mutation = 1
-      starts++
-    }
-    if (current ~ /test "\$APPROVED_FAILED_STATE" = stopped/ &&
-        current ~ /verify_identity/ &&
-        current ~ /"\$APPROVED_FAILED_VOLUME" no/ &&
-        current ~ /"\$APPROVED_FAILED_RETIREMENT" stopped "\$APPROVED_FAILED_STOPPED_PHASE"/) {
-      stopped_branch_guards++
-    }
-    if (mutation) {
-      mutations++
-      if (previous !~ /verify_identity/) invalid = 1
-    }
-    previous = current
-    in_fence = 0
-    next
-  }
-  in_fence { current = current $0 "\n" }
-  END {
-    if (expect_same_state_no || expect_stopped || invalid) exit 1
-    printf "%d:%d:%d:%d:%d:%d:%d:%d\n", mutations, updates, stops, volume_creates, copies, creates, starts, stopped_branch_guards
-  }
-' "$runbook")"; then
-  printf 'rollback mutation is missing an adjacent identity guard\n' >&2
-  rollback_static_failure=1
-elif [[ "$rollback_adjacency" != '6:1:1:1:1:1:1:1' ]]; then
-  printf 'rollback transition must contain the exact guarded mutation set\n' >&2
-  rollback_static_failure=1
-fi
-if [[ $rollback_static_failure -ne 0 ]]; then
-  exit 1
-fi
-if grep -Fq -- '--revision "$OBSERVED_' "$runbook"; then
-  printf 'runbook uses an observed revision as an approved expectation\n' >&2
-  exit 1
-fi
-if [[ "$(grep -Fc -- 'resolve_full_container_id' "$runbook")" -lt 8 ]]; then
-  printf 'runbook does not re-resolve container identity around every mutation\n' >&2
-  exit 1
-fi
-if [[ "$(grep -Fc -- 'verify_identity ' "$runbook")" -lt 12 ]]; then
-  printf 'runbook does not place literal identity guards around mutations\n' >&2
-  exit 1
-fi
-
 printf 'verify_deployment_identity self-tests passed\n'

@@ -148,19 +148,22 @@ func (parser *expressionParser) parseTerm(stopOperators map[string]struct{}) (nu
 
 	for !parser.isAtStop(stopOperators) {
 		if parser.matchOperator("*") || parser.matchOperator("×") || parser.matchOperator("x") || parser.matchOperator("X") {
-			right, err := parser.parsePower(stopOperators)
+			var right number
+			right, err = parser.parsePower(stopOperators)
 			if err != nil {
 				return zeroNumber(), err
 			}
 			result, err = multiplyNumbers(result, right)
 		} else if parser.matchOperator("/") || parser.matchOperator("÷") {
-			right, err := parser.parsePower(stopOperators)
+			var right number
+			right, err = parser.parsePower(stopOperators)
 			if err != nil {
 				return zeroNumber(), err
 			}
 			result, err = divideNumbers(result, right)
 		} else if parser.startsImplicitMultiplication(stopOperators) {
-			right, err := parser.parsePower(stopOperators)
+			var right number
+			right, err = parser.parsePower(stopOperators)
 			if err != nil {
 				return zeroNumber(), err
 			}

@@ -13,12 +13,10 @@ export type HintFlowData = {
   mathTip?: string;
 };
 
-export const hintNoSolutionMessage =
-  'Could not quickly find a solution to balance the sides with what is currently entered. Try backspacing or clearing.';
+export const hintNoSolutionMessage = 'No hint available yet';
 export const hintRateLimitedMessage =
   'Too many hint requests at once. Please wait a moment and try again.';
-export const hintTemporaryMessage =
-  'Could not load a hint right now. Your equation is still here—try again.';
+export const hintTemporaryMessage = 'No hint available yet';
 
 export type HintFailureKind =
   | 'aborted'

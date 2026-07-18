@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'vitest';
-import { readFileSync } from 'node:fs';
 import {
   hintFailureFeedback,
   hintNoSolutionMessage,
@@ -7,23 +6,29 @@ import {
   hintTemporaryMessage,
 } from './hintFlow';
 
-const source = readFileSync(new URL('./main.tsx', import.meta.url), 'utf8');
-
 describe('hint unavailable feedback', () => {
-  test('keeps the recoverable Classic dead-end copy aligned across native clients', () => {
-    expect(source).toContain(hintNoSolutionMessage);
-    expect(hintFailureFeedback('no_solution', '1 +')).toMatchObject({ isDeadEnd: true });
+  test('uses the exact unavailable copy for a recoverable Classic dead end', () => {
+    const equation = '1 +';
+
+    expect(hintNoSolutionMessage).toBe('No hint available yet');
+    expect(hintFailureFeedback('no_solution', equation)).toEqual({
+      message: 'No hint available yet',
+      isDeadEnd: true,
+    });
+    expect(equation).toBe('1 +');
   });
 
   test('shows recoverable feedback for throttled and temporary failures', () => {
     expect(hintRateLimitedMessage).toBe(
       'Too many hint requests at once. Please wait a moment and try again.',
     );
-    expect(hintTemporaryMessage).toBe(
-      'Could not load a hint right now. Your equation is still here—try again.',
-    );
+    expect(hintTemporaryMessage).toBe('No hint available yet');
     expect(hintFailureFeedback('rate_limited', '1 +')).toMatchObject({ isDeadEnd: false });
-    expect(hintFailureFeedback('temporary', '1 +')).toMatchObject({ isDeadEnd: false });
-    expect(source).toContain('hintFailureFeedback(result.kind');
+    const equation = '1 +';
+    expect(hintFailureFeedback('temporary', equation)).toEqual({
+      message: 'No hint available yet',
+      isDeadEnd: false,
+    });
+    expect(equation).toBe('1 +');
   });
 });

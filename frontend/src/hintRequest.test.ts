@@ -18,26 +18,33 @@ function response(body: unknown, status = 200): Response {
 }
 
 describe('requestHint', () => {
-  test('forwards the AbortSignal and returns a validated success response', async () => {
+  test('sends exact no-store POST JSON without exposing hint inputs in the URL', async () => {
     const controller = new AbortController();
     const fetcher = vi.fn<HintFetch>().mockResolvedValue(response(validHint));
+    const input = {
+      date: '2026-06-19',
+      mode: 'classic' as const,
+      prefix: '1 + 2',
+      targetValue: '3',
+    };
 
-    const result = await requestHint(
-      {
-        date: '2026-06-19',
-        mode: 'classic',
-        prefix: '1 + 2',
-      },
-      controller.signal,
-      fetcher,
-    );
+    const result = await requestHint(input, controller.signal, fetcher);
 
     expect(result).toEqual({ kind: 'success', hint: validHint });
     expect(fetcher).toHaveBeenCalledOnce();
     expect(fetcher).toHaveBeenCalledWith(
-      '/api/hint?date=2026-06-19&mode=classic&prefix=1+%2B+2',
-      { signal: controller.signal },
+      '/api/hint',
+      {
+        method: 'POST',
+        credentials: 'same-origin',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+        signal: controller.signal,
+      },
     );
+    expect(fetcher.mock.calls[0]?.[0]).not.toContain('prefix=');
+    expect(fetcher.mock.calls[0]?.[0]).not.toContain('targetValue=');
   });
 
   test('classifies aborts silently', async () => {

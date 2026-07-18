@@ -1,8 +1,8 @@
 import type { HintFlowData } from './hintFlow';
 
-export type HintRequestQuery = {
+export type HintRequestInput = {
   date: string;
-  mode: string;
+  mode: 'classic';
   prefix: string;
   targetValue?: string;
 };
@@ -22,21 +22,19 @@ export type HintFetch = (
 ) => Promise<Response>;
 
 export async function requestHint(
-  query: HintRequestQuery,
+  input: HintRequestInput,
   signal: AbortSignal,
   fetcher: HintFetch = fetch,
 ): Promise<HintRequestResult> {
-  const search = new URLSearchParams({
-    date: query.date,
-    mode: query.mode,
-    prefix: query.prefix,
-  });
-  if (query.targetValue !== undefined) {
-    search.set('targetValue', query.targetValue);
-  }
-
   try {
-    const response = await fetcher(`/api/hint?${search.toString()}`, { signal });
+    const response = await fetcher('/api/hint', {
+      method: 'POST',
+      credentials: 'same-origin',
+      cache: 'no-store',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      signal,
+    });
     if (signal.aborted) return { kind: 'aborted' };
     if (response.status === 404) return { kind: 'no_solution' };
     if (response.status === 429) return { kind: 'rate_limited' };

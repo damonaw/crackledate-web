@@ -111,10 +111,10 @@ output_matches_fd() {
   local path="$1"
   local metadata
   [[ -f "$path" && ! -L "$path" ]] || return 1
-  if stat -f '%l|%Lp|%i' "$path" >/dev/null 2>&1; then
-    metadata="$(stat -f '%l|%Lp|%i' "$path")" || return 1
+  if stat -f '%l|%Lp|%d|%i' "$path" >/dev/null 2>&1; then
+    metadata="$(stat -f '%l|%Lp|%d|%i' "$path")" || return 1
   else
-    metadata="$(stat -c '%h|%a|%i' "$path")" || return 1
+    metadata="$(stat -c '%h|%a|%d|%i' "$path")" || return 1
   fi
   [[ "$metadata" == "1|600|$output_fd_metadata" ]]
 }
@@ -245,10 +245,21 @@ set -o noclobber
 exec 3>"$output" || failure
 set +o noclobber
 remove_output=true
-if stat -f '%i' /dev/fd/3 >/dev/null 2>&1; then
-  output_fd_metadata="$(stat -f '%i' /dev/fd/3)" || failure
+if stat -f '%d|%i' /dev/fd/3 >/dev/null 2>&1; then
+  output_fd_metadata="$(stat -f '%d|%i' /dev/fd/3)" || failure
 else
-  output_fd_metadata="$(stat -c '%i' /dev/fd/3)" || failure
+  output_fd_metadata="$(stat -c '%d|%i' /dev/fd/3)" || failure
+fi
+if stat -f '%d|%i' "$output" >/dev/null 2>&1; then
+  output_path_metadata="$(stat -f '%d|%i' "$output")" || failure
+else
+  output_path_metadata="$(stat -c '%d|%i' "$output")" || failure
+fi
+# macOS exposes /dev/fd through devfs, whose device differs from the open
+# file's filesystem.  Use fstat in that case while retaining the same dev|ino
+# identity contract on every platform.
+if [[ "$output_fd_metadata" != "$output_path_metadata" ]]; then
+  output_fd_metadata="$(/usr/bin/perl -e 'my @s = stat STDIN; @s or exit 1; print "$s[0]|$s[1]"' <&3)" || failure
 fi
 output_matches_fd "$output" || failure
 cat "$fingerprint" >&3 || failure

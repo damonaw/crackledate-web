@@ -44,6 +44,14 @@ new_subject() {
     printf 'capture script does not create the output through one descriptor\n' >&2
     exit 1
   }
+  grep -Fq "'%d|%i' /dev/fd/3" "$capture_script" || {
+    printf 'capture script does not bind the descriptor by device and inode\n' >&2
+    exit 1
+  }
+  grep -Fq "'%l|%Lp|%d|%i'" "$capture_script" || {
+    printf 'capture script does not retain output device in pathname identity\n' >&2
+    exit 1
+  }
   if grep -F 'cat "$fingerprint" >"$output"' "$capture_script" >/dev/null ||
     grep -F 'chmod 600 "$output"' "$capture_script" >/dev/null; then
     printf 'capture script reopens the output pathname after creation\n' >&2

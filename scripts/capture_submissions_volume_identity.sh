@@ -91,7 +91,7 @@ require_physical_directory "$docker_config" || failure
 [[ "$output" == "$(physical_new_file_path "$output")" ]] || failure
 [[ ! -e "$output" && ! -L "$output" ]] || failure
 
-safe_path="${PATH:-/usr/local/bin:/usr/bin:/bin}"
+safe_path="/usr/local/bin:/usr/bin:/bin"
 docker_env=(
   env -i
   "PATH=$safe_path"
@@ -138,6 +138,19 @@ query_value() {
   printf -v "$variable_name" '%s' "$value"
 }
 
+query_label_value() {
+  local variable_name="$1"
+  local name="$2"
+  shift 2
+  local destination="$scratch/$name"
+  local value
+  query_to "$destination" "$@"
+  IFS= read -r value <"$destination" || failure
+  [[ "$value" != *[[:cntrl:]]* ]] || failure
+  printf '%s\n' "$value" | cmp -s - "$destination" || failure
+  printf -v "$variable_name" '%s' "$value"
+}
+
 query_exact context "$docker_context|$docker_host" context inspect \
   --format '{{.Name}}|{{.Endpoints.docker.Host}}' "$docker_context"
 
@@ -162,20 +175,29 @@ query_exact volume-project "$project_name" volume inspect \
 query_exact volume-logical-key submissions volume inspect \
   --format '{{index .Labels "com.docker.compose.volume"}}' "$volume"
 
-labels="$scratch/labels"
-sorted_labels="$scratch/sorted-labels"
-query_to "$labels" volume inspect \
-  --format '{{range $key, $value := .Labels}}{{printf "%s=%s\\n" $key $value}}{{end}}' "$volume"
-[[ -s "$labels" ]] || failure
-if grep -q '[[:cntrl:]]' "$labels"; then
-  failure
-fi
-while IFS= read -r label || [[ -n "$label" ]]; do
-  [[ -n "$label" && "$label" == *=* && "${label%%=*}" != '' ]] || failure
-done <"$labels"
-sort "$labels" >"$sorted_labels"
-label_count="$(wc -l <"$sorted_labels" | tr -d ' ')"
+query_value label_count volume-label-count volume inspect --format '{{len .Labels}}' "$volume"
 [[ "$label_count" =~ ^[0-9]+$ ]] || failure
+
+label_keys="$scratch/label-keys"
+sorted_label_keys="$scratch/sorted-label-keys"
+query_to "$label_keys" volume inspect \
+  --format '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}' "$volume"
+while IFS= read -r label_key || [[ -n "$label_key" ]]; do
+  [[ "$label_key" =~ $identifier_pattern ]] || failure
+done <"$label_keys"
+sort -u "$label_keys" >"$sorted_label_keys"
+cmp -s "$label_keys" "$sorted_label_keys" || failure
+returned_label_count="$(wc -l <"$sorted_label_keys" | tr -d ' ')"
+[[ "$returned_label_count" == "$label_count" ]] || failure
+
+labels="$scratch/labels"
+: >"$labels"
+while IFS= read -r label_key || [[ -n "$label_key" ]]; do
+  label_value=''
+  query_label_value label_value "label-${label_key}" volume inspect \
+    --format "{{index .Labels \"$label_key\"}}" "$volume"
+  printf '%s=%s\n' "$label_key" "$label_value" >>"$labels"
+done <"$sorted_label_keys"
 
 fingerprint="$scratch/fingerprint"
 {
@@ -196,7 +218,7 @@ fingerprint="$scratch/fingerprint"
   while IFS= read -r label || [[ -n "$label" ]]; do
     printf 'volume_label_%03d=%s\n' "$label_index" "$label"
     label_index=$((label_index + 1))
-  done <"$sorted_labels"
+  done <"$labels"
 } >"$fingerprint"
 
 require_physical_directory "$docker_config" || failure

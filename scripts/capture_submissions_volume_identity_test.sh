@@ -26,10 +26,25 @@ write_state() {
 new_subject() {
   local name="$1"
   local subject="$scratch/$name"
-  mkdir -p "$subject/scripts" "$subject/bin" "$subject/home" "$subject/state" \
+  mkdir -p "$subject/scripts" "$subject/bin" "$subject/hostile-bin" "$subject/home" "$subject/state" \
     "$subject/docker-config" "$subject/inherited-docker-config" "$subject/output"
   cp "$capture_script" "$subject/scripts/capture_submissions_volume_identity.sh"
   chmod +x "$subject/scripts/capture_submissions_volume_identity.sh"
+  # The tracked script must use this fixed production path.  Only the isolated
+  # scratch copy gets the fake Docker directory prepended for this test.
+  grep -Fqx 'safe_path="/usr/local/bin:/usr/bin:/bin"' "$capture_script" || {
+    printf 'capture script does not use the fixed production PATH\n' >&2
+    exit 1
+  }
+  sed -i.bak "s|safe_path=\"/usr/local/bin:/usr/bin:/bin\"|safe_path=\"$subject/bin:/usr/local/bin:/usr/bin:/bin\"|" \
+    "$subject/scripts/capture_submissions_volume_identity.sh"
+  rm -f "$subject/scripts/capture_submissions_volume_identity.sh.bak"
+  cat >"$subject/hostile-bin/docker" <<'HOSTILE_DOCKER'
+#!/usr/bin/env bash
+printf 'capture used inherited PATH Docker\n' >&2
+exit 111
+HOSTILE_DOCKER
+  chmod +x "$subject/hostile-bin/docker"
 
   write_state "$subject" context 'approved-context'
   write_state "$subject" context_identity 'approved-context|unix:///approved/docker.sock'
@@ -49,6 +64,16 @@ new_subject() {
     'com.docker.compose.volume=submissions' \
     'alpha=first' \
     'com.docker.compose.project=approved-project'
+  write_state "$subject" volume_label_keys \
+    'alpha' \
+    'com.docker.compose.project' \
+    'com.docker.compose.volume' \
+    'zeta'
+  write_state "$subject" volume_label_count '4'
+  write_state "$subject" volume_label_alpha 'first'
+  write_state "$subject" volume_label_com.docker.compose.project 'approved-project'
+  write_state "$subject" volume_label_com.docker.compose.volume 'submissions'
+  write_state "$subject" volume_label_zeta 'last'
 
   cat >"$subject/bin/docker" <<'FAKE_DOCKER'
 #!/usr/bin/env bash
@@ -141,10 +166,15 @@ case "${1:-}" in
       '{{.CreatedAt}}') emit volume_created_at ;;
       '{{index .Labels "com.docker.compose.project"}}') emit volume_project ;;
       '{{index .Labels "com.docker.compose.volume"}}') emit volume_logical ;;
-      '{{range $key, $value := .Labels}}{{printf "%s=%s\\n" $key $value}}{{end}}') emit volume_labels ;;
+      '{{len .Labels}}') emit volume_label_count ;;
+      '{{range $key, $_ := .Labels}}{{printf "%s" $key}}{{println}}{{end}}') emit volume_label_keys ;;
       *)
-        printf 'unsafe volume format\n' >&2
-        exit 100
+        if [[ "$format" =~ ^\{\{index\ .Labels\ \"([A-Za-z0-9_.-]+)\"\}\}$ ]]; then
+          emit "volume_label_${BASH_REMATCH[1]}"
+        else
+          printf 'unsafe volume format\n' >&2
+          exit 100
+        fi
         ;;
     esac
     ;;
@@ -192,7 +222,7 @@ execute_capture() {
   local subject="$1"
   shift
   env -i \
-    PATH="$subject/bin:/usr/bin:/bin" \
+    PATH="$subject/hostile-bin:/usr/bin:/bin" \
     HOME="$subject/home" \
     DOCKER_CONFIG="$subject/inherited-docker-config" \
     CAPTURE_LEAK_SENTINEL='must-not-reach-docker' \
@@ -239,6 +269,7 @@ expect_pass() {
   fi
   if [[ "$(cat "$subject/stdout")" != 'submission volume fingerprint captured' || -s "$subject/stderr" ]]; then
     printf 'capture success output was not exact\n' >&2
+    cat "$subject/stdout" "$subject/stderr" >&2
     exit 1
   fi
   cat >"$subject/expected" <<EOF
@@ -290,6 +321,27 @@ expect_fail() {
 
 subject="$(new_subject success)"
 expect_pass "$subject"
+
+# A value newline used to turn one Go-template label record into two output
+# records.  Label enumeration plus one value query per safe key must reject it.
+subject="$(new_subject newline-label-value)"
+write_state "$subject" volume_label_alpha $'first\ninjected=record'
+expect_fail "$subject"
+
+# A key newline likewise must not be interpreted as additional label records.
+subject="$(new_subject newline-label-key)"
+write_state "$subject" volume_label_keys \
+  'alpha' \
+  $'broken\nkey' \
+  'com.docker.compose.project' \
+  'com.docker.compose.volume' \
+  'zeta'
+expect_fail "$subject"
+
+# A returned control character is never safe to persist in the fingerprint.
+subject="$(new_subject control-label-value)"
+write_state "$subject" volume_label_alpha $'first\001control'
+expect_fail "$subject"
 
 subject="$(new_subject mismatched-daemon)"
 write_state "$subject" context_identity 'approved-context|unix:///wrong/docker.sock'

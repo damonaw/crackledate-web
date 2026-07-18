@@ -56,11 +56,10 @@ The Vite dev server proxies `/api` to `http://localhost:8080`.
 ## Environment
 
 - `PORT`: backend HTTP port; defaults to `8080`.
-- `SUBMISSIONS_PATH`: legacy submission-storage setting. It is absent from the stateless production runtime; do not add it to a stateless deployment.
-- `CLIENT_HASH_SECRET`: legacy request-log setting. It is absent from the stateless production runtime; do not add it to a stateless deployment.
+- `SUBMISSIONS_PATH`: current legacy submission-storage setting. The planned stateless deployment removes it; do not add it to the cutover image.
+- `CLIENT_HASH_SECRET`: current legacy request-log setting. The planned stateless deployment removes it; do not add it to the cutover image.
 - `TRUSTED_PROXY_CIDRS` and `TRUSTED_CLOUDFLARE_PROXY_CIDRS`: separate comma-delimited trusted-proxy lists. Both default empty.
 - `MAX_CONCURRENT_HINT_SOLVES`: optional bounded hint-solver concurrency override.
-- `RETIRE_LEGACY_ACCOUNT_DATA`: one-shot maintenance activation. It must remain empty during normal operation; see the reviewed operations runbook before using it.
 
 ## Docker
 
@@ -85,12 +84,11 @@ The Compose file binds the container to loopback so it is intended to be reached
 - `/api/evaluate`
 - `/api/validate`
 
-The stateless production service does not retain submitted gameplay. Browser-local
-saves remain the durable player history; `/api/submissions` is unavailable in the
-stateless release.
+Until the stateless cutover is deployed and verified, the current legacy service accepts submissions using its configured storage. After the stateless cutover is deployed and verified, browser-local saves will remain the durable player history and `/api/submissions` will be unavailable.
 
-JSON API request bodies are capped at 32 KiB. POST requests are also rate-limited per client IP for the
-submission, validation, and evaluation routes to reduce spam and resource-exhaustion attempts.
+JSON API request bodies are capped at 32 KiB. Before cutover, POST requests to
+the currently available submission, validation, and evaluation endpoints are
+also rate-limited per client IP to reduce spam and resource-exhaustion attempts.
 
 Crackle Date does not show ads or offer in-app purchases. Past, current, and future dates
 open without paid unlocks.

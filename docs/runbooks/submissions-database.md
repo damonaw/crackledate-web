@@ -79,7 +79,7 @@ After the stateless runtime and logging gates pass, use the detached-volume guar
   --inspection-image "$APPROVED_INSPECTION_IMAGE"
 ```
 
-The verifier must print the exact approved volume name and prove the volume is detached before and after its metadata-only inspection. Do not continue on any other output or exit status.
+The verifier must print exactly `detached submissions volume verified: $APPROVED_EXISTING_VOLUME` and prove the volume is detached before and after its metadata-only inspection. Do not continue on any other output or exit status.
 
 ## Confirm exact deletion
 

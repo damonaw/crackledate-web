@@ -19,6 +19,12 @@ if [[ ! -f "$runbook" ]]; then
   exit 1
 fi
 
+readme="$repo_dir/README.md"
+if [[ ! -f "$readme" ]]; then
+  printf 'README is missing\n' >&2
+  exit 1
+fi
+
 assert_runbook_convention() {
   local previous=0 phase line
   for phase in \
@@ -40,6 +46,11 @@ assert_runbook_convention() {
     exit 1
   }
 
+  grep -Fq '`detached submissions volume verified: $APPROVED_EXISTING_VOLUME`' "$runbook" || {
+    printf 'runbook lacks the verifier exact success line\n' >&2
+    exit 1
+  }
+
   if grep -E -i '(backup|export|row query)' "$runbook" | \
     grep -Fvx '`Delete this exact detached CrackleDate submissions volume permanently, with no backup: <context> <endpoint> <volume>?`' >/dev/null || \
     grep -E -i \
@@ -51,6 +62,23 @@ assert_runbook_convention() {
 }
 
 assert_runbook_convention
+
+assert_cutover_status_copy() {
+  grep -Fq 'After the stateless cutover is deployed and verified' "$readme" || {
+    printf 'README does not mark stateless behavior as post-cutover\n' >&2
+    exit 1
+  }
+
+  if grep -Fq 'RETIRE_LEGACY_ACCOUNT_DATA' "$readme" || \
+    grep -Fq 'The stateless production service does not retain submitted gameplay.' "$readme" || \
+    grep -Fq '/api/submissions` is unavailable in the stateless release.' "$readme" || \
+    grep -Fq 'submission, validation, and evaluation routes' "$readme"; then
+    printf 'README contains stale retirement, current-stateless, or contradictory submission-rate-limit copy\n' >&2
+    exit 1
+  fi
+}
+
+assert_cutover_status_copy
 
 inspection_id='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
 consumer_id='dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'

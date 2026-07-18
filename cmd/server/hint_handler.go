@@ -50,6 +50,7 @@ func newHintHandler(solver hintSolver, maxConcurrent int, budget game.SearchBudg
 }
 
 func (handler *hintHandler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
+	writer.Header().Set("Cache-Control", "no-store")
 	if request.Method != http.MethodPost {
 		writer.WriteHeader(http.StatusMethodNotAllowed)
 		return

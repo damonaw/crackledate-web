@@ -66,6 +66,9 @@ func TestHandleHintRejectsGETBeforeSolve(t *testing.T) {
 	if response.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("status = %d, want 405; body %s", response.Code, response.Body.String())
 	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", response.Header().Get("Cache-Control"))
+	}
 	if solverCalls.Load() != 0 {
 		t.Fatalf("solver calls = %d, want 0", solverCalls.Load())
 	}

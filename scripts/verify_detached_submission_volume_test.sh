@@ -13,6 +13,45 @@ if [[ ! -f "$verify_script" ]]; then
   exit 1
 fi
 
+runbook="$repo_dir/docs/runbooks/submissions-database.md"
+if [[ ! -f "$runbook" ]]; then
+  printf 'submissions decommission runbook is missing\n' >&2
+  exit 1
+fi
+
+assert_runbook_convention() {
+  local previous=0 phase line
+  for phase in \
+    'Capture' \
+    'Deploy stateless service' \
+    'Verify runtime and logs' \
+    'Confirm exact deletion' \
+    'Verify deletion'; do
+    line="$(grep -n -F "## $phase" "$runbook" | head -n 1 | cut -d: -f1 || true)"
+    [[ "$line" =~ ^[0-9]+$ && "$line" -gt "$previous" ]] || {
+      printf 'runbook phase is missing or out of order: %s\n' "$phase" >&2
+      exit 1
+    }
+    previous="$line"
+  done
+
+  grep -Fqx 'Never run `docker compose down -v`.' "$runbook" || {
+    printf 'runbook lacks the docker compose down -v prohibition\n' >&2
+    exit 1
+  }
+
+  if grep -E -i '(backup|export|row query)' "$runbook" | \
+    grep -Fvx '`Delete this exact detached CrackleDate submissions volume permanently, with no backup: <context> <endpoint> <volume>?`' >/dev/null || \
+    grep -E -i \
+      'encrypted archive|plaintext archive|restore/decrypt|reconciler|submissions-audit|submissions-reconcile|sqlite3|SELECT[[:space:]]|automatic.*(delete|deletion)|startup.*(delete|deletion)' \
+      "$runbook" >/dev/null; then
+    printf 'runbook contains a forbidden preservation, row-query, or automatic-deletion instruction\n' >&2
+    exit 1
+  fi
+}
+
+assert_runbook_convention
+
 inspection_id='cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
 consumer_id='dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd'
 inspection_image="registry.example/crackledate-inspector@sha256:$(printf 'e%.0s' {1..64})"

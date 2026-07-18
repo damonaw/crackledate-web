@@ -56,9 +56,8 @@ Open `http://localhost:5173/` for the local app.
 ## Environment
 
 - `PORT` controls the backend port and defaults to `8080`.
-- `SUBMISSIONS_PATH` controls where submitted solutions are stored.
-- `CLIENT_HASH_SECRET` salts rotating request-log client hashes; set it for production-like deployments.
-- Proxy trust lists default empty, and `RETIRE_LEGACY_ACCOUNT_DATA` must default empty outside the single reviewed maintenance create.
+- `SUBMISSIONS_PATH` and `CLIENT_HASH_SECRET` are legacy settings and must be absent from the stateless production runtime.
+- Proxy trust lists default empty. Stateless release evidence requires application logs with only `timestamp`, `level`, `method`, `path`, `status`, and `durationMs` plus owner-reviewed proxy/host logs that omit query strings and client identifiers.
 
 For isolated local Compose work, choose a project name unique to the checkout and validate without rendering secrets:
 
@@ -67,7 +66,7 @@ DEV_PROJECT=crackledate-web-agent-your-unique-checkout-id
 docker compose --env-file /dev/null -f "$PWD/docker-compose.yml" --project-directory "$PWD" --project-name "$DEV_PROJECT" config --quiet
 ```
 
-Do not use outputting `docker compose config`, raw `docker inspect`, or environment dumps. Production database, image, proxy, backup, migration, and rollback work is governed by `docs/runbooks/submissions-database.md`; repository checks do not authorize those operations.
+Do not use outputting `docker compose config`, raw `docker inspect`, or environment dumps. Production stateless cutover, proxy evidence, and exact-volume deletion are governed by `docs/runbooks/submissions-database.md`; repository checks do not authorize those operations. Never infer a production target, preserve gameplay data, schedule deletion, or run `docker compose down -v`.
 
 ## Notes For Agents
 
@@ -75,4 +74,4 @@ Do not use outputting `docker compose config`, raw `docker inspect`, or environm
 - Do not commit `frontend/node_modules/`, `frontend/dist/`, `data/`, or local log files.
 - Prefer small, focused changes and run the relevant checks before committing.
 - Keep privacy/support copy aligned when changing local data, access, or submission behavior.
-- Never run database audit/reconciliation against repository `data/`, a live volume, or an authoritative database. Use only a dedicated copied fixture under the runbook's identity and ownership gates.
+- Never run a production deletion automatically or from a guessed target. The runbook requires fresh user confirmation of the verified context, endpoint, and exact volume after detached-volume verification succeeds.

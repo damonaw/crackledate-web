@@ -56,8 +56,8 @@ The Vite dev server proxies `/api` to `http://localhost:8080`.
 ## Environment
 
 - `PORT`: backend HTTP port; defaults to `8080`.
-- `SUBMISSIONS_PATH`: storage target for anonymous submission attempts. `.db`/`.sqlite`/`.sqlite3` enables SQLite rows. Defaults to `data/submissions.db` locally and `/data/submissions.db` in Docker.
-- `CLIENT_HASH_SECRET`: optional salt for rotating request-log client hashes. Set this in production so daily and weekly client hashes cannot be compared across deployments.
+- `SUBMISSIONS_PATH`: legacy submission-storage setting. It is absent from the stateless production runtime; do not add it to a stateless deployment.
+- `CLIENT_HASH_SECRET`: legacy request-log setting. It is absent from the stateless production runtime; do not add it to a stateless deployment.
 - `TRUSTED_PROXY_CIDRS` and `TRUSTED_CLOUDFLARE_PROXY_CIDRS`: separate comma-delimited trusted-proxy lists. Both default empty.
 - `MAX_CONCURRENT_HINT_SOLVES`: optional bounded hint-solver concurrency override.
 - `RETIRE_LEGACY_ACCOUNT_DATA`: one-shot maintenance activation. It must remain empty during normal operation; see the reviewed operations runbook before using it.
@@ -71,7 +71,7 @@ docker compose --env-file /dev/null -f "$PWD/docker-compose.yml" --project-direc
 curl -I http://127.0.0.1:8082
 ```
 
-Replace the project-name suffix with a value unique to this checkout; never rely on the directory-derived default when sibling checkouts may be present. The project-derived submissions volume is for local development only. Production must explicitly select an existing reviewed volume and immutable image by following [the submissions database runbook](docs/runbooks/submissions-database.md).
+Replace the project-name suffix with a value unique to this checkout; never rely on the directory-derived default when sibling checkouts may be present. The project-derived submissions volume is legacy local-development behavior only. Production deletion is a separately authorized, exact-one-volume operation governed by [the stateless submissions-data decommission runbook](docs/runbooks/submissions-database.md): never guess a target, delete at startup, or run `docker compose down -v`.
 
 The Compose file binds the container to loopback so it is intended to be reached through the host's reverse proxy rather than directly exposed. Repository validation is non-outputting: use `scripts/verify_compose.sh`, which permits only `docker compose config --quiet`; never print interpolated Compose configuration because it can contain the client-hash secret.
 
@@ -84,14 +84,10 @@ The Compose file binds the container to loopback so it is intended to be reached
 - `/api/puzzle?date=YYYY-MM-DD`
 - `/api/evaluate`
 - `/api/validate`
-- `/api/submissions`
 
-Web attempts are posted to `/api/submissions`. The backend validates the equation and stores each attempt
-in `SUBMISSIONS_PATH` with `submissionStatus` (`accepted` or `rejected`) and `rejectionReason` for failures.
-Browser-local duplicate rejections can include `clientRejectionReason`, but accepted/rejected status is
-computed by the server. The default storage target is `/data/submissions.db` in Docker and
-`data/submissions.db` for local `go run`. The Docker compose service uses a named `submissions` volume
-so submitted data survive rebuilds.
+The stateless production service does not retain submitted gameplay. Browser-local
+saves remain the durable player history; `/api/submissions` is unavailable in the
+stateless release.
 
 JSON API request bodies are capped at 32 KiB. POST requests are also rate-limited per client IP for the
 submission, validation, and evaluation routes to reduce spam and resource-exhaustion attempts.

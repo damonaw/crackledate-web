@@ -103,47 +103,48 @@ volume_scope=''
 volume_mountpoint=''
 volume_created_at=''
 volume_label_count=''
-seen_fingerprint_keys=' '
-
-set_fingerprint_value() {
-  local variable="$1" value="$2" key="$3"
-  [[ "$seen_fingerprint_keys" != *" $key "* ]] || failure
-  seen_fingerprint_keys+="$key "
-  printf -v "$variable" '%s' "$value"
-}
+fingerprint_fields=(
+  fingerprint_version docker_context docker_host project_name service former_container_id
+  former_mount_destination volume_name volume_driver volume_scope volume_mountpoint
+  volume_created_at volume_label_count
+)
+fingerprint_field_index=0
+label_index_expected=0
 
 while IFS= read -r line || [[ -n "$line" ]]; do
   [[ "$line" == *=* && "$line" != *[[:cntrl:]]* ]] || failure
   key="${line%%=*}"
   value="${line#*=}"
-  case "$key" in
-    fingerprint_version) set_fingerprint_value fingerprint_version "$value" "$key" ;;
-    docker_context) set_fingerprint_value fingerprint_context "$value" "$key" ;;
-    docker_host) set_fingerprint_value fingerprint_host "$value" "$key" ;;
-    project_name) set_fingerprint_value project_name "$value" "$key" ;;
-    service) set_fingerprint_value service "$value" "$key" ;;
-    former_container_id) set_fingerprint_value former_container_id "$value" "$key" ;;
-    former_mount_destination) set_fingerprint_value former_mount_destination "$value" "$key" ;;
-    volume_name) set_fingerprint_value volume_name "$value" "$key" ;;
-    volume_driver) set_fingerprint_value volume_driver "$value" "$key" ;;
-    volume_scope) set_fingerprint_value volume_scope "$value" "$key" ;;
-    volume_mountpoint) set_fingerprint_value volume_mountpoint "$value" "$key" ;;
-    volume_created_at) set_fingerprint_value volume_created_at "$value" "$key" ;;
-    volume_label_count) set_fingerprint_value volume_label_count "$value" "$key" ;;
-    volume_label_???)
-      label_index="${key#volume_label_}"
-      [[ "$label_index" =~ ^[0-9]{3}$ && ! -e "$scratch/expected-label-$label_index" ]] || failure
-      printf '%s\n' "$value" >"$scratch/expected-label-$label_index"
-      ;;
-    *) failure ;;
-  esac
+  if [[ "$fingerprint_field_index" -lt "${#fingerprint_fields[@]}" ]]; then
+    [[ "$key" == "${fingerprint_fields[$fingerprint_field_index]}" ]] || failure
+    case "$key" in
+      fingerprint_version) fingerprint_version="$value" ;;
+      docker_context) fingerprint_context="$value" ;;
+      docker_host) fingerprint_host="$value" ;;
+      project_name) project_name="$value" ;;
+      service) service="$value" ;;
+      former_container_id) former_container_id="$value" ;;
+      former_mount_destination) former_mount_destination="$value" ;;
+      volume_name) volume_name="$value" ;;
+      volume_driver) volume_driver="$value" ;;
+      volume_scope) volume_scope="$value" ;;
+      volume_mountpoint) volume_mountpoint="$value" ;;
+      volume_created_at) volume_created_at="$value" ;;
+      volume_label_count) volume_label_count="$value" ;;
+    esac
+    fingerprint_field_index=$((fingerprint_field_index + 1))
+  else
+    printf -v label_index '%03d' "$label_index_expected"
+    [[ "$key" == "volume_label_$label_index" && "$value" == *=* ]] || failure
+    label_key="${value%%=*}"
+    label_value="${value#*=}"
+    [[ "$label_key" =~ $identifier_pattern && "$label_value" != *[[:cntrl:]]* ]] || failure
+    printf '%s\n' "$value" >"$scratch/expected-label-$label_index"
+    label_index_expected=$((label_index_expected + 1))
+  fi
 done <"$fingerprint"
 
-for key in fingerprint_version docker_context docker_host project_name service former_container_id \
-  former_mount_destination volume_name volume_driver volume_scope volume_mountpoint \
-  volume_created_at volume_label_count; do
-  [[ "$seen_fingerprint_keys" == *" $key "* ]] || failure
-done
+[[ "$fingerprint_field_index" == "${#fingerprint_fields[@]}" ]] || failure
 [[ "$fingerprint_version" == 1 && "$fingerprint_context" == "$docker_context" && "$fingerprint_host" == "$docker_host" ]] || failure
 [[ "$project_name" =~ ^[a-z0-9][a-z0-9_-]*$ && "$service" =~ $identifier_pattern ]] || failure
 [[ "$former_container_id" =~ ^[0-9a-f]{64}$ && "$former_mount_destination" == /data ]] || failure
@@ -163,11 +164,7 @@ while [[ "$label_number" -lt "$volume_label_count" ]]; do
   printf '%s\n' "$label_key" >>"$expected_label_keys"
   label_number=$((label_number + 1))
 done
-for extra_label_file in "$scratch"/expected-label-???; do
-  [[ -e "$extra_label_file" ]] || continue
-  extra_label_index="${extra_label_file##*-}"
-  [[ "$extra_label_index" =~ ^[0-9]{3}$ && 10#$extra_label_index -lt $volume_label_count ]] || failure
-done
+[[ "$label_index_expected" == "$volume_label_count" ]] || failure
 sort -u "$expected_label_keys" >"$scratch/sorted-expected-label-keys"
 cmp -s "$expected_label_keys" "$scratch/sorted-expected-label-keys" || failure
 
@@ -215,23 +212,53 @@ verify_snapshot before
 zero_consumers "$scratch/before-consumers"
 
 inspection_name="crackledate-volume-inspect-$$-$RANDOM"
-inspection_id="$("${docker_env[@]}" docker --context "$docker_context" container create \
+create_output="$scratch/container-id"
+"${docker_env[@]}" docker --context "$docker_context" container create \
   --name "$inspection_name" --network none --read-only --cap-drop ALL \
   --security-opt no-new-privileges --mount "type=volume,src=$volume_name,dst=/evidence,readonly" \
-  "$inspection_image" find /evidence -mindepth 1 -maxdepth 1 -exec stat -c '%n|%F|%h' || failure)"
+  "$inspection_image" find /evidence -mindepth 1 -maxdepth 1 -exec stat -c '%n|%F|%h' '{}' + \
+  >"$create_output" 2>/dev/null || failure
+IFS= read -r inspection_id <"$create_output" || failure
+printf '%s\n' "$inspection_id" | cmp -s - "$create_output" || failure
 [[ "$inspection_id" =~ ^[0-9a-f]{64}$ ]] || failure
 "${docker_env[@]}" docker --context "$docker_context" container start "$inspection_id" >/dev/null 2>/dev/null || failure
 inspection_exit="$("${docker_env[@]}" docker --context "$docker_context" container wait "$inspection_id" 2>/dev/null || failure)"
 [[ "$inspection_exit" == 0 ]] || failure
 metadata="$scratch/inspection-metadata"
 query_to "$metadata" container logs "$inspection_id"
-expected_metadata="$scratch/expected-metadata"
-printf '%s\n' \
-  '/evidence/submissions.db|regular file|1' \
-  '/evidence/submissions.db-journal|regular file|1' \
-  '/evidence/submissions.db-shm|regular file|1' \
-  '/evidence/submissions.db-wal|regular file|1' >"$expected_metadata"
-cmp -s "$expected_metadata" "$metadata" || failure
+seen_submissions_db=false
+seen_submissions_db_journal=false
+seen_submissions_db_shm=false
+seen_submissions_db_wal=false
+while IFS= read -r record || [[ -n "$record" ]]; do
+  [[ -n "$record" && "$record" != *[[:cntrl:]]* && "$record" == *'|'* ]] || failure
+  metadata_path="${record%%|*}"
+  remainder="${record#*|}"
+  [[ "$remainder" == *'|'* ]] || failure
+  metadata_type="${remainder%%|*}"
+  metadata_links="${remainder#*|}"
+  [[ "$metadata_links" != *'|'* && "$metadata_type" == 'regular file' && "$metadata_links" == 1 ]] || failure
+  case "$metadata_path" in
+    /evidence/submissions.db)
+      [[ "$seen_submissions_db" == false ]] || failure
+      seen_submissions_db=true
+      ;;
+    /evidence/submissions.db-journal)
+      [[ "$seen_submissions_db_journal" == false ]] || failure
+      seen_submissions_db_journal=true
+      ;;
+    /evidence/submissions.db-shm)
+      [[ "$seen_submissions_db_shm" == false ]] || failure
+      seen_submissions_db_shm=true
+      ;;
+    /evidence/submissions.db-wal)
+      [[ "$seen_submissions_db_wal" == false ]] || failure
+      seen_submissions_db_wal=true
+      ;;
+    *) failure ;;
+  esac
+done <"$metadata"
+[[ "$seen_submissions_db" == true ]] || failure
 
 "${docker_env[@]}" docker --context "$docker_context" container rm --force "$inspection_id" >/dev/null 2>/dev/null || failure
 inspection_id=''

@@ -216,14 +216,18 @@ case "${1:-} ${2:-}" in
   'container create')
     [[ -f "$state/pre-consumer-checked" && ! -f "$state/created" ]] || exit 100
     expected_mount="type=volume,src=$(<"$state/volume_target"),dst=/evidence,readonly"
-    [[ $# -eq 24 && ${3:-} == '--name' && ${4:-} == crackledate-volume-inspect-* && \
+    [[ $# -eq 26 && ${3:-} == '--name' && ${4:-} == crackledate-volume-inspect-* && \
       ${5:-} == '--network' && ${6:-} == none && ${7:-} == '--read-only' && \
       ${8:-} == '--cap-drop' && ${9:-} == ALL && ${10:-} == '--security-opt' && \
       ${11:-} == no-new-privileges && ${12:-} == '--mount' && ${13:-} == "$expected_mount" && \
       ${14:-} == *@sha256:* && ${15:-} == find && ${16:-} == /evidence && \
       ${17:-} == -mindepth && ${18:-} == 1 && ${19:-} == -maxdepth && ${20:-} == 1 && \
       ${21:-} == -exec && ${22:-} == stat && ${23:-} == '-c' && \
-      ${24:-} == '%n|%F|%h' ]] || exit 101
+      ${24:-} == '%n|%F|%h' && ${25:-} == '{}' && ${26:-} == + ]] || exit 101
+    if [[ -f "$state/create_fail" ]]; then
+      printf 'secret-must-not-reach-docker\n' >&2
+      exit 108
+    fi
     : >"$state/created"
     printf '%s\n' 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc'
     ;;
@@ -366,6 +370,17 @@ expect_fail() {
 subject="$(new_subject success)"
 expect_pass "$subject"
 
+subject="$(new_subject metadata-main-only)"
+write_state "$subject" inspection_metadata '/evidence/submissions.db|regular file|1'
+expect_pass "$subject"
+
+subject="$(new_subject metadata-any-order)"
+write_state "$subject" inspection_metadata \
+  '/evidence/submissions.db-wal|regular file|1' \
+  '/evidence/submissions.db|regular file|1' \
+  '/evidence/submissions.db-journal|regular file|1'
+expect_pass "$subject"
+
 for field in volume_name volume_driver volume_scope volume_mountpoint volume_created_at; do
   subject="$(new_subject "drift-$field")"
   write_state "$subject" "$field" 'drifted-value'
@@ -386,6 +401,21 @@ expect_fail "$subject"
 
 subject="$(new_subject malformed-label-index)"
 sed -i.bak 's/volume_label_001=/volume_label_009=/' "$subject/artifact/fingerprint"
+rm -f "$subject/artifact/fingerprint.bak"
+expect_fail "$subject"
+
+subject="$(new_subject label-without-value)"
+sed -i.bak 's/volume_label_000=alpha=first/volume_label_000=alpha/' "$subject/artifact/fingerprint"
+rm -f "$subject/artifact/fingerprint.bak"
+expect_fail "$subject"
+
+subject="$(new_subject reordered-fingerprint-fields)"
+sed -i.bak 's/^docker_context=/temporary=/; s/^docker_host=/docker_context=/; s/^temporary=/docker_host=/' "$subject/artifact/fingerprint"
+rm -f "$subject/artifact/fingerprint.bak"
+expect_fail "$subject"
+
+subject="$(new_subject reordered-label-indexes)"
+sed -i.bak 's/^volume_label_000=/temporary=/; s/^volume_label_001=/volume_label_000=/; s/^temporary=/volume_label_001=/' "$subject/artifact/fingerprint"
 rm -f "$subject/artifact/fingerprint.bak"
 expect_fail "$subject"
 
@@ -435,6 +465,23 @@ for case_name in unexpected-file directory symlink hard-link device socket fifo;
     exit 1
   }
 done
+
+for case_name in empty-metadata duplicate-metadata malformed-metadata control-metadata; do
+  subject="$(new_subject "$case_name")"
+  case "$case_name" in
+    empty-metadata) : >"$subject/state/inspection_metadata" ;;
+    duplicate-metadata) write_state "$subject" inspection_metadata \
+      '/evidence/submissions.db|regular file|1' \
+      '/evidence/submissions.db|regular file|1' ;;
+    malformed-metadata) write_state "$subject" inspection_metadata '/evidence/submissions.db|regular file|1|extra' ;;
+    control-metadata) printf '/evidence/submissions.db|regular file|1\001\n' >"$subject/state/inspection_metadata" ;;
+  esac
+  expect_fail "$subject"
+done
+
+subject="$(new_subject create-stderr-redaction)"
+: >"$subject/state/create_fail"
+expect_fail "$subject"
 
 subject="$(new_subject disappearing-volume)"
 : >"$subject/state/disappearing"

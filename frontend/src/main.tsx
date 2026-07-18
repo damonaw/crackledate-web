@@ -19,10 +19,10 @@ import { feedbackMessageAfterPuzzleLoad } from './feedbackRetention';
 import { HOW_TO_PLAY_DETAIL_CARDS, HOW_TO_PLAY_SECTIONS } from './howToPlayContent';
 import {
   bindHintDataToIdentity,
+  completeHintFailure,
   editorStatesEqual,
   hintClickAction,
   hintDataForIdentity,
-  hintFailureFeedback,
   nextVisibleHintStep,
   type HintFlowData,
   type IdentifiedHintData,
@@ -1212,7 +1212,12 @@ function GamePage() {
       return;
     }
 
-    const feedback = hintFailureFeedback(result.kind, identity.equation);
+    const completion = completeHintFailure(
+      result.kind,
+      identity.equation,
+      editorStateRef.current,
+    );
+    const feedback = completion.feedback;
     if (!feedback) return;
     setHintData(null);
     setMessageTone('error');

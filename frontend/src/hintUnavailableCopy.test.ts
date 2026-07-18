@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  completeHintFailure,
   hintFailureFeedback,
   hintNoSolutionMessage,
   hintRateLimitedMessage,
@@ -15,7 +16,6 @@ describe('hint unavailable feedback', () => {
       message: 'No hint available yet',
       isDeadEnd: true,
     });
-    expect(equation).toBe('1 +');
   });
 
   test('shows recoverable feedback for throttled and temporary failures', () => {
@@ -29,6 +29,24 @@ describe('hint unavailable feedback', () => {
       message: 'No hint available yet',
       isDeadEnd: false,
     });
-    expect(equation).toBe('1 +');
+  });
+
+  test.each([
+    ['no_solution' as const, true],
+    ['temporary' as const, false],
+  ])('preserves the editable equation when %s completes', (kind, isDeadEnd) => {
+    const editorState = {
+      tokens: [{ value: '1' }, { value: '+' }, { value: '2' }],
+      selection: { kind: 'slot' as const, index: 3 },
+    };
+
+    const completion = completeHintFailure(kind, '1+2', editorState);
+
+    expect(completion.editorState).toBe(editorState);
+    expect(completion.editorState.tokens.map((token) => token.value).join('')).toBe('1+2');
+    expect(completion.feedback).toEqual({
+      message: 'No hint available yet',
+      isDeadEnd,
+    });
   });
 });

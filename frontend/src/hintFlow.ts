@@ -29,6 +29,11 @@ export type HintFailureFeedback = {
   isDeadEnd: boolean;
 };
 
+export type HintFailureCompletion<TEditorState> = {
+  editorState: TEditorState;
+  feedback: HintFailureFeedback | null;
+};
+
 export type IdentifiedHintData = {
   identity: HintRequestIdentity;
   hint: HintFlowData;
@@ -108,6 +113,17 @@ export function hintFailureFeedback(
     };
   }
   return { message: hintNoSolutionMessage, isDeadEnd: true };
+}
+
+export function completeHintFailure<TEditorState>(
+  kind: HintFailureKind,
+  equation: string,
+  editorState: TEditorState,
+): HintFailureCompletion<TEditorState> {
+  return {
+    editorState,
+    feedback: hintFailureFeedback(kind, equation),
+  };
 }
 
 export function nextVisibleHintStep({

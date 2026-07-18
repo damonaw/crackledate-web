@@ -18,6 +18,11 @@ internal/**
 !internal/game
 internal/game/**
 !internal/game/*.go
+!internal/game/testdata
+internal/game/testdata/**
+!internal/game/testdata/hint-parity-v1.json
+!internal/game/testdata/hint-parity-v1.sha256
+!internal/game/testdata/validation-parity-v1.json
 !internal/submissionevidence
 internal/submissionevidence/**
 !internal/submissionevidence/*.go

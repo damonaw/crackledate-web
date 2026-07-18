@@ -27,6 +27,11 @@ expected_dockerignore=(
   '!internal/game'
   'internal/game/**'
   '!internal/game/*.go'
+  '!internal/game/testdata'
+  'internal/game/testdata/**'
+  '!internal/game/testdata/hint-parity-v1.json'
+  '!internal/game/testdata/hint-parity-v1.sha256'
+  '!internal/game/testdata/validation-parity-v1.json'
   '!internal/submissionevidence'
   'internal/submissionevidence/**'
   '!internal/submissionevidence/*.go'
@@ -182,6 +187,7 @@ required_directories=(
   'cmd/submissions-reconcile'
   'internal'
   'internal/game'
+  'internal/game/testdata'
   'internal/submissionevidence'
   'internal/submissionfixture'
   'frontend'
@@ -198,6 +204,9 @@ required_paths=(
   'cmd/submissions-audit/main.go'
   'cmd/submissions-reconcile/main.go'
   'internal/game/date.go'
+  'internal/game/testdata/hint-parity-v1.json'
+  'internal/game/testdata/hint-parity-v1.sha256'
+  'internal/game/testdata/validation-parity-v1.json'
   'internal/submissionevidence/evidence.go'
   'internal/submissionfixture/path.go'
   'frontend/package.json'
@@ -228,6 +237,8 @@ protected_paths=(
   'internal/game/nested/helper.go'
   'internal/game/submissions.json'
   'internal/game/submissions.txt'
+  'internal/game/testdata/submissions.json'
+  'internal/game/testdata/extra.json'
   'internal/game/log/trace.ndjson'
   'internal/submissionfixture/nested/trace.jsonl'
   '.env'
@@ -261,7 +272,7 @@ protected_paths=(
 policy_allows_directory() {
   local path="$1"
   case "$path" in
-    cmd|cmd/server|cmd/submissions-audit|cmd/submissions-reconcile|internal|internal/game|internal/submissionevidence|internal/submissionfixture|frontend|frontend/src|frontend/public|frontend/public/badges|frontend/public/how-to-play)
+    cmd|cmd/server|cmd/submissions-audit|cmd/submissions-reconcile|internal|internal/game|internal/game/testdata|internal/submissionevidence|internal/submissionfixture|frontend|frontend/src|frontend/public|frontend/public/badges|frontend/public/how-to-play)
       return 0
       ;;
   esac
@@ -298,6 +309,9 @@ policy_allows() {
   esac
   case "$path" in
     Dockerfile|go.mod|go.sum|frontend/package.json|frontend/package-lock.json|frontend/index.html|frontend/tsconfig.json|frontend/tsconfig.node.json|frontend/vite.config.ts)
+      return 0
+      ;;
+    internal/game/testdata/hint-parity-v1.json|internal/game/testdata/hint-parity-v1.sha256|internal/game/testdata/validation-parity-v1.json)
       return 0
       ;;
   esac

@@ -244,6 +244,11 @@ func TestRestatAndRemoveRequireTheSameGuardedIdentity(t *testing.T) {
 	if err != nil || !SameIdentity(before, after) {
 		t.Fatalf("Restat = %#v, %v", after, err)
 	}
+	held, err := os.Open(path)
+	if err != nil {
+		t.Fatalf("Open guarded fixture: %v", err)
+	}
+	defer held.Close()
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}

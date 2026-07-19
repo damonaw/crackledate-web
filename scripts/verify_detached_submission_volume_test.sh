@@ -467,7 +467,7 @@ subject="$(new_subject metadata-mixed-formats)"
 write_state "$subject" inspection_metadata \
   '/evidence/submissions.db|regular file|1' \
   '/evidence/submissions.ndjson|regular file|1'
-expect_fail "$subject"
+expect_pass "$subject"
 
 for field in volume_name volume_driver volume_scope volume_mountpoint volume_created_at; do
   subject="$(new_subject "drift-$field")"

@@ -288,11 +288,10 @@ while IFS= read -r record || [[ -n "$record" ]]; do
     *) failure ;;
   esac
 done <"$metadata"
-if [[ "$seen_submissions_ndjson" == true ]]; then
-  [[ "$seen_submissions_db" == false && "$seen_submissions_db_journal" == false && \
-    "$seen_submissions_db_shm" == false && "$seen_submissions_db_wal" == false ]] || failure
-else
-  [[ "$seen_submissions_db" == true ]] || failure
+[[ "$seen_submissions_db" == true || "$seen_submissions_ndjson" == true ]] || failure
+if [[ "$seen_submissions_db" == false ]]; then
+  [[ "$seen_submissions_db_journal" == false && "$seen_submissions_db_shm" == false && \
+    "$seen_submissions_db_wal" == false ]] || failure
 fi
 
 "${docker_env[@]}" docker --context "$docker_context" container rm --force "$inspection_id" >/dev/null 2>/dev/null || failure

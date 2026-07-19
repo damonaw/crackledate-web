@@ -16,12 +16,6 @@ expected_dockerignore=(
   '!cmd/server'
   'cmd/server/**'
   '!cmd/server/*.go'
-  '!cmd/submissions-audit'
-  'cmd/submissions-audit/**'
-  '!cmd/submissions-audit/*.go'
-  '!cmd/submissions-reconcile'
-  'cmd/submissions-reconcile/**'
-  '!cmd/submissions-reconcile/*.go'
   '!internal'
   'internal/**'
   '!internal/game'
@@ -32,12 +26,6 @@ expected_dockerignore=(
   '!internal/game/testdata/hint-parity-v1.json'
   '!internal/game/testdata/hint-parity-v1.sha256'
   '!internal/game/testdata/validation-parity-v1.json'
-  '!internal/submissionevidence'
-  'internal/submissionevidence/**'
-  '!internal/submissionevidence/*.go'
-  '!internal/submissionfixture'
-  'internal/submissionfixture/**'
-  '!internal/submissionfixture/*.go'
   '!frontend'
   'frontend/**'
   '!frontend/package.json'
@@ -54,9 +42,6 @@ expected_dockerignore=(
   '!frontend/public'
   'frontend/public/**'
   '!frontend/public/*.png'
-  '!frontend/public/badges'
-  'frontend/public/badges/**'
-  '!frontend/public/badges/*.png'
   '!frontend/public/how-to-play'
   'frontend/public/how-to-play/**'
   '!frontend/public/how-to-play/*.png'
@@ -183,17 +168,12 @@ done <"$repo_dir/.gitignore"
 required_directories=(
   'cmd'
   'cmd/server'
-  'cmd/submissions-audit'
-  'cmd/submissions-reconcile'
   'internal'
   'internal/game'
   'internal/game/testdata'
-  'internal/submissionevidence'
-  'internal/submissionfixture'
   'frontend'
   'frontend/src'
   'frontend/public'
-  'frontend/public/badges'
   'frontend/public/how-to-play'
 )
 required_paths=(
@@ -201,14 +181,10 @@ required_paths=(
   'go.mod'
   'go.sum'
   'cmd/server/main.go'
-  'cmd/submissions-audit/main.go'
-  'cmd/submissions-reconcile/main.go'
   'internal/game/date.go'
   'internal/game/testdata/hint-parity-v1.json'
   'internal/game/testdata/hint-parity-v1.sha256'
   'internal/game/testdata/validation-parity-v1.json'
-  'internal/submissionevidence/evidence.go'
-  'internal/submissionfixture/path.go'
   'frontend/package.json'
   'frontend/package-lock.json'
   'frontend/index.html'
@@ -219,7 +195,6 @@ required_paths=(
   'frontend/src/main.tsx'
   'frontend/src/styles.css'
   'frontend/public/app-icon.png'
-  'frontend/public/badges/first-solve.png'
   'frontend/public/how-to-play/instruction-1.png'
 )
 protected_paths=(
@@ -272,7 +247,7 @@ protected_paths=(
 policy_allows_directory() {
   local path="$1"
   case "$path" in
-    cmd|cmd/server|cmd/submissions-audit|cmd/submissions-reconcile|internal|internal/game|internal/game/testdata|internal/submissionevidence|internal/submissionfixture|frontend|frontend/src|frontend/public|frontend/public/badges|frontend/public/how-to-play)
+    cmd|cmd/server|internal|internal/game|internal/game/testdata|frontend|frontend/src|frontend/public|frontend/public/how-to-play)
       return 0
       ;;
   esac
@@ -316,7 +291,7 @@ policy_allows() {
       ;;
   esac
   local directory
-  for directory in cmd/server cmd/submissions-audit cmd/submissions-reconcile internal/game internal/submissionevidence internal/submissionfixture; do
+  for directory in cmd/server internal/game; do
     if is_allowed_direct_child "$path" "$directory" '.go'; then
       return 0
     fi
@@ -324,7 +299,7 @@ policy_allows() {
   if is_allowed_direct_child "$path" 'frontend/src' '.ts' '.tsx' '.css'; then
     return 0
   fi
-  for directory in frontend/public frontend/public/badges frontend/public/how-to-play; do
+  for directory in frontend/public frontend/public/how-to-play; do
     if is_allowed_direct_child "$path" "$directory" '.png'; then
       return 0
     fi

@@ -7,12 +7,6 @@ cmd/**
 !cmd/server
 cmd/server/**
 !cmd/server/*.go
-!cmd/submissions-audit
-cmd/submissions-audit/**
-!cmd/submissions-audit/*.go
-!cmd/submissions-reconcile
-cmd/submissions-reconcile/**
-!cmd/submissions-reconcile/*.go
 !internal
 internal/**
 !internal/game
@@ -23,12 +17,6 @@ internal/game/testdata/**
 !internal/game/testdata/hint-parity-v1.json
 !internal/game/testdata/hint-parity-v1.sha256
 !internal/game/testdata/validation-parity-v1.json
-!internal/submissionevidence
-internal/submissionevidence/**
-!internal/submissionevidence/*.go
-!internal/submissionfixture
-internal/submissionfixture/**
-!internal/submissionfixture/*.go
 !frontend
 frontend/**
 !frontend/package.json
@@ -45,9 +33,6 @@ frontend/src/**
 !frontend/public
 frontend/public/**
 !frontend/public/*.png
-!frontend/public/badges
-frontend/public/badges/**
-!frontend/public/badges/*.png
 !frontend/public/how-to-play
 frontend/public/how-to-play/**
 !frontend/public/how-to-play/*.png

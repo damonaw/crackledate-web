@@ -14,22 +14,15 @@ COPY internal ./internal
 COPY cmd ./cmd
 COPY --from=frontend /src/frontend/dist ./cmd/server/public
 RUN go test ./...
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/crackledate-web ./cmd/server \
-    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/submissions-audit ./cmd/submissions-audit \
-    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/submissions-reconcile ./cmd/submissions-reconcile
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/crackledate-web ./cmd/server
 
 FROM alpine:3.21
 ARG VCS_REVISION=unknown
 LABEL org.opencontainers.image.revision="${VCS_REVISION}"
-RUN adduser -D -H -u 10001 crackledate \
-    && mkdir -p /data \
-    && chown crackledate:crackledate /data
+RUN adduser -D -H -u 10001 crackledate
 USER crackledate
 WORKDIR /app
 COPY --from=backend /out/crackledate-web /app/crackledate-web
-COPY --from=backend /out/submissions-audit /app/submissions-audit
-COPY --from=backend /out/submissions-reconcile /app/submissions-reconcile
 EXPOSE 8080
 ENV PORT=8080
-ENV SUBMISSIONS_PATH=/data/submissions.db
 ENTRYPOINT ["/app/crackledate-web"]

@@ -741,16 +741,14 @@ a {
   width: min(410px, 100%);
   min-width: 0;
   margin: 0 auto;
-  border: 1px solid var(--glass-border);
-  border-radius: 18px;
-  background: var(--ios-tertiary-background);
+  border: 0;
+  background: transparent;
   color: var(--ios-label);
   display: grid;
   justify-items: center;
   gap: 22px;
-  padding: 42px 18px 26px;
+  padding: 0;
   text-align: center;
-  box-shadow: var(--shadow-soft);
 }
 
 .start-screen-icon {
@@ -855,16 +853,13 @@ a {
 
 .how-to-play-card {
   width: min(470px, 100%);
-  border: 1px solid var(--glass-border);
-  border-radius: 14px;
-  background: var(--ios-tertiary-background);
+  border: 0;
+  background: transparent;
   color: var(--ios-label);
   display: grid;
   gap: 16px;
-  padding: 18px;
+  padding: 0;
   text-align: left;
-  box-shadow: var(--shadow-soft);
-  transform: translateY(-2vh);
 }
 
 .detailed-how-to-play-card {
@@ -1831,12 +1826,11 @@ a {
 
 .settings-page,
 .calendar-page {
-  border: 1px solid var(--glass-border);
-  border-radius: 14px;
-  background: var(--ios-tertiary-background);
+  border: 0;
+  background: transparent;
   display: grid;
   gap: 18px;
-  padding: 18px;
+  padding: 0;
 }
 
 .calendar-page {
@@ -2058,6 +2052,12 @@ a {
     gap: clamp(10px, 2svh, 14px);
   }
 
+  .game-shell .practice-coach {
+    grid-row: 2;
+    align-self: start;
+    margin-block-start: clamp(12px, 1.6svh, 16px);
+  }
+
   .game-shell .control-area {
     grid-row: 3;
     align-self: end;
@@ -2093,6 +2093,12 @@ a {
     grid-row: 1;
     align-self: start;
     gap: clamp(14px, 2.4svh, 30px);
+  }
+
+  .game-shell .practice-coach {
+    grid-row: 2;
+    align-self: start;
+    margin-block-start: clamp(12px, 1.6svh, 16px);
   }
 
   .game-shell .control-area {
@@ -2190,8 +2196,6 @@ a {
   box-shadow: none;
 }
 
-:root[data-theme="dark"] .settings-page,
-:root[data-theme="dark"] .calendar-page,
 :root[data-theme="dark"] .document-card {
   background: var(--ios-secondary-background);
 }
@@ -2236,8 +2240,6 @@ a {
   box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
 }
 
-:root[data-theme="light"] .settings-page,
-:root[data-theme="light"] .calendar-page,
 :root[data-theme="light"] .document-card {
   background: var(--ios-tertiary-background);
 }
@@ -2658,11 +2660,9 @@ a {
 
 /* Victory Panel Styles */
 .victory-panel-card {
-  background: var(--ios-tertiary-background);
-  border: 1px solid var(--glass-border);
-  border-radius: 20px;
-  padding: 24px 20px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
+  background: transparent;
+  border: 0;
+  padding: 0;
   display: flex;
   flex-direction: column;
   align-items: center;

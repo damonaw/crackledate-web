@@ -32,7 +32,7 @@ describe('HOW_TO_PLAY_SECTIONS', () => {
     expect(copy).toContain('Tap an equation element');
     expect(copy).toContain('PEMDAS');
     expect(copy).toContain('Hard mode hides the helper values');
-    expect(copy).toContain('Saved solutions collect your equations');
+    expect(copy).toContain('Calendar keeps your equations');
   });
 });
 
@@ -55,7 +55,7 @@ describe('HOW_TO_PLAY_DETAIL_CARDS', () => {
     expect(copy).toContain('Hard mode');
     expect(copy).toContain('PEMDAS');
     expect(copy).toContain('Clear');
-    expect(copy).toContain('solve history');
+    expect(copy).toContain('solve times');
   });
 
   test('matches the requested detailed card copy by card number', () => {
@@ -63,9 +63,9 @@ describe('HOW_TO_PLAY_DETAIL_CARDS', () => {
     expect(HOW_TO_PLAY_DETAIL_CARDS[3]?.note).toBe(
       'Make both sides equal each other before you submit.'
     );
-    expect(HOW_TO_PLAY_DETAIL_CARDS[5]?.title).toBe('Check Stats');
+    expect(HOW_TO_PLAY_DETAIL_CARDS[5]?.title).toBe('Review Calendar History');
     expect(HOW_TO_PLAY_DETAIL_CARDS[5]?.note).toBe(
-      'Check Stats to review your streak, month progress, solve history, and saved equations.'
+      "Use Calendar to review saved equations, solve times, and each day's average kept in this browser."
     );
     expect(HOW_TO_PLAY_DETAIL_CARDS[6]?.title).toBe('Try Hard mode');
     expect(HOW_TO_PLAY_DETAIL_CARDS[6]?.note).toBe(

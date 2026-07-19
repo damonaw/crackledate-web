@@ -38,7 +38,7 @@ export const HOW_TO_PLAY_SECTIONS: HowToPlaySection[] = [
   {
     title: 'Keep exploring',
     items: [
-      'Saved solutions collect your equations, solve history, and local statistics.',
+      'Calendar keeps your equations, solve times, and daily averages in this browser.',
       'Hard mode hides the helper values under the equation for a bigger challenge.',
       'Have fun and try different operators. There is usually more than one good answer.',
     ],
@@ -73,14 +73,14 @@ export const HOW_TO_PLAY_DETAIL_CARDS: HowToPlayDetailCard[] = [
   {
     title: 'Try different operators',
     imageSrc: '/how-to-play/instruction-5.png',
-    imageAlt: 'Crackle Date saved solutions screen showing equations and solve history',
+    imageAlt: 'Crackle Date calendar showing equations and solve history',
     note: 'Have fun and try different operators. That is a fancy solution you have got there.',
   },
   {
-    title: 'Check Stats',
+    title: 'Review Calendar History',
     imageSrc: '/how-to-play/instruction-6.png',
-    imageAlt: 'Crackle Date settings screen showing the Hard difficulty option selected',
-    note: 'Check Stats to review your streak, month progress, solve history, and saved equations.',
+    imageAlt: 'Crackle Date calendar showing locally saved equations and solve times',
+    note: "Use Calendar to review saved equations, solve times, and each day's average kept in this browser.",
   },
   {
     title: 'Try Hard mode',

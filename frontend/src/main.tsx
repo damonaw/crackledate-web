@@ -1782,7 +1782,7 @@ function ClearDataConfirmModal({
     <div className="modal-backdrop" role="presentation">
       <section className="modal-card clear-data-modal" role="dialog" aria-modal="true" aria-labelledby="clear-data-title">
         <h2 id="clear-data-title">Clear Data?</h2>
-        <p>This permanently deletes saved solutions, stats, and Crackle Date settings in this browser.</p>
+        <p>This permanently deletes Calendar history and Crackle Date settings in this browser.</p>
         <div className="clear-data-modal-actions">
           <button className="modal-secondary" type="button" onClick={onCancel}>
             Cancel
@@ -2992,15 +2992,15 @@ function PrivacyPage() {
     <DocumentShell
       currentPage="privacy"
       title="Privacy"
-      subtitle="Crackle Date is built to be played with local saves, no remote profile, no ads, in-app purchases, or public profile."
-      meta="Last updated July 14, 2026"
+      subtitle="Crackle Date is built for local play with no ads, purchases, accounts, tracking, public profiles, or cloud gameplay history."
+      meta="Last updated July 18, 2026"
     >
       <DocumentSection
         title="Local Storage"
         rows={[
           {
             label: 'On this device',
-            body: 'Saved solutions, settings, theme choice, difficulty mode, and whether you have started playing are stored locally on your device or in this browser.',
+            body: 'Saved equations, solve times, streaks, settings, theme, difficulty, and onboarding progress stay in this browser.',
           },
           {
             label: 'Clearing data',
@@ -3010,27 +3010,15 @@ function PrivacyPage() {
       />
 
       <DocumentSection
-        title="Gameplay Requests and Submissions"
+        title="Gameplay Requests"
         rows={[
           {
             label: 'While you play',
-            body: 'The web app sends the puzzle date and current equation to calculate running values and validate an attempted solution.',
-          },
-          {
-            label: 'Hints',
-            body: 'Hints send the puzzle date, mode, equation prefix, and target value when relevant.',
-          },
-          {
-            label: 'Correct solutions',
-            body: 'Correct non-Practice solutions send the puzzle date, equation, solve time, difficulty mode, platform, and app version. Practice solutions are not submitted.',
-          },
-          {
-            label: 'What is not sent',
-            body: 'Submitted records do not include contact details, payment information, advertising identifier, or the contents of browser storage.',
+            body: 'The web service processes puzzle, equation, validation, and hint requests only long enough to respond and does not retain gameplay content.',
           },
           {
             label: 'Operational data',
-            body: 'To run and secure the site, the server processes network addresses in bounded memory for rate limiting and logs route, method, status, timing, rotating network-derived hashes, and available request metadata. Solution records are not tied to a remote profile.',
+            body: 'Operational logs contain only timestamp, level, method, path, status, and duration; they do not contain gameplay content or a client identifier.',
           },
         ]}
       />
@@ -3040,7 +3028,7 @@ function PrivacyPage() {
         rows={[
           {
             label: 'No ads or purchases',
-            body: 'Crackle Date does not show ads or offer in-app purchases. Past, current, and future dates open without paid unlocks.',
+            body: 'Crackle Date has no ads, purchases, accounts, tracking, public profiles, or cloud gameplay history. Past, current, and future dates open without paid unlocks.',
           },
           {
             label: 'No tracking ads',
@@ -3097,7 +3085,7 @@ function SupportPage() {
           },
           {
             label: 'Missing history',
-            body: 'Saved solutions and badges are local to this browser. Clearing site data or switching browsers can remove local history.',
+            body: 'Clearing browser data, using private browsing, switching browsers, or changing devices can remove local history. Crackle Date does not keep a server copy and cannot restore it.',
           },
         ]}
       />
@@ -3107,7 +3095,7 @@ function SupportPage() {
         rows={[
           {
             label: 'Puzzle date',
-            body: 'Include the puzzle date, difficulty mode, and whether the issue happened on the game board, calendar, settings, solutions, or instructions screen.',
+            body: 'Include the puzzle date, difficulty mode, and whether the issue happened on the game board, Calendar, Settings, or instructions screen.',
           },
           {
             label: 'Equation',

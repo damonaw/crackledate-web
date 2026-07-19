@@ -17,7 +17,7 @@ export const RULES_SECTIONS: RuleSection[] = [
     title: 'Sandbox',
     rows: [
       'Practice does not save progress.',
-      'Practice does not change your streak, badges, or saved solutions.',
+      'Practice does not change your streak or Calendar history.',
     ],
   },
   {

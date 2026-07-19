@@ -37,6 +37,6 @@ describe('SettingsPanel', () => {
     expect(appSource).toContain('clearDataConfirmVisible');
     expect(appSource).toContain('ClearDataConfirmModal');
     expect(appSource).toContain('Clear Data?');
-    expect(appSource).toContain('This permanently deletes saved solutions, stats, and Crackle Date settings in this browser.');
+    expect(appSource).toContain('This permanently deletes Calendar history and Crackle Date settings in this browser.');
   });
 });

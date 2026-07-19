@@ -13,7 +13,7 @@ Guidance for Codex and other coding agents working in this repository.
 - Practice is shared with Android and iOS: use the June 19, 2026 sample round, highlight each next tutorial step, and never save, sync, or submit practice attempts.
 - Rules is a written Settings destination shared with Android and iOS; keep it separate from visual Cracked Instructions.
 - Share payloads are shared with Android and iOS: daily shares are spoiler-free, while saved-solution shares include the equation, value, and solve time.
-- Daily Dashboard work should match Android's selected-date summary: cracked moment, streak/month cards, next badge target, spoiler-free daily share, keep-playing, saved-solutions, and calendar actions.
+- Calendar is the only saved-history destination and shows selected-day equations, solve times, and average time. Daily Dashboard may keep immediate streak/month context and spoiler-free sharing.
 
 ## Local Development
 
@@ -56,7 +56,7 @@ Open `http://localhost:5173/` for the local app.
 ## Environment
 
 - `PORT` controls the backend port and defaults to `8080`.
-- `SUBMISSIONS_PATH` and `CLIENT_HASH_SECRET` are legacy settings and must be absent from the stateless production runtime.
+- The runtime has no gameplay-storage, retirement, or client-hash configuration.
 - Proxy trust lists default empty. Stateless release evidence requires application logs with only `timestamp`, `level`, `method`, `path`, `status`, and `durationMs` plus owner-reviewed proxy/host logs that omit query strings and client identifiers.
 
 For isolated local Compose work, choose a project name unique to the checkout and validate without rendering secrets:
@@ -74,4 +74,5 @@ Do not use outputting `docker compose config`, raw `docker inspect`, or environm
 - Do not commit `frontend/node_modules/`, `frontend/dist/`, `data/`, or local log files.
 - Prefer small, focused changes and run the relevant checks before committing.
 - Keep privacy/support copy aligned when changing local data, access, or submission behavior.
+- Keep the shipping product free of ads, purchases, accounts, tracking, public profiles, achievements, and cloud gameplay history.
 - Never run a production deletion automatically or from a guessed target. The runbook requires fresh user confirmation of the verified context, endpoint, and exact volume after detached-volume verification succeeds.

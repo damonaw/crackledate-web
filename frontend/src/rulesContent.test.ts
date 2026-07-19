@@ -14,6 +14,8 @@ describe('rulesContent', () => {
     expect(text).toContain('Use 0+26 rather than 026.');
     expect(text).toContain('Add exactly one equals sign.');
     expect(text).toContain('Practice does not save progress.');
+    expect(text).toContain('Practice does not change your streak or Calendar history.');
     expect(text).toContain('Past, current, and future dates open without ads or purchases.');
+    expect(text).not.toContain('badge');
   });
 });

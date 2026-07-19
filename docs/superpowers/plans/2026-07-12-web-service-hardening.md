@@ -463,3 +463,6 @@ constraints are normative: no live database or service mutation during
 repository implementation; no production activation without the separate
 owner-filled identity, proxy, backup, deletion, image, maintenance, rollback,
 and post-write recovery gates.
+# Superseded
+
+This historical plan describes the former stateful submission service. The approved July 18, 2026 stateless release replaces its storage, submission, analytics, and achievement requirements. Do not use this plan as an active product or deployment contract.

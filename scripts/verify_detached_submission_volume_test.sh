@@ -64,16 +64,15 @@ assert_runbook_convention() {
 assert_runbook_convention
 
 assert_cutover_status_copy() {
-  grep -Fq 'After the stateless cutover is deployed and verified' "$readme" || {
-    printf 'README does not mark stateless behavior as post-cutover\n' >&2
+  grep -Fq 'Browser-local saves are the only durable player history.' "$readme" || {
+    printf 'README does not describe current stateless behavior\n' >&2
     exit 1
   }
 
   if grep -Fq 'RETIRE_LEGACY_ACCOUNT_DATA' "$readme" || \
-    grep -Fq 'The stateless production service does not retain submitted gameplay.' "$readme" || \
-    grep -Fq '/api/submissions` is unavailable in the stateless release.' "$readme" || \
+    grep -Fq 'After the stateless cutover is deployed and verified' "$readme" || \
     grep -Fq 'submission, validation, and evaluation routes' "$readme"; then
-    printf 'README contains stale retirement, current-stateless, or contradictory submission-rate-limit copy\n' >&2
+    printf 'README contains stale cutover or contradictory submission copy\n' >&2
     exit 1
   fi
 }
@@ -453,12 +452,22 @@ subject="$(new_subject metadata-main-only)"
 write_state "$subject" inspection_metadata '/evidence/submissions.db|regular file|1'
 expect_pass "$subject"
 
+subject="$(new_subject metadata-legacy-ndjson)"
+write_state "$subject" inspection_metadata '/evidence/submissions.ndjson|regular file|1'
+expect_pass "$subject"
+
 subject="$(new_subject metadata-any-order)"
 write_state "$subject" inspection_metadata \
   '/evidence/submissions.db-wal|regular file|1' \
   '/evidence/submissions.db|regular file|1' \
   '/evidence/submissions.db-journal|regular file|1'
 expect_pass "$subject"
+
+subject="$(new_subject metadata-mixed-formats)"
+write_state "$subject" inspection_metadata \
+  '/evidence/submissions.db|regular file|1' \
+  '/evidence/submissions.ndjson|regular file|1'
+expect_fail "$subject"
 
 for field in volume_name volume_driver volume_scope volume_mountpoint volume_created_at; do
   subject="$(new_subject "drift-$field")"

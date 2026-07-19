@@ -255,6 +255,7 @@ seen_submissions_db=false
 seen_submissions_db_journal=false
 seen_submissions_db_shm=false
 seen_submissions_db_wal=false
+seen_submissions_ndjson=false
 while IFS= read -r record || [[ -n "$record" ]]; do
   [[ -n "$record" && "$record" != *[[:cntrl:]]* && "$record" == *'|'* ]] || failure
   metadata_path="${record%%|*}"
@@ -280,10 +281,19 @@ while IFS= read -r record || [[ -n "$record" ]]; do
       [[ "$seen_submissions_db_wal" == false ]] || failure
       seen_submissions_db_wal=true
       ;;
+    /evidence/submissions.ndjson)
+      [[ "$seen_submissions_ndjson" == false ]] || failure
+      seen_submissions_ndjson=true
+      ;;
     *) failure ;;
   esac
 done <"$metadata"
-[[ "$seen_submissions_db" == true ]] || failure
+if [[ "$seen_submissions_ndjson" == true ]]; then
+  [[ "$seen_submissions_db" == false && "$seen_submissions_db_journal" == false && \
+    "$seen_submissions_db_shm" == false && "$seen_submissions_db_wal" == false ]] || failure
+else
+  [[ "$seen_submissions_db" == true ]] || failure
+fi
 
 "${docker_env[@]}" docker --context "$docker_context" container rm --force "$inspection_id" >/dev/null 2>/dev/null || failure
 inspection_id=''

@@ -121,7 +121,6 @@ describe('HintRequestCoordinator', () => {
     ['Rules', { activeView: 'rules' }],
     ['Settings', { activeView: 'settings' }],
     ['Calendar', { activeView: 'calendar' }],
-    ['Stats', { activeView: 'solutions' }],
     ['How to Play', { activeView: 'howToPlay' }],
   ])('treats a changed %s context as a new identity', (_name, change) => {
     const signals: AbortSignal[] = [];

@@ -1830,8 +1830,7 @@ a {
 }
 
 .settings-page,
-.calendar-page,
-.solutions-page {
+.calendar-page {
   border: 1px solid var(--glass-border);
   border-radius: 14px;
   background: var(--ios-tertiary-background);
@@ -1844,23 +1843,20 @@ a {
   gap: 16px;
 }
 
-.calendar-page-header,
-.solutions-page-header {
+.calendar-page-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
-.calendar-page-header h1,
-.solutions-page-header h1 {
+.calendar-page-header h1 {
   margin: 0;
   font-size: 1.55rem;
   line-height: 1.1;
 }
 
-.calendar-page-header p,
-.solutions-page-header p {
+.calendar-page-header p {
   margin: 6px 0 0;
   color: var(--ios-secondary-label);
   font-weight: 650;
@@ -1878,8 +1874,7 @@ a {
   min-height: 46px;
 }
 
-.calendar-today-button,
-.solutions-page-header button {
+.calendar-today-button {
   min-height: 38px;
   border: 1px solid var(--glass-border);
   border-radius: 14px;
@@ -1890,94 +1885,6 @@ a {
   box-shadow: 0 7px 16px rgba(0, 0, 0, 0.04);
   backdrop-filter: blur(22px) saturate(1.3);
   cursor: pointer;
-}
-
-.saved-solutions-section,
-.solutions-summary-section,
-.solutions-activity-section {
-  border: 1px solid var(--glass-border);
-  border-radius: 14px;
-  background: var(--ios-secondary-background);
-  display: grid;
-  gap: 12px;
-  padding: 14px;
-}
-
-.saved-solutions-section-header h2,
-.solutions-summary-section h2,
-.solutions-activity-section h2 {
-  margin: 0;
-  color: var(--ios-label);
-  font-size: 1rem;
-  line-height: 1.1;
-}
-
-.solutions-summary-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.solutions-summary-card {
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  background: var(--glass-fill);
-  display: grid;
-  gap: 4px;
-  min-height: 68px;
-  padding: 10px;
-}
-
-.solutions-summary-card span,
-.solutions-activity-row span {
-  color: var(--ios-secondary-label);
-  font-size: 0.76rem;
-  font-weight: 800;
-  letter-spacing: 0.2px;
-  text-transform: uppercase;
-}
-
-.solutions-summary-card strong,
-.solutions-activity-row strong {
-  color: var(--ios-label);
-  font-size: 1rem;
-  line-height: 1.2;
-}
-
-.solutions-activity-row {
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  background: var(--glass-fill);
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-}
-
-.solutions-page p,
-.solutions-page li > span {
-  color: var(--ios-secondary-label);
-  line-height: 1.55;
-}
-
-.solutions-page ol {
-  margin: 0;
-  padding-left: 0;
-  display: grid;
-  gap: 10px;
-  list-style: none;
-}
-
-.solutions-page li {
-  border: 1px solid var(--ios-separator);
-  border-radius: 14px;
-  background: var(--ios-secondary-background);
-  margin: 0;
-  padding: 12px;
-}
-
-.solutions-page li > strong,
-.solutions-page li > span {
-  display: block;
 }
 
 .solution-equation {
@@ -1991,16 +1898,6 @@ a {
 
 .solution-equation::-webkit-scrollbar {
   display: none;
-}
-
-.solutions-page .solution-equation,
-.solutions-page .solution-equation * {
-  color: var(--ios-label);
-}
-
-.solutions-page li > span {
-  margin-top: 4px;
-  font-size: 0.92rem;
 }
 
 .document-top-bar {
@@ -2295,7 +2192,6 @@ a {
 
 :root[data-theme="dark"] .settings-page,
 :root[data-theme="dark"] .calendar-page,
-:root[data-theme="dark"] .solutions-page,
 :root[data-theme="dark"] .document-card {
   background: var(--ios-secondary-background);
 }
@@ -2342,7 +2238,6 @@ a {
 
 :root[data-theme="light"] .settings-page,
 :root[data-theme="light"] .calendar-page,
-:root[data-theme="light"] .solutions-page,
 :root[data-theme="light"] .document-card {
   background: var(--ios-tertiary-background);
 }
@@ -2666,6 +2561,31 @@ a {
   font-weight: 750;
   color: var(--ios-label);
   margin: 0;
+}
+
+.calendar-average-card {
+  width: min(100%, 220px);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background: var(--glass-fill);
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 12px 14px;
+}
+
+.calendar-average-card span {
+  color: var(--ios-secondary-label);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.calendar-average-card strong {
+  color: var(--ios-label);
+  font-size: 1.25rem;
+  line-height: 1.2;
 }
 
 .play-date-button {

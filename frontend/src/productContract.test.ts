@@ -122,4 +122,21 @@ describe('browser-local product contract', () => {
   test('has no achievement badge asset directory', () => {
     expect(existsSync(new URL('./public/badges', frontendUrl))).toBe(false);
   });
+
+  test('uses Calendar as the only saved-history destination', () => {
+    for (const removedSurface of [
+      "| 'solutions'",
+      'label="Stats"',
+      'function SolutionsPage(',
+      'function SummaryStat(',
+      'function StatsIcon(',
+      'solutions-summary-section',
+      'solutions-activity-section',
+    ]) {
+      expect(productSurface).not.toContain(removedSurface);
+    }
+
+    expect(mainSource).toContain('Average Time');
+    expect(mainSource).toContain("averageSeconds === null ? '—' : formatTime(averageSeconds)");
+  });
 });

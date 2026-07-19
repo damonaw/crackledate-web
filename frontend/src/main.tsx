@@ -97,6 +97,7 @@ import {
   guidedPracticeStepForTokens,
 } from './guidedPractice';
 import { dateAccessDecisionFor } from './dateAccessPolicy';
+import { averageTimeForSolutions } from './calendarHistory';
 import './styles.css';
 
 type Puzzle = {
@@ -130,7 +131,7 @@ type SavedSolution = {
 
 type StoredSolutions = Record<string, SavedSolution[]>;
 type FeedbackTone = 'success' | 'error';
-type ActiveView = 'start' | 'game' | 'practice' | 'calendar' | 'solutions' | 'settings' | 'howToPlay' | 'rules';
+type ActiveView = 'start' | 'game' | 'practice' | 'calendar' | 'settings' | 'howToPlay' | 'rules';
 
 type EquationToken = EquationLatexToken & {
   id: string;
@@ -345,37 +346,6 @@ function StatsDashboard({ savedSolutions }: { savedSolutions: StoredSolutions })
       </div>
     </section>
   );
-}
-
-function savedSolutionsSummary(savedSolutions: StoredSolutions) {
-  const entries = Object.entries(savedSolutions).flatMap(([dateIdentifier, solutions]) =>
-    (solutions ?? []).map((solution) => ({ dateIdentifier, solution })),
-  );
-  const solvedDates = new Set(entries.map((entry) => entry.dateIdentifier));
-  const timedSolutions = entries.map((entry) => entry.solution.seconds).filter((seconds) => seconds > 0);
-  const averageSeconds = timedSolutions.length > 0
-    ? Math.floor(timedSolutions.reduce((total, seconds) => total + seconds, 0) / timedSolutions.length)
-    : 0;
-  const fastestSeconds = timedSolutions.length > 0 ? Math.min(...timedSolutions) : 0;
-  const lastPlayed = entries
-    .map((entry) => {
-      const timestampTime = Date.parse(entry.solution.timestamp);
-      const fallbackTime = dateFromIdentifier(entry.dateIdentifier).getTime();
-      return {
-        dateIdentifier: entry.dateIdentifier,
-        sortTime: Number.isNaN(timestampTime) ? fallbackTime : timestampTime,
-      };
-    })
-    .sort((left, right) => right.sortTime - left.sortTime)[0]?.dateIdentifier;
-
-  return {
-    daysPlayed: solvedDates.size,
-    solutionCount: entries.length,
-    hardModeCount: entries.filter((entry) => entry.solution.difficulty === 'hard').length,
-    averageSeconds,
-    fastestSeconds,
-    lastPlayed,
-  };
 }
 
 const emptyDigitIndices = new Set<number>();
@@ -1324,10 +1294,6 @@ function GamePage() {
     navigateTo('rules');
   }, [navigateTo]);
 
-  const showSolutions = useCallback(() => {
-    navigateTo('solutions');
-  }, [navigateTo]);
-
   const showSettingsPage = useCallback(() => {
     navigateTo('settings');
   }, [navigateTo]);
@@ -1442,8 +1408,6 @@ function GamePage() {
       } ${
         activeView === 'game' || activeView === 'practice' ? 'game-shell' : ''
       } ${activeView === 'calendar' ? 'calendar-shell detail-shell' : ''} ${
-        activeView === 'solutions' ? 'solutions-shell detail-shell' : ''
-      } ${
         activeView === 'settings' ? 'settings-shell detail-shell' : ''
       } ${
         activeView === 'howToPlay' ? 'how-to-play-shell detail-shell' : ''
@@ -1474,12 +1438,6 @@ function GamePage() {
                 isExpanded={activeView === 'calendar'}
                 onClick={activeView === 'calendar' ? showGame : showCalendar}
                 ariaLabel={dateInputLabel}
-              />
-              <ToolbarButton
-                label="Stats"
-                icon={<StatsIcon />}
-                isExpanded={activeView === 'solutions'}
-                onClick={activeView === 'solutions' ? showGame : showSolutions}
               />
               <ToolbarButton
                 label="Settings"
@@ -1536,7 +1494,7 @@ function GamePage() {
               onUnlockTomorrow={handleUnlockTomorrow}
               onShare={shareDailyResults}
               onShareIndividual={shareSolutionText}
-              onShowSavedSolutions={showSolutions}
+              onShowSavedSolutions={showCalendar}
               onShowCalendar={showCalendar}
               hasTomorrow={selectedDate === todayId}
               isArchived={selectedDate < todayId}
@@ -1716,15 +1674,6 @@ function GamePage() {
           savedSolutions={savedSolutions}
           onShare={shareSolution}
           onPlay={playCalendarDate}
-        />
-      )}
-
-      {onboardingCompleted && activeView === 'solutions' && (
-        <SolutionsPage
-          savedSolutions={savedSolutions}
-          selectedDate={selectedDate}
-          displayDate={puzzle?.displayDate ?? dateDisplayString(selectedDate)}
-          onShare={(solution) => shareSolution(solution, selectedDate)}
         />
       )}
 
@@ -1998,76 +1947,6 @@ function SettingsIcon() {
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.52a2 2 0 0 1-1 1.72l-.15.1a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.52a2 2 0 0 1 1-1.72l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2Z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
-  );
-}
-
-function StatsIcon() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d="M4 19V5" />
-      <path d="M4 19h16" />
-      <path d="M8 16v-5" />
-      <path d="M12 16V8" />
-      <path d="M16 16v-3" />
-    </svg>
-  );
-}
-
-function SolutionsPage({
-  savedSolutions,
-  selectedDate,
-  displayDate,
-  onShare,
-}: {
-  savedSolutions: StoredSolutions;
-  selectedDate: string;
-  displayDate: string;
-  onShare: (solution: SavedSolution) => void;
-}) {
-  const selectedSolutions = savedSolutions[selectedDate] ?? [];
-  const summary = useMemo(() => savedSolutionsSummary(savedSolutions), [savedSolutions]);
-
-  return (
-    <section className="solutions-page" aria-labelledby="solutions-page-title">
-      <div className="solutions-page-header">
-        <div>
-          <h1 id="solutions-page-title">Saved Solutions</h1>
-          <p>Saved equations, solve history, and local statistics.</p>
-        </div>
-      </div>
-      <section className="saved-solutions-section" aria-labelledby="saved-solutions-title">
-        <div className="saved-solutions-section-header">
-          <h2 id="saved-solutions-title">{displayDate} Solutions</h2>
-        </div>
-        <SolutionsList solutions={selectedSolutions} onShare={onShare} />
-      </section>
-      <section className="solutions-summary-section" aria-labelledby="solutions-summary-title">
-        <h2 id="solutions-summary-title">Summary</h2>
-        <div className="solutions-summary-grid">
-          <SummaryStat label="Days Played" value={String(summary.daysPlayed)} />
-          <SummaryStat label="Solution Count" value={String(summary.solutionCount)} />
-          <SummaryStat label="Hard Mode Count" value={String(summary.hardModeCount)} />
-          <SummaryStat label="Average Time" value={formatTime(summary.averageSeconds)} />
-          <SummaryStat label="Fastest Solve" value={formatTime(summary.fastestSeconds)} />
-        </div>
-      </section>
-      <section className="solutions-activity-section" aria-labelledby="solutions-activity-title">
-        <h2 id="solutions-activity-title">Activity</h2>
-        <div className="solutions-activity-row">
-          <span>Last Played</span>
-          <strong>{summary.lastPlayed ? formatDisplayDate(summary.lastPlayed) : 'No saved dates'}</strong>
-        </div>
-      </section>
-    </section>
-  );
-}
-
-function SummaryStat({ label, value }: { label: string; value: string }) {
-  return (
-    <article className="solutions-summary-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
   );
 }
 
@@ -2506,6 +2385,11 @@ function CalendarPage({
   const todayIdentifier = useMemo(() => localDateIdentifier(new Date()), []);
   const calendarDays = useMemo(() => calendarDaysForMonth(visibleMonth), [visibleMonth]);
   const monthLabel = useMemo(() => monthFormatter.format(visibleMonth), [visibleMonth]);
+  const selectedSolutions = savedSolutions[selectedDate] ?? [];
+  const averageSeconds = useMemo(
+    () => averageTimeForSolutions(selectedSolutions),
+    [selectedSolutions],
+  );
 
   useEffect(() => {
     setVisibleMonth(startOfMonth(selectedDateObject));
@@ -2557,7 +2441,11 @@ function CalendarPage({
             Play this Date
           </button>
         </div>
-        <SolutionsList solutions={savedSolutions[selectedDate] ?? []} onShare={(sol) => onShare(sol, selectedDate)} />
+        <article className="calendar-average-card" aria-label="Average time for selected date">
+          <span>Average Time</span>
+          <strong>{averageSeconds === null ? '—' : formatTime(averageSeconds)}</strong>
+        </article>
+        <SolutionsList solutions={selectedSolutions} onShare={(solution) => onShare(solution, selectedDate)} />
       </div>
     </section>
   );

@@ -1,12 +1,9 @@
 package main
 
 import (
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"log"
@@ -193,54 +190,9 @@ func securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-type analyticsConfig struct {
-	hashSecret string
-	now        func() time.Time
-	output     io.Writer
-}
-
-type clientHashSet struct {
-	Day  string
-	Week string
-}
-
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
-}
-
-func defaultAnalyticsConfig() analyticsConfig {
-	return analyticsConfig{
-		hashSecret: strings.TrimSpace(os.Getenv("CLIENT_HASH_SECRET")),
-		now:        time.Now,
-		output:     os.Stdout,
-	}
-}
-func (config analyticsConfig) timeNow() time.Time {
-	if config.now != nil {
-		return config.now()
-	}
-	return time.Now()
-}
-
-func (config analyticsConfig) logOutput() io.Writer {
-	if config.output != nil {
-		return config.output
-	}
-	return os.Stdout
-}
-func clientHashes(clientIP, secret string, now time.Time) clientHashSet {
-	now = now.UTC()
-	year, week := now.ISOWeek()
-	return clientHashSet{
-		Day:  clientHash(secret, now.Format("2006-01-02"), clientIP),
-		Week: clientHash(secret, fmt.Sprintf("%04d-W%02d", year, week), clientIP),
-	}
-}
-
-func clientHash(secret, period, clientIP string) string {
-	sum := sha256.Sum256([]byte(secret + "\x00" + period + "\x00" + clientIP))
-	return hex.EncodeToString(sum[:])[:24]
 }
 
 func (recorder *statusRecorder) WriteHeader(status int) {
@@ -255,9 +207,9 @@ func (recorder *statusRecorder) Write(body []byte) (int, error) {
 	return recorder.ResponseWriter.Write(body)
 }
 
-func requestLogger(next http.Handler, config analyticsConfig, resolver *clientAddressResolver) http.Handler {
-	if resolver == nil {
-		resolver = newClientAddressResolver(nil, nil)
+func requestLogger(next http.Handler, output io.Writer) http.Handler {
+	if output == nil {
+		output = io.Discard
 	}
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		start := time.Now()
@@ -267,25 +219,15 @@ func requestLogger(next http.Handler, config analyticsConfig, resolver *clientAd
 			recorder.status = http.StatusOK
 		}
 
-		client := resolver.resolve(request)
-		hashes := clientHashes(client.address, config.hashSecret, config.timeNow())
 		entry := map[string]any{
-			"time":         time.Now().UTC().Format(time.RFC3339Nano),
-			"level":        "INFO",
-			"msg":          "request",
-			"method":       request.Method,
-			"path":         request.URL.Path,
-			"status":       recorder.status,
-			"durationMs":   time.Since(start).Milliseconds(),
-			"clientDay":    hashes.Day,
-			"clientWeek":   hashes.Week,
-			"clientSource": client.source,
-			"country":      client.country,
-			"cfRay":        client.cfRay,
-			"userAgent":    strings.TrimSpace(request.UserAgent()),
-			"referer":      strings.TrimSpace(request.Referer()),
+			"timestamp":  time.Now().UTC().Format(time.RFC3339Nano),
+			"level":      "INFO",
+			"method":     request.Method,
+			"path":       request.URL.Path,
+			"status":     recorder.status,
+			"durationMs": time.Since(start).Milliseconds(),
 		}
-		if err := json.NewEncoder(config.logOutput()).Encode(entry); err != nil {
+		if err := json.NewEncoder(output).Encode(entry); err != nil {
 			log.Printf("request log: %v", err)
 		}
 	})

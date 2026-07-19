@@ -10,8 +10,6 @@ import (
 type resolvedClient struct {
 	address string
 	source  string
-	country string
-	cfRay   string
 }
 
 type clientAddressResolver struct {
@@ -66,8 +64,6 @@ func (resolver *clientAddressResolver) resolve(request *http.Request) resolvedCl
 			return resolvedClient{
 				address: forwardedAddress.String(),
 				source:  "cf-connecting-ip",
-				country: strings.TrimSpace(request.Header.Get("CF-IPCountry")),
-				cfRay:   strings.TrimSpace(request.Header.Get("CF-Ray")),
 			}
 		}
 	}

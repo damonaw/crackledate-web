@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
-	"time"
 )
 
 func TestClientAddressIgnoresForwardedHeadersFromUntrustedPeer(t *testing.T) {
@@ -22,9 +22,6 @@ func TestClientAddressIgnoresForwardedHeadersFromUntrustedPeer(t *testing.T) {
 
 	if client.address != "192.0.2.44" || client.source != "remote-addr" {
 		t.Fatalf("resolved client = %#v", client)
-	}
-	if client.country != "" || client.cfRay != "" {
-		t.Fatalf("trusted spoofed Cloudflare metadata: %#v", client)
 	}
 }
 
@@ -42,9 +39,6 @@ func TestClientAddressUsesCloudflareHeaderFromTrustedCloudflarePeer(t *testing.T
 	if client.address != "203.0.113.10" || client.source != "cf-connecting-ip" {
 		t.Fatalf("resolved client = %#v", client)
 	}
-	if client.country != "US" || client.cfRay != "abc123-DEN" {
-		t.Fatalf("Cloudflare metadata = %#v", client)
-	}
 }
 
 func TestClientAddressIgnoresCloudflareHeaderFromGenericTrustedPeer(t *testing.T) {
@@ -60,9 +54,6 @@ func TestClientAddressIgnoresCloudflareHeaderFromGenericTrustedPeer(t *testing.T
 
 	if client.address != "198.51.100.7" || client.source != "x-forwarded-for" {
 		t.Fatalf("resolved client = %#v", client)
-	}
-	if client.country != "" || client.cfRay != "" {
-		t.Fatalf("generic proxy supplied Cloudflare metadata: %#v", client)
 	}
 }
 
@@ -109,73 +100,41 @@ func TestClientAddressRejectsMalformedForwardedAddress(t *testing.T) {
 	}
 }
 
-func TestClientHashesRotateWithoutExposingRawIP(t *testing.T) {
-	clientIP := "203.0.113.10"
-	secret := "test-secret"
-	monday := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-	tuesday := monday.AddDate(0, 0, 1)
-	nextWeek := monday.AddDate(0, 0, 7)
+func TestRequestLoggerEmitsOnlyOperationalFields(t *testing.T) {
+	const sentinel = "private-query-and-header-sentinel"
+	var output bytes.Buffer
+	handler := requestLogger(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		writer.WriteHeader(http.StatusCreated)
+	}), &output)
+	request := httptest.NewRequest(http.MethodGet, "/api/puzzle?date="+sentinel, nil)
+	request.RemoteAddr = "203.0.113.10:443"
+	request.Header.Set("User-Agent", sentinel)
+	request.Header.Set("Referer", "https://example.invalid/"+sentinel)
+	request.Header.Set("CF-IPCountry", "US")
+	request.Header.Set("CF-Ray", sentinel)
+	response := httptest.NewRecorder()
 
-	mondayHashes := clientHashes(clientIP, secret, monday)
-	tuesdayHashes := clientHashes(clientIP, secret, tuesday)
-	nextWeekHashes := clientHashes(clientIP, secret, nextWeek)
+	handler.ServeHTTP(response, request)
 
-	if mondayHashes.Day == "" || mondayHashes.Week == "" {
-		t.Fatal("expected non-empty hashes")
+	var entry map[string]any
+	if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
+		t.Fatalf("failed to decode request log: %v\n%s", err, output.String())
 	}
-	if mondayHashes.Day == clientIP || mondayHashes.Week == clientIP {
-		t.Fatal("client hash exposed raw IP")
+	wantKeys := []string{"durationMs", "level", "method", "path", "status", "timestamp"}
+	gotKeys := make([]string, 0, len(entry))
+	for _, key := range wantKeys {
+		if _, exists := entry[key]; exists {
+			gotKeys = append(gotKeys, key)
+		}
 	}
-	if mondayHashes.Day == tuesdayHashes.Day {
-		t.Fatal("daily hash should rotate")
+	if !reflect.DeepEqual(gotKeys, wantKeys) || len(entry) != len(wantKeys) {
+		t.Fatalf("log keys = %v; entry = %#v", gotKeys, entry)
 	}
-	if mondayHashes.Week != tuesdayHashes.Week {
-		t.Fatal("weekly hash should stay stable within a week")
+	if entry["path"] != "/api/puzzle" || entry["status"] != float64(http.StatusCreated) {
+		t.Fatalf("unexpected operational fields: %#v", entry)
 	}
-	if mondayHashes.Week == nextWeekHashes.Week {
-		t.Fatal("weekly hash should rotate between weeks")
-	}
-}
-
-func TestRequestLoggerIgnoresCloudflareMetadataFromUntrustedPeer(t *testing.T) {
-	resolver := newClientAddressResolver(nil, nil)
-	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-	output, entry := recordRequestLog(t, resolver, now, func(request *http.Request) {
-		request.RemoteAddr = "192.0.2.44:443"
-		request.Header.Set("CF-Connecting-IP", "203.0.113.10")
-		request.Header.Set("CF-IPCountry", "US")
-		request.Header.Set("CF-Ray", "spoofed-DEN")
-	})
-
-	expectedHashes := clientHashes("192.0.2.44", "test-secret", now)
-	if entry["clientDay"] != expectedHashes.Day || entry["clientWeek"] != expectedHashes.Week {
-		t.Fatalf("logger trusted spoofed address: %#v", entry)
-	}
-	if entry["clientSource"] != "remote-addr" || entry["country"] != "" || entry["cfRay"] != "" {
-		t.Fatalf("logger trusted spoofed Cloudflare fields: %#v", entry)
-	}
-	if bytes.Contains(output, []byte("203.0.113.10")) {
-		t.Fatalf("log exposed spoofed raw client IP: %s", output)
-	}
-}
-
-func TestRequestLoggerUsesSharedTrustedClientResolution(t *testing.T) {
-	resolver := mustClientResolver(t, []string{"192.0.2.0/24"}, nil)
-	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-	output, entry := recordRequestLog(t, resolver, now, func(request *http.Request) {
-		request.RemoteAddr = "192.0.2.44:443"
-		request.Header.Set("X-Forwarded-For", "203.0.113.10")
-	})
-
-	expectedHashes := clientHashes("203.0.113.10", "test-secret", now)
-	if entry["clientDay"] != expectedHashes.Day || entry["clientWeek"] != expectedHashes.Week {
-		t.Fatalf("logger did not use shared resolver: %#v", entry)
-	}
-	if entry["clientSource"] != "x-forwarded-for" || entry["status"] != float64(http.StatusCreated) {
-		t.Fatalf("unexpected trusted log fields: %#v", entry)
-	}
-	if bytes.Contains(output, []byte("203.0.113.10")) {
-		t.Fatalf("log exposed raw client IP: %s", output)
+	if bytes.Contains(output.Bytes(), []byte(sentinel)) || bytes.Contains(output.Bytes(), []byte("203.0.113.10")) {
+		t.Fatalf("log retained request identity or query data: %s", output.String())
 	}
 }
 
@@ -192,32 +151,4 @@ func hostOnly(remoteAddr string) string {
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
 	request.RemoteAddr = remoteAddr
 	return newClientAddressResolver(nil, nil).resolve(request).address
-}
-
-func recordRequestLog(
-	t *testing.T,
-	resolver *clientAddressResolver,
-	now time.Time,
-	configure func(*http.Request),
-) ([]byte, map[string]any) {
-	t.Helper()
-	var output bytes.Buffer
-	analytics := analyticsConfig{
-		hashSecret: "test-secret",
-		now:        func() time.Time { return now },
-		output:     &output,
-	}
-	handler := requestLogger(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		writer.WriteHeader(http.StatusCreated)
-	}), analytics, resolver)
-	request := httptest.NewRequest(http.MethodGet, "/api/puzzle?date=2026-05-29", nil)
-	configure(request)
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-
-	var entry map[string]any
-	if err := json.Unmarshal(output.Bytes(), &entry); err != nil {
-		t.Fatalf("failed to decode request log: %v\n%s", err, output.String())
-	}
-	return output.Bytes(), entry
 }

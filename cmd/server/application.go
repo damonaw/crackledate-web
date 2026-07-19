@@ -3,6 +3,7 @@ package main
 import (
 	"io/fs"
 	"net/http"
+	"os"
 
 	"crackledate-web/internal/game"
 )
@@ -21,11 +22,7 @@ func newApplicationHandler(config runtimeSecurityConfig, publicFiles fs.FS) http
 
 	return expireLegacySessionCookie(
 		securityHeaders(
-			requestLogger(
-				rateLimitAPI(mux, defaultRateLimitConfig(config.resolver)),
-				defaultAnalyticsConfig(),
-				config.resolver,
-			),
+			requestLogger(rateLimitAPI(mux, defaultRateLimitConfig(config.resolver)), os.Stdout),
 		),
 	)
 }

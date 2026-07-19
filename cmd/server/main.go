@@ -38,34 +38,18 @@ type validateRequest struct {
 const maxAPIJSONBodyBytes int64 = 32 * 1024
 
 func main() {
-	runtimeConfig, submissions, err := initializeRuntime(os.Getenv, openSubmissionStore)
+	runtimeConfig, err := initializeRuntime(os.Getenv)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer submissions.close()
-
-	mux := http.NewServeMux()
 	publicFiles := mustPublicFS()
-
-	mux.HandleFunc("/api/health", handleHealth)
-	mux.HandleFunc("/api/puzzle", handlePuzzle)
-	mux.HandleFunc("/api/evaluate", handleEvaluate)
-	mux.HandleFunc("/api/validate", handleValidate)
-	mux.HandleFunc("/api/submissions", handleSubmitSolution(submissions, time.Now))
-	mux.Handle("/api/hint", newHintHandler(game.GenerateHint, runtimeConfig.maxConcurrentHintSolves, game.DefaultSearchBudget))
-	mux.HandleFunc("/", handleStatic(publicFiles))
 
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
 
-	server := newHTTPServer(
-		":"+port,
-		expireLegacySessionCookie(
-			securityHeaders(requestLogger(rateLimitAPI(mux, defaultRateLimitConfig(runtimeConfig.resolver)), defaultAnalyticsConfig(), runtimeConfig.resolver)),
-		),
-	)
+	server := newHTTPServer(":"+port, newApplicationHandler(runtimeConfig, publicFiles))
 
 	log.Printf("crackledate web listening on :%s", port)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

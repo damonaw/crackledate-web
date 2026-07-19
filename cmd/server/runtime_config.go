@@ -15,10 +15,7 @@ const (
 type runtimeSecurityConfig struct {
 	resolver                *clientAddressResolver
 	maxConcurrentHintSolves int
-	retireLegacyAccountData bool
 }
-
-type submissionStoreOpener func(string) (*submissionStore, error)
 
 func parseRuntimeSecurityConfig(getenv func(string) string) (runtimeSecurityConfig, error) {
 	genericCIDRs, err := parseCIDREnvironment(getenv("TRUSTED_PROXY_CIDRS"))
@@ -37,26 +34,10 @@ func parseRuntimeSecurityConfig(getenv func(string) string) (runtimeSecurityConf
 	if err != nil {
 		return runtimeSecurityConfig{}, err
 	}
-	retireLegacyAccountData, err := parseLegacyRetirementActivation(getenv("RETIRE_LEGACY_ACCOUNT_DATA"))
-	if err != nil {
-		return runtimeSecurityConfig{}, err
-	}
 	return runtimeSecurityConfig{
 		resolver:                resolver,
 		maxConcurrentHintSolves: maxConcurrent,
-		retireLegacyAccountData: retireLegacyAccountData,
 	}, nil
-}
-
-func parseLegacyRetirementActivation(value string) (bool, error) {
-	switch value {
-	case "":
-		return false, nil
-	case "confirmed":
-		return true, nil
-	default:
-		return false, fmt.Errorf("RETIRE_LEGACY_ACCOUNT_DATA must be empty or exact value confirmed")
-	}
 }
 
 func parseCIDREnvironment(value string) ([]string, error) {
@@ -89,42 +70,6 @@ func parseHintConcurrency(value string) (int, error) {
 	return parsed, nil
 }
 
-func initializeRuntime(
-	getenv func(string) string,
-	openSubmissionStore submissionStoreOpener,
-) (runtimeSecurityConfig, *submissionStore, error) {
-	config, err := parseRuntimeSecurityConfig(getenv)
-	if err != nil {
-		return runtimeSecurityConfig{}, nil, err
-	}
-	path := strings.TrimSpace(getenv("SUBMISSIONS_PATH"))
-	if path == "" {
-		path = defaultSubmissionsPath
-	}
-	if config.retireLegacyAccountData && !isDatabasePath(path) {
-		return runtimeSecurityConfig{}, nil, fmt.Errorf("RETIRE_LEGACY_ACCOUNT_DATA=confirmed requires a SQLite submissions path")
-	}
-	store, err := openSubmissionStore(path)
-	if err != nil {
-		return runtimeSecurityConfig{}, nil, err
-	}
-	if store == nil {
-		return runtimeSecurityConfig{}, nil, fmt.Errorf("submission store opener returned no store")
-	}
-	closeOnError := func(err error) (runtimeSecurityConfig, *submissionStore, error) {
-		store.close()
-		return runtimeSecurityConfig{}, nil, err
-	}
-	if config.retireLegacyAccountData {
-		if store.db == nil {
-			return closeOnError(fmt.Errorf("RETIRE_LEGACY_ACCOUNT_DATA=confirmed requires an opened SQLite database"))
-		}
-		if err := retireLegacyAccountData(store.db, legacyRetirementOptions{}); err != nil {
-			return closeOnError(err)
-		}
-	}
-	if err := ensureSubmissionSchema(store); err != nil {
-		return closeOnError(err)
-	}
-	return config, store, nil
+func initializeRuntime(getenv func(string) string) (runtimeSecurityConfig, error) {
+	return parseRuntimeSecurityConfig(getenv)
 }

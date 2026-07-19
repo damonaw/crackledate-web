@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -290,7 +289,7 @@ func TestHintConcurrencyConfigRejectsZeroSeventeenNonIntegerAndMalformedValues(t
 	}
 }
 
-func TestInvalidRuntimeConfigStopsBeforeOpeningSubmissionStore(t *testing.T) {
+func TestInitializeRuntimeRejectsInvalidSecurityConfiguration(t *testing.T) {
 	tests := []map[string]string{
 		{"TRUSTED_PROXY_CIDRS": "invalid"},
 		{"TRUSTED_CLOUDFLARE_PROXY_CIDRS": "also-invalid"},
@@ -298,19 +297,9 @@ func TestInvalidRuntimeConfigStopsBeforeOpeningSubmissionStore(t *testing.T) {
 	}
 	for index, environment := range tests {
 		t.Run(fmt.Sprintf("case-%d", index), func(t *testing.T) {
-			openCalls := 0
-			_, store, err := initializeRuntime(mapEnvironment(environment), func(string) (*submissionStore, error) {
-				openCalls++
-				return nil, errors.New("store opener must not run")
-			})
+			_, err := initializeRuntime(mapEnvironment(environment))
 			if err == nil {
 				t.Fatal("expected invalid runtime configuration error")
-			}
-			if store != nil {
-				t.Fatalf("store = %#v, want nil", store)
-			}
-			if openCalls != 0 {
-				t.Fatalf("submission store opened %d times", openCalls)
 			}
 		})
 	}

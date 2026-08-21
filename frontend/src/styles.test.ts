@@ -36,4 +36,8 @@ describe('stylesheet regressions', () => {
     expect(declarations).toContain('width: 1px;');
     expect(declarations).toContain('clip: rect(0, 0, 0, 0);');
   });
+
+  test('keeps the difficulty note on its own row without compressing the selector', () => {
+    expect(declarationsFor('.settings-row')).toContain('flex-wrap: wrap;');
+  });
 });

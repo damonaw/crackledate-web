@@ -9,8 +9,6 @@ export function SettingsPanel({
   onClearData,
   onShowHowToPlay,
   onPractice = () => undefined,
-  onShowRules = () => undefined,
-  onRestartTutorial = () => undefined,
 }: {
   themePreference: ThemePreference;
   difficultyMode: DifficultyMode;
@@ -19,8 +17,6 @@ export function SettingsPanel({
   onClearData: () => void;
   onShowHowToPlay: () => void;
   onPractice?: () => void;
-  onShowRules?: () => void;
-  onRestartTutorial?: () => void;
 }) {
   return (
     <section className="settings-page" aria-labelledby="settings-title">
@@ -66,21 +62,16 @@ export function SettingsPanel({
               </label>
             ))}
           </div>
+          <p className="settings-note">Difficulty changes the daily puzzle challenge. Your choice applies to future puzzles.</p>
         </fieldset>
       </div>
 
       <nav className="settings-links" aria-label="Help and policies">
         <button className="settings-link-button" type="button" onClick={onShowHowToPlay}>
-          How to Play
+          How to Play &amp; Rules
         </button>
         <button className="settings-link-button" type="button" onClick={onPractice}>
-          Practice
-        </button>
-        <button className="settings-link-button" type="button" onClick={onShowRules}>
-          Rules
-        </button>
-        <button className="settings-link-button" type="button" onClick={onRestartTutorial}>
-          Restart Practice Round
+          Practice / Restart Practice Round
         </button>
         <a href="/privacy/">Privacy</a>
         <a href="/support/">Support</a>

@@ -21,6 +21,23 @@ describe('browser-local product contract', () => {
     expect(mainSource).not.toContain('/api/submissions');
   });
 
+  test('has no hint client, state, or presentation', () => {
+    for (const relativePath of [
+      './src/hintFlow.ts',
+      './src/hintFlow.test.ts',
+      './src/hintRequest.ts',
+      './src/hintRequest.test.ts',
+      './src/hintRequestCoordinator.ts',
+      './src/hintRequestCoordinator.test.ts',
+      './src/hintLoadingSurface.test.ts',
+      './src/hintUnavailableCopy.test.ts',
+    ]) {
+      expect(existsSync(new URL(relativePath, frontendUrl))).toBe(false);
+    }
+
+    expect(productSurface).not.toMatch(/hint/i);
+  });
+
   test('has no achievement calculators', () => {
     for (const relativePath of [
       './src/solutionBadges.ts',
@@ -55,6 +72,8 @@ describe('browser-local product contract', () => {
       '.victory-badge-mode',
       '.victory-badge-diff',
       '.victory-badge-hint',
+      '.hint-tag',
+      '.victory-meta-hint',
     ]) {
       expect(stylesSource).not.toContain(removedSelector);
     }
@@ -62,12 +81,10 @@ describe('browser-local product contract', () => {
     for (const replacementIdentifier of [
       '.solution-tag',
       '.archive-tag',
-      '.hint-tag',
       '.victory-status-row',
       '.victory-status-pill',
       '.victory-meta-mode',
       '.victory-meta-difficulty',
-      '.victory-meta-hint',
     ]) {
       expect(stylesSource).toContain(replacementIdentifier);
     }
@@ -76,7 +93,6 @@ describe('browser-local product contract', () => {
   test('renders preserved solution metadata with generic JSX identifiers', () => {
     for (const preservedMetadata of [
       'className="solution-tag archive-tag">Archive',
-      'className="solution-tag hint-tag">Used Hint',
       'className={`solution-tag difficulty-${solution.difficulty}`}',
       '{solution.difficulty}',
       'className="victory-status-row"',
@@ -84,7 +100,6 @@ describe('browser-local product contract', () => {
       'className="victory-meta-mode">Classic',
       "className={`victory-meta-difficulty difficulty-${sol.difficulty || 'easy'}`}",
       "{sol.difficulty || 'easy'}",
-      'className="victory-meta-hint">💡 Hint',
     ]) {
       expect(mainSource).toContain(preservedMetadata);
     }
@@ -98,6 +113,8 @@ describe('browser-local product contract', () => {
       'victory-badge-mode',
       'victory-badge-diff',
       'victory-badge-hint',
+      'hint-tag',
+      'victory-meta-hint',
     ]) {
       expect(mainSource).not.toContain(oldJsxClass);
     }

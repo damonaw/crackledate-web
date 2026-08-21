@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 
-	"crackledate-web/internal/game"
 )
 
 func newApplicationHandler(config runtimeSecurityConfig, publicFiles fs.FS) http.Handler {
@@ -14,7 +13,6 @@ func newApplicationHandler(config runtimeSecurityConfig, publicFiles fs.FS) http
 	mux.HandleFunc("/api/puzzle", handlePuzzle)
 	mux.HandleFunc("/api/evaluate", handleEvaluate)
 	mux.HandleFunc("/api/validate", handleValidate)
-	mux.Handle("/api/hint", newHintHandler(game.GenerateHint, config.maxConcurrentHintSolves, game.DefaultSearchBudget))
 	mux.HandleFunc("/api/", func(writer http.ResponseWriter, _ *http.Request) {
 		writeJSON(writer, http.StatusNotFound, map[string]string{"error": "Not found"})
 	})

@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+func assertNoStoreJSON(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+	if got := response.Header().Get("Content-Type"); got != "application/json" {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	if got := response.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q", got)
+	}
+}
+
 func TestHandleValidateRejectsOversizedBody(t *testing.T) {
 	body := `{"date":"2026-05-16","equation":"` + strings.Repeat("1", int(maxAPIJSONBodyBytes)) + `"}`
 	request := httptest.NewRequest(http.MethodPost, "/api/validate", strings.NewReader(body))
@@ -66,7 +76,6 @@ func TestEvaluateAndValidateJSONResponsesAreNoStore(t *testing.T) {
 func TestDefaultRateLimitRules(t *testing.T) {
 	config := defaultRateLimitConfig(newClientAddressResolver(nil, nil))
 	want := map[rateLimitRule]int{
-		{method: http.MethodPost, path: "/api/hint"}:     30,
 		{method: http.MethodPost, path: "/api/evaluate"}: 240,
 		{method: http.MethodPost, path: "/api/validate"}: 120,
 	}
@@ -140,29 +149,6 @@ func TestRateLimitAPISeparatesClientsAndPaths(t *testing.T) {
 	}
 	if otherPath.Code != http.StatusNoContent {
 		t.Fatalf("expected unlisted path through, got %d", otherPath.Code)
-	}
-}
-
-func TestRateLimitAPIRestrictsHintPOST(t *testing.T) {
-	config := defaultRateLimitConfig(newClientAddressResolver(nil, nil))
-	handled := 0
-	handler := rateLimitAPI(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		handled++
-		writer.WriteHeader(http.StatusNoContent)
-	}), config)
-
-	for index := 0; index < 30; index++ {
-		response := rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234")
-		if response.Code != http.StatusNoContent {
-			t.Fatalf("request %d unexpectedly returned %d", index+1, response.Code)
-		}
-	}
-	response := rateLimitedRequest(handler, http.MethodPost, "/api/hint", "203.0.113.10:1234")
-	if response.Code != http.StatusTooManyRequests {
-		t.Fatalf("expected 31st hint request to be limited, got %d", response.Code)
-	}
-	if handled != 30 {
-		t.Fatalf("handled requests = %d, want 30", handled)
 	}
 }
 
@@ -255,45 +241,10 @@ func TestTrustedProxyConfigRejectsInvalidCIDR(t *testing.T) {
 	}
 }
 
-func TestHintConcurrencyConfigUsesDefaultWhenUnset(t *testing.T) {
-	config, err := parseRuntimeSecurityConfig(mapEnvironment(nil))
-	if err != nil {
-		t.Fatalf("parseRuntimeSecurityConfig: %v", err)
-	}
-	if config.maxConcurrentHintSolves != 4 {
-		t.Fatalf("maxConcurrentHintSolves = %d, want 4", config.maxConcurrentHintSolves)
-	}
-}
-
-func TestHintConcurrencyConfigAcceptsOneAndSixteen(t *testing.T) {
-	for _, value := range []string{"1", "16"} {
-		t.Run(value, func(t *testing.T) {
-			config, err := parseRuntimeSecurityConfig(mapEnvironment(map[string]string{"MAX_CONCURRENT_HINT_SOLVES": value}))
-			if err != nil {
-				t.Fatalf("parseRuntimeSecurityConfig: %v", err)
-			}
-			if fmt.Sprint(config.maxConcurrentHintSolves) != value {
-				t.Fatalf("maxConcurrentHintSolves = %d, want %s", config.maxConcurrentHintSolves, value)
-			}
-		})
-	}
-}
-
-func TestHintConcurrencyConfigRejectsZeroSeventeenNonIntegerAndMalformedValues(t *testing.T) {
-	for _, value := range []string{"0", "17", "1.5", "four", "+4", " 4 ", "4x"} {
-		t.Run(value, func(t *testing.T) {
-			if _, err := parseRuntimeSecurityConfig(mapEnvironment(map[string]string{"MAX_CONCURRENT_HINT_SOLVES": value})); err == nil {
-				t.Fatalf("expected %q to be rejected", value)
-			}
-		})
-	}
-}
-
 func TestInitializeRuntimeRejectsInvalidSecurityConfiguration(t *testing.T) {
 	tests := []map[string]string{
 		{"TRUSTED_PROXY_CIDRS": "invalid"},
 		{"TRUSTED_CLOUDFLARE_PROXY_CIDRS": "also-invalid"},
-		{"MAX_CONCURRENT_HINT_SOLVES": "0"},
 	}
 	for index, environment := range tests {
 		t.Run(fmt.Sprintf("case-%d", index), func(t *testing.T) {

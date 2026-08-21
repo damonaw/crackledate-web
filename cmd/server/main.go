@@ -273,7 +273,3 @@ func findLastTopLevelOperator(s string) int {
 	}
 	return lastOpIdx
 }
-
-func computeBalancingHintAndTip(sol string, mode string, prefix string, digits []int) (string, string) {
-	return game.ComputeBalancingHintAndTip(sol, mode, prefix, digits)
-}

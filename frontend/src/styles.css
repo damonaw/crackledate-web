@@ -476,6 +476,14 @@ a {
   padding: 11px 12px;
 }
 
+.settings-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--ios-secondary-label);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .settings-row + .settings-row {
   border-top: 1px solid var(--ios-separator);
 }
@@ -2306,115 +2314,6 @@ a {
   margin-bottom: 12px;
   width: 100%;
 }
-/* Hint Trigger & Panel */
-.hint-trigger-btn {
-  background: var(--ios-blue-soft);
-  color: var(--ios-blue);
-  border: 1px solid var(--glass-border);
-  border-radius: 12px;
-  padding: 8px 16px;
-  font-size: 0.85rem;
-  font-weight: 750;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-width: 85px;
-  text-align: center;
-}
-
-.hint-trigger-btn:hover {
-  background: var(--ios-blue);
-  color: #ffffff;
-}
-
-.hint-trigger-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.hint-panel {
-  background: var(--glass-fill);
-  border: 1px solid var(--glass-border);
-  border-radius: 14px;
-  padding: 12px 14px;
-  margin-bottom: 14px;
-  box-shadow: var(--shadow-soft);
-  backdrop-filter: blur(10px);
-  animation: slide-down 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.hint-panel.hint-loading .hint-body {
-  margin-bottom: 0;
-}
-
-.hint-panel.hint-loading .hint-body p {
-  margin: 0;
-}
-
-@keyframes slide-down {
-  from { transform: translateY(-10px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-.hint-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.78rem;
-  color: var(--ios-secondary-label);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 6px;
-}
-
-.close-hint {
-  border: 0;
-  background: transparent;
-  font-size: 1.2rem;
-  cursor: pointer;
-  color: var(--ios-secondary-label);
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.close-hint:hover {
-  color: var(--ios-red);
-}
-
-.hint-body {
-  font-size: 0.95rem;
-  color: var(--ios-label);
-  margin-bottom: 8px;
-}
-
-.hint-body code {
-  font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
-  background: rgba(0, 0, 0, 0.05);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-weight: 700;
-}
-
-:root[data-theme="dark"] .hint-body code {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.next-hint-button {
-  width: 100%;
-  border: 0;
-  background: var(--ios-blue);
-  color: #ffffff;
-  padding: 8px;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  font-weight: 750;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-}
-
-.next-hint-button:hover {
-  opacity: 0.9;
-}
-
 /* Stats Dashboard & Widgets */
 .stats-dashboard {
   margin-bottom: 24px;
@@ -2641,11 +2540,6 @@ a {
 .solution-tag.archive-tag {
   background: var(--ios-blue-soft);
   color: var(--ios-blue);
-}
-
-.solution-tag.hint-tag {
-  background: rgba(255, 149, 0, 0.15);
-  color: var(--ios-orange);
 }
 
 .solution-tag.difficulty-easy {
@@ -2886,13 +2780,6 @@ a {
   color: var(--ios-red);
 }
 
-.victory-meta-hint {
-  background: rgba(255, 149, 0, 0.1);
-  color: var(--ios-orange);
-  padding: 1px 6px;
-  border-radius: 4px;
-}
-
 .victory-share-individual-btn {
   background: var(--ios-secondary-background);
   border: 1px solid var(--glass-border);
@@ -2957,45 +2844,4 @@ a {
   border-radius: 12px;
   font-weight: 700;
   font-size: 0.9rem;
-}
-
-.toolbar-trigger.toolbar-hint-button {
-  background: var(--ios-orange-soft);
-  border-color: rgba(255, 149, 0, 0.3) !important;
-  color: var(--ios-orange) !important;
-}
-
-.toolbar-trigger.toolbar-hint-button:hover {
-  background: var(--ios-orange) !important;
-  color: #ffffff !important;
-}
-
-.toolbar-trigger.toolbar-hint-button[data-expanded="true"] {
-  border-color: rgba(255, 149, 0, 0.45) !important;
-  background: var(--ios-orange-soft) !important;
-}
-
-.toolbar-trigger.toolbar-hint-button.shake {
-  animation: hint-wiggle-pulse 6s infinite ease-in-out;
-}
-
-@keyframes hint-wiggle-pulse {
-  0%, 82%, 100% {
-    transform: scale(1) rotate(0deg);
-  }
-  85% {
-    transform: scale(1.15) rotate(-8deg);
-  }
-  88% {
-    transform: scale(1.15) rotate(8deg);
-  }
-  91% {
-    transform: scale(1.15) rotate(-6deg);
-  }
-  94% {
-    transform: scale(1.15) rotate(6deg);
-  }
-  97% {
-    transform: scale(1.05) rotate(0deg);
-  }
 }

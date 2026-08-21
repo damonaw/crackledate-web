@@ -45,7 +45,6 @@ func defaultRateLimitConfig(resolver *clientAddressResolver) rateLimitConfig {
 	return rateLimitConfig{
 		window: time.Minute,
 		limits: map[rateLimitRule]int{
-			{method: http.MethodPost, path: "/api/hint"}:     30,
 			{method: http.MethodPost, path: "/api/evaluate"}: 240,
 			{method: http.MethodPost, path: "/api/validate"}: 120,
 		},

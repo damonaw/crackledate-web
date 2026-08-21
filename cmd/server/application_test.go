@@ -13,10 +13,7 @@ func TestApplicationHasNoSubmissionEndpoint(t *testing.T) {
 	publicFiles := fstest.MapFS{
 		"index.html": &fstest.MapFile{Data: []byte("app")},
 	}
-	handler := newApplicationHandler(runtimeSecurityConfig{
-		resolver:                newClientAddressResolver(nil, nil),
-		maxConcurrentHintSolves: 1,
-	}, fs.FS(publicFiles))
+	handler := newApplicationHandler(runtimeSecurityConfig{resolver: newClientAddressResolver(nil, nil)}, fs.FS(publicFiles))
 
 	for _, method := range []string{
 		http.MethodGet,
@@ -48,6 +45,25 @@ func TestApplicationHasNoSubmissionEndpoint(t *testing.T) {
 				t.Fatal("response reflected request body")
 			}
 		})
+	}
+}
+
+func TestApplicationHasNoHintEndpoint(t *testing.T) {
+	publicFiles := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("app")},
+	}
+	handler := newApplicationHandler(runtimeSecurityConfig{
+		resolver: newClientAddressResolver(nil, nil),
+	}, fs.FS(publicFiles))
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/hint", strings.NewReader(`{"date":"2026-06-19"}`)))
+
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404; body %q", response.Code, response.Body.String())
+	}
+	if response.Body.String() != "{\"error\":\"Not found\"}\n" {
+		t.Fatalf("body = %q", response.Body.String())
 	}
 }
 

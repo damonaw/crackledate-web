@@ -20,10 +20,9 @@ describe('SettingsPanel', () => {
     expect(markup).toContain('Saved on this browser');
     expect(markup).toContain('Appearance');
     expect(markup).toContain('Difficulty');
-    expect(markup).toContain('How to Play');
-    expect(markup).toContain('Practice');
-    expect(markup).toContain('Rules');
-    expect(markup).toContain('Restart Practice Round');
+    expect(markup).toContain('Difficulty changes the daily puzzle challenge. Your choice applies to future puzzles.');
+    expect(markup).toContain('How to Play &amp; Rules');
+    expect(markup).toContain('Practice / Restart Practice Round');
     expect(markup).toContain('Privacy');
     expect(markup).toContain('Support');
     expect(markup).toContain('Clear Data');
